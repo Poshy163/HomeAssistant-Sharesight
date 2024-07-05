@@ -1,0 +1,32 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "data": {
+                    "client_id": "Client ID",
+                    "client_secret": "Client Secret",
+                    "portfolio_id": "Portfolio ID",
+                    "authorization_code": "Authorization Code"
+                },
+                "description": "Please enter your Sharesight API credentials.",
+                "title": "Sharesight Integration Setup"
+            }
+        },
+        "error": {
+            "auth": "Authentication error, please check your credentials."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "client_id": "Client ID",
+                    "client_secret": "Client Secret",
+                    "portfolio_id": "Portfolio ID",
+                    "authorization_code": "Authorization Code"
+                },
+                "title": "Sharesight Integration Options"
+            }
+        }
+    }
+}
