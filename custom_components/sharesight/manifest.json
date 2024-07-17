@@ -1,10 +1,11 @@
 {
   "domain": "sharesight",
-  "name": "Sharesight Integration",
+  "name": "Sharesight",
   "version": "1.0",
+  "iot_class": "cloud_polling",
   "documentation": "https://github.com/Poshy163/HomeAssistant-Sharesight",
   "issue_tracker": "https://github.com/Poshy163/HomeAssistant-Sharesight/issues",
-  "requirements": ["SharesightAPI==1.1.1"],
+  "requirements": ["SharesightAPI==1.1.4"],
   "codeowners": ["@Poshy163"],
   "config_flow": true
 }

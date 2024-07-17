@@ -14,15 +14,21 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class SharesightSensor(Entity):
     def __init__(self, sharesight):
         self._sharesight = sharesight
-        self._state = None
+        self._state = 0
+        self._name = f"{PORTFOLIO_ID} Portfolio Value "
+        self._unique_id = f"{PORTFOLIO_ID}_portfolio_value"  # Ensure unique_id is unique to this sensor
 
     @property
     def name(self):
-        return "Sharesight Portfolio Value"
+        return self._name
 
     @property
     def state(self):
         return self._state
+
+    @property
+    def unique_id(self):
+        return self._unique_id
 
     async def async_update(self):
         _LOGGER.info(f"CALLING DATA")
@@ -33,5 +39,7 @@ class SharesightSensor(Entity):
         _LOGGER.info(f"DATA IS {data}")
         if data:
             port_value = data["value"]
-            self._state = port_value
             _LOGGER.info(f"VALUE IS: {port_value}")
+            self._state = port_value
+        else:
+            _LOGGER.warning("No data received from Sharesight API")
