@@ -1,3 +1,4 @@
+from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import Entity
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -62,7 +63,7 @@ class SharesightSensor(Entity):
             "identifiers": {(DOMAIN, PORTFOLIO_ID)},
             "name": f"Sharesight Portfolio {PORTFOLIO_ID}",
             "model": f"Sharesight API {API_VERSION}",
-            "entry_type": "service",
+            "entry_type": DeviceEntryType.SERVICE,
         }
 
     async def async_update(self):
