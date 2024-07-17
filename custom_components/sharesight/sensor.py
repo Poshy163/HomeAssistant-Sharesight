@@ -29,8 +29,8 @@ class SharesightSensor(Entity):
         self._state = None
         self._sensor_type = sensor_type
         self._name = "Portfolio value"
-        self._unique_id = f"{PORTFOLIO_ID}_value"
-        self._entry_id = entry.entry_id
+        self._unique_id = f"{PORTFOLIO_ID}_value_{API_VERSION}"
+        self._entry_id = f"{PORTFOLIO_ID}_value"
 
     @property
     def name(self):
