@@ -1,3 +1,4 @@
+from homeassistant.components.number import NumberDeviceClass
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import Entity
 from homeassistant.components.sensor import (
@@ -5,7 +6,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import CURRENCY_DOLLAR
+from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE
 from . import DOMAIN
 from .const import PORTFOLIO_ID, API_VERSION
 from datetime import timedelta
@@ -30,22 +31,26 @@ async def merge_dicts(d1, d2):
 
 async def get_data(sharesight, called_from):
     access_token = await sharesight.validate_token()
-    _LOGGER.info(f"CALLED FROM: {called_from}")
-    _LOGGER.info(f"CODE IS: {access_token}")
-    _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
-    v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
-                        f"portfolios/{PORTFOLIO_ID}/valuation", "memberships",
-                        f"portfolios/{PORTFOLIO_ID}/trades", f"portfolios/{PORTFOLIO_ID}/payouts", "cash_accounts",
-                        "user_instruments", "currencies", "my_user.json"]
-    combined_dict = {}
-    for endpoint in v2_endpoint_list:
-        _LOGGER.info(f"Calling {endpoint}")
-        response = await sharesight.get_api_request(endpoint, API_VERSION, access_token)
-        combined_dict = await merge_dicts(combined_dict, response)
+    try:
+        _LOGGER.info(f"CALLED FROM: {called_from}")
+        _LOGGER.info(f"CODE IS: {access_token}")
+        _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
+        v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
+                            f"portfolios/{PORTFOLIO_ID}/valuation", "memberships",
+                            f"portfolios/{PORTFOLIO_ID}/trades", f"portfolios/{PORTFOLIO_ID}/payouts", "cash_accounts",
+                            "user_instruments", "currencies", "my_user.json"]
+        combined_dict = {}
+        for endpoint in v2_endpoint_list:
+            _LOGGER.info(f"Calling {endpoint}")
+            response = await sharesight.get_api_request(endpoint, API_VERSION, access_token)
+            combined_dict = await merge_dicts(combined_dict, response)
 
-    _LOGGER.info(f"DATA RECEIVED")
-    data = combined_dict
-    return data
+        _LOGGER.info(f"DATA RECEIVED")
+        data = combined_dict
+        return data
+    except Exception as e:
+        _LOGGER.error(e)
+        return None
 
 
 async def fetch_and_update_data(hass, sharesight, entry, sensors):
@@ -66,6 +71,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     sensors = [
         SharesightSensor(sharesight, entry, "valuation", data, "value"),
         SharesightSensor(sharesight, entry, "valuation", data, "total_gain"),
+        SharesightSensor(sharesight, entry, "percent", data, "total_gain_percent"),
     ]
     async_add_entities(sensors, True)
 
@@ -100,12 +106,16 @@ class SharesightSensor(Entity):
     def unit_of_measurement(self):
         if self._sensor_type == "valuation":
             return CURRENCY_DOLLAR
+        if self._sensor_type == "percent":
+            return PERCENTAGE
         return None
 
     @property
     def device_class(self):
         if self._sensor_type == "valuation":
             return SensorDeviceClass.MONETARY
+        if self._sensor_type == "percent":
+            return NumberDeviceClass.MOISTURE
         return None
 
     @property
