@@ -8,24 +8,72 @@ from homeassistant.components.sensor import (
 from homeassistant.const import CURRENCY_DOLLAR
 from . import DOMAIN
 from .const import PORTFOLIO_ID, API_VERSION
+from datetime import timedelta
 import logging
+import asyncio
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
+
+SCAN_INTERVAL = timedelta(minutes=1)
+
+endpoint_list_version = "v2"
+
+
+async def merge_dicts(d1, d2):
+    for key in d2:
+        if key in d1 and isinstance(d1[key], dict) and isinstance(d2[key], dict):
+            await merge_dicts(d1[key], d2[key])
+        else:
+            d1[key] = d2[key]
+    return d1
+
+
+async def get_data(sharesight):
+    access_token = await sharesight.validate_token()
+    _LOGGER.info(f"CODE IS: {access_token}")
+    _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
+    v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
+                        f"portfolios/{PORTFOLIO_ID}/valuation", "memberships",
+                        f"portfolios/{PORTFOLIO_ID}/trades", f"portfolios/{PORTFOLIO_ID}/payouts", "cash_accounts",
+                        "user_instruments", "currencies", "my_user.json"]
+    combined_dict = {}
+    for endpoint in v2_endpoint_list:
+        _LOGGER.info(f"Calling {endpoint}")
+        response = await sharesight.get_api_request(endpoint, API_VERSION, access_token)
+        combined_dict = await merge_dicts(combined_dict, response)
+
+    _LOGGER.info(f"DATA RECEIVED")
+    data = combined_dict
+    return data
+
+
+async def fetch_and_update_data(hass, sharesight, entry, sensors):
+    while True:
+        data = await get_data(sharesight)
+
+        for sensor in sensors:
+            sensor.update_data(data)
+
+        await asyncio.sleep(SCAN_INTERVAL.total_seconds())
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
     sharesight = hass.data[DOMAIN]
+    data = await get_data(sharesight)
+
     sensors = [
-        SharesightSensor(sharesight, entry, "valuation"),
-        # Add more sensors as needed
+        SharesightSensor(sharesight, entry, "valuation", data, "value"),
     ]
     async_add_entities(sensors, True)
 
-    # Set up a timer to update the sensor every 5 minutes
+    hass.loop.create_task(fetch_and_update_data(hass, sharesight, entry, sensors))
 
 
 class SharesightSensor(Entity):
-    def __init__(self, sharesight, entry, sensor_type):
+    def __init__(self, sharesight, entry, sensor_type, data, datapoint):
+        self.datapoint = datapoint
+        self.data = data
+        self.entry = entry
         self._sharesight = sharesight
         self._state = None
         self._sensor_type = sensor_type
@@ -66,16 +114,13 @@ class SharesightSensor(Entity):
             "entry_type": DeviceEntryType.SERVICE,
         }
 
+    def update_data(self, data):
+        self.data = data
+        self.async_write_ha_state()
+
     async def async_update(self):
-        _LOGGER.info(f"CALLING DATA for {self._sensor_type}")
-        access_token = await self._sharesight.validate_token()
-        endpoint = f"portfolios/{PORTFOLIO_ID}/{self._sensor_type}"
-        _LOGGER.info(f"CODE IS: {access_token}")
-        _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
-        data = await self._sharesight.get_api_request(endpoint, API_VERSION, access_token)
-        _LOGGER.info(f"DATA IS {data}")
-        if data:
-            self._state = data.get("value", None)
+        if self.data:
+            self._state = self.data.get(self.datapoint, None)
             if self._state is not None:
                 self._state = float(self._state)
                 _LOGGER.info(f"VALUE IS: {self._state}")
