@@ -59,8 +59,9 @@ async def fetch_and_update_data(hass, sharesight, entry, sensors):
 
 async def async_setup_entry(hass, entry, async_add_entities):
     sharesight = hass.data[DOMAIN]
+    _LOGGER.info(f"GETTING INITIAL DATA")
     data = await get_data(sharesight)
-
+    _LOGGER.info(f"GETTING INITIAL DATA - COMPLETE")
     sensors = [
         SharesightSensor(sharesight, entry, "valuation", data, "value"),
     ]
