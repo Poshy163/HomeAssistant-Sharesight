@@ -28,8 +28,9 @@ async def merge_dicts(d1, d2):
     return d1
 
 
-async def get_data(sharesight):
+async def get_data(sharesight, called_from):
     access_token = await sharesight.validate_token()
+    _LOGGER.info(f"CALLED FROM: {called_from}")
     _LOGGER.info(f"CODE IS: {access_token}")
     _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
     v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
@@ -49,7 +50,7 @@ async def get_data(sharesight):
 
 async def fetch_and_update_data(hass, sharesight, entry, sensors):
     while True:
-        data = await get_data(sharesight)
+        data = await get_data(sharesight, "LOOP")
 
         for sensor in sensors:
             sensor.update_data(data)
@@ -60,10 +61,11 @@ async def fetch_and_update_data(hass, sharesight, entry, sensors):
 async def async_setup_entry(hass, entry, async_add_entities):
     sharesight = hass.data[DOMAIN]
     _LOGGER.info(f"GETTING INITIAL DATA")
-    data = await get_data(sharesight)
+    data = await get_data(sharesight, "SETUP ENTRY")
     _LOGGER.info(f"GETTING INITIAL DATA - COMPLETE")
     sensors = [
         SharesightSensor(sharesight, entry, "valuation", data, "value"),
+        SharesightSensor(sharesight, entry, "valuation", data, "total_gain"),
     ]
     async_add_entities(sensors, True)
 
@@ -78,9 +80,9 @@ class SharesightSensor(Entity):
         self._sharesight = sharesight
         self._state = None
         self._sensor_type = sensor_type
-        self._name = "Portfolio value"
-        self._unique_id = f"{PORTFOLIO_ID}_value_{API_VERSION}"
-        self._entry_id = f"{PORTFOLIO_ID}_value"
+        self._name = f"Portfolio {datapoint}"
+        self._unique_id = f"{PORTFOLIO_ID}_{datapoint}_{API_VERSION}"
+        self._entry_id = f"{PORTFOLIO_ID}_{datapoint}"
 
     @property
     def name(self):
