@@ -13,7 +13,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     sharesight = SharesightAPI.SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL, TOKEN_URL,
                                              API_URL_BASE, token_file, True)
-    await sharesight.initialize()
+    await sharesight.get_token_data()
     hass.data[DOMAIN] = sharesight
 
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])

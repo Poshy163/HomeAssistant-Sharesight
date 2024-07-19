@@ -15,7 +15,7 @@ import asyncio
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
-SCAN_INTERVAL = timedelta(minutes=1)
+SCAN_INTERVAL = timedelta(minutes=5)
 
 endpoint_list_version = "v2"
 
@@ -29,33 +29,30 @@ async def merge_dicts(d1, d2):
     return d1
 
 
-async def get_data(sharesight, called_from):
-    access_token = await sharesight.validate_token()
-    try:
-        _LOGGER.info(f"CALLED FROM: {called_from}")
-        _LOGGER.info(f"CODE IS: {access_token}")
-        _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
-        v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
-                            f"portfolios/{PORTFOLIO_ID}/valuation", "memberships",
-                            f"portfolios/{PORTFOLIO_ID}/trades", f"portfolios/{PORTFOLIO_ID}/payouts", "cash_accounts",
-                            "user_instruments", "currencies", "my_user.json"]
-        combined_dict = {}
-        for endpoint in v2_endpoint_list:
-            _LOGGER.info(f"Calling {endpoint}")
-            response = await sharesight.get_api_request(endpoint, API_VERSION, access_token)
-            combined_dict = await merge_dicts(combined_dict, response)
-
-        _LOGGER.info(f"DATA RECEIVED")
-        data = combined_dict
-        return data
-    except Exception as e:
-        _LOGGER.error(e)
-        return None
-
-
 async def fetch_and_update_data(hass, sharesight, entry, sensors):
     while True:
-        data = await get_data(sharesight, "LOOP")
+        await sharesight.get_token_data()
+        access_token = await sharesight.validate_token()
+        try:
+            _LOGGER.info(f"CALLED FROM: update loop")
+            _LOGGER.info(f"ACCESS CODE IS: {access_token}")
+            _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
+            v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
+                                f"portfolios/{PORTFOLIO_ID}/valuation", "memberships",
+                                f"portfolios/{PORTFOLIO_ID}/trades", f"portfolios/{PORTFOLIO_ID}/payouts",
+                                "cash_accounts",
+                                "user_instruments", "currencies", "my_user.json"]
+            combined_dict = {}
+            for endpoint in v2_endpoint_list:
+                _LOGGER.info(f"Calling {endpoint}")
+                response = await sharesight.get_api_request(endpoint, API_VERSION, access_token)
+                combined_dict = await merge_dicts(combined_dict, response)
+
+            _LOGGER.info(f"DATA RECEIVED")
+            data = combined_dict
+        except Exception as e:
+            _LOGGER.error(e)
+            data = None
 
         for sensor in sensors:
             sensor.update_data(data)
@@ -66,8 +63,31 @@ async def fetch_and_update_data(hass, sharesight, entry, sensors):
 async def async_setup_entry(hass, entry, async_add_entities):
     sharesight = hass.data[DOMAIN]
     _LOGGER.info(f"GETTING INITIAL DATA")
-    data = await get_data(sharesight, "SETUP ENTRY")
-    _LOGGER.info(f"GETTING INITIAL DATA - COMPLETE")
+
+    await sharesight.get_token_data()
+    access_token = await sharesight.validate_token()
+    try:
+        _LOGGER.info(f"CALLED FROM: STARTUP BOOT")
+        _LOGGER.info(f"ACCESS CODE IS: {access_token}")
+        _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
+        v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
+                            f"portfolios/{PORTFOLIO_ID}/valuation", "memberships",
+                            f"portfolios/{PORTFOLIO_ID}/trades", f"portfolios/{PORTFOLIO_ID}/payouts",
+                            "cash_accounts",
+                            "user_instruments", "currencies", "my_user.json"]
+        combined_dict = {}
+        for endpoint in v2_endpoint_list:
+            _LOGGER.info(f"Calling {endpoint}")
+            response = await sharesight.get_api_request(endpoint, API_VERSION, access_token)
+            combined_dict = await merge_dicts(combined_dict, response)
+
+        _LOGGER.info(f"GETTING INITIAL DATA - COMPLETE")
+        data = combined_dict
+
+    except Exception as e:
+        _LOGGER.error(f"GETTING INITIAL DATA - FAILED")
+        _LOGGER.error(e)
+        data = None
     sensors = [
         SharesightSensor(sharesight, entry, "valuation", data, "value"),
         SharesightSensor(sharesight, entry, "valuation", data, "total_gain"),
