@@ -12,6 +12,7 @@ from .const import PORTFOLIO_ID, API_VERSION
 from datetime import timedelta
 import logging
 import asyncio
+from .enum import SENSOR_DESCRIPTIONS
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -88,27 +89,29 @@ async def async_setup_entry(hass, entry, async_add_entities):
         _LOGGER.error(f"GETTING INITIAL DATA - FAILED")
         _LOGGER.error(e)
         data = None
-    sensors = [
-        SharesightSensor(sharesight, entry, "valuation", data, "value"),
-        SharesightSensor(sharesight, entry, "valuation", data, "total_gain"),
-        SharesightSensor(sharesight, entry, "percent", data, "total_gain_percent"),
-    ]
+
+    sensors = []
+
+    for sensor in SENSOR_DESCRIPTIONS:
+        sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement, data, sensor.device_class, sensor.name, sensor.key))
+
     async_add_entities(sensors, True)
 
     hass.loop.create_task(fetch_and_update_data(hass, sharesight, entry, sensors))
 
 
 class SharesightSensor(Entity):
-    def __init__(self, sharesight, entry, sensor_type, data, datapoint):
-        self.datapoint = datapoint
+    def __init__(self, sharesight, entry, native_unit_of_measurement, data, device_class, name, key):
+        self.datapoint = key
         self.data = data
         self.entry = entry
         self._sharesight = sharesight
         self._state = None
-        self._sensor_type = sensor_type
-        self._name = f"Portfolio {datapoint}"
-        self._unique_id = f"{PORTFOLIO_ID}_{datapoint}_{API_VERSION}"
-        self._entry_id = f"{PORTFOLIO_ID}_{datapoint}"
+        self._native_unit_of_measurement = native_unit_of_measurement
+        self._device_class = device_class
+        self._name = name
+        self._unique_id = f"{PORTFOLIO_ID}_{key}_{API_VERSION}"
+        self._entry_id = f"{PORTFOLIO_ID}_{key}"
 
     @property
     def name(self):
@@ -124,19 +127,11 @@ class SharesightSensor(Entity):
 
     @property
     def unit_of_measurement(self):
-        if self._sensor_type == "valuation":
-            return CURRENCY_DOLLAR
-        if self._sensor_type == "percent":
-            return PERCENTAGE
-        return None
+        return self._native_unit_of_measurement
 
     @property
     def device_class(self):
-        if self._sensor_type == "valuation":
-            return SensorDeviceClass.MONETARY
-        if self._sensor_type == "percent":
-            return NumberDeviceClass.MOISTURE
-        return None
+        return self._device_class
 
     @property
     def device_info(self):
@@ -149,15 +144,15 @@ class SharesightSensor(Entity):
 
     def update_data(self, data):
         self.data = data
-        self.async_write_ha_state()
-
-    async def async_update(self):
         if self.data:
             self._state = self.data.get(self.datapoint, None)
             if self._state is not None:
                 self._state = float(self._state)
-                _LOGGER.info(f"VALUE IS: {self._state}")
             else:
-                _LOGGER.warning("Value is None")
+                _LOGGER.warning(f"Requested value for '{self.datapoint}' is None")
         else:
             _LOGGER.warning("No data received from Sharesight API")
+        self.async_write_ha_state()
+
+
+
