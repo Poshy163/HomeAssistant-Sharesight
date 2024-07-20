@@ -27,7 +27,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         key="total_gain_percent",
         name="Total Gain Percent",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=NumberDeviceClass.MOISTURE,
+        device_class=SensorDeviceClass.MONETARY,
     ),
     SharesightSensorDescription(
         key="currency_gain",

@@ -1,12 +1,6 @@
-from homeassistant.components.number import NumberDeviceClass
+
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import Entity
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
-from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE
 from . import DOMAIN
 from .const import PORTFOLIO_ID, API_VERSION
 from datetime import timedelta
@@ -30,7 +24,7 @@ async def merge_dicts(d1, d2):
     return d1
 
 
-async def fetch_and_update_data(hass, sharesight, entry, sensors):
+async def fetch_and_update_data(sharesight, sensors):
     while True:
         await sharesight.get_token_data()
         access_token = await sharesight.validate_token()
@@ -97,7 +91,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     async_add_entities(sensors, True)
 
-    hass.loop.create_task(fetch_and_update_data(hass, sharesight, entry, sensors))
+    for sensor in sensors:
+        sensor.update_data(data)
+
+    hass.loop.create_task(fetch_and_update_data(sharesight, sensors))
 
 
 class SharesightSensor(Entity):
@@ -153,6 +150,3 @@ class SharesightSensor(Entity):
         else:
             _LOGGER.warning("No data received from Sharesight API")
         self.async_write_ha_state()
-
-
-
