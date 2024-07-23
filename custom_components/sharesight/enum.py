@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Callable, List, Union
 from homeassistant.components.sensor import SensorEntityDescription, SensorDeviceClass
 from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE
-from homeassistant.components.number import NumberDeviceClass
 
 
 @dataclass

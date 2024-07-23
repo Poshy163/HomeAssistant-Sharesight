@@ -19,7 +19,7 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 return self.async_create_entry(title=f"Sharesight portfolio", data=user_input)
-            except Exception as e:
+            except Exception:
                 errors["base"] = "auth"
 
         return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
@@ -34,7 +34,7 @@ class SharesightOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry):
         self.config_entry = config_entry
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(self):
         return await self.async_step_user()
 
     async def async_step_user(self, user_input=None):
@@ -43,7 +43,7 @@ class SharesightOptionsFlowHandler(config_entries.OptionsFlow):
             try:
                 # Validate input (optional: add any validation logic here)
                 return self.async_create_entry(title="", data=user_input)
-            except Exception as e:
+            except Exception:
                 errors["base"] = "auth"  # Change this based on specific errors you want to catch
 
         data_schema = vol.Schema({

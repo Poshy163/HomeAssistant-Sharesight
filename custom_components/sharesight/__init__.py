@@ -1,7 +1,7 @@
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from SharesightAPI import SharesightAPI
-from .const import DOMAIN, PORTFOLIO_ID, TOKEN_URL, REDIRECT_URL, API_URL_BASE
+from .const import DOMAIN, PORTFOLIO_ID, TOKEN_URL, REDIRECT_URL, API_URL_BASE, PLATFORMS
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
@@ -16,7 +16,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     await sharesight.get_token_data()
     hass.data[DOMAIN] = sharesight
 
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
