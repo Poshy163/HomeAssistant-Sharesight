@@ -27,12 +27,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator: SharesightCoordinator = hass.data[DOMAIN][entry.entry_id]
     sharesight = hass.data[DOMAIN]
     sensors = []
-
     for sensor in SENSOR_DESCRIPTIONS:
         _LOGGER.info(f"PARSING VALUE: {sensor.key}")
         sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
-                                        sensor.device_class, sensor.name, sensor.key, coordinator))
-
+                                        sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator))
     async_add_entities(sensors, True)
 
     return
@@ -43,9 +41,9 @@ async def get_port_id():
 
 
 class SharesightSensor(CoordinatorEntity, Entity):
-    def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, coordinator):
+    def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, state, coordinator):
         super().__init__(coordinator)
-        self._state = None
+        self._state = state
         self._coordinator = coordinator
         self.portfolioID = PORTFOLIO_ID
         self.datapoint = key
