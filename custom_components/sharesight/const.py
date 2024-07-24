@@ -18,6 +18,3 @@ async def set_portfolio_id(portfolio_num):
 
 async def get_portfolio_id():
     return PORTFOLIO_ID
-
-
-
