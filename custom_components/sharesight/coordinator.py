@@ -30,7 +30,6 @@ class SharesightCoordinator(DataUpdateCoordinator):
         portfolioID = await get_portfolio_id()
         await self.sharesight.get_token_data()
         access_token = await self.sharesight.validate_token()
-        _LOGGER.info(f"PORTFOLIO ID IS: {portfolioID}")
         combined_dict = {}
 
         v2_endpoint_list = [
@@ -46,8 +45,6 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
             _LOGGER.info("DATA RECEIVED")
             self.data = combined_dict
-            return self.data
         except Exception as e:
             _LOGGER.error(e)
             self.data = None
-            return self.data

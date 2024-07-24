@@ -18,8 +18,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     token_file = "HA.txt"
     await set_portfolio_id(portfolio_id)
 
-    _LOGGER.info("PORTFOLIO ID IS", PORTFOLIO_ID)
-
     client = SharesightAPI.SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL, TOKEN_URL,
                                          API_URL_BASE, token_file, True)
     await client.get_token_data()

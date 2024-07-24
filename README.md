@@ -13,7 +13,7 @@ This allows you to monitor your sharesight portfolio value, currently supports:
 
 ## Installation using HACS
 
-1. Use [HACS](https://hacs.xyz/docs/setup/download), in `HACS > Integrations > Hamburger Menu > Custom Repositories add https://github.com/Poshy163/HomeAssistant-Sharesightwith category set to integration.
+1. Use [HACS](https://hacs.xyz/docs/setup/download), in `HACS > Integrations > Hamburger Menu > Custom Repositories add https://github.com/Poshy163/HomeAssistant-Sharesight with category set to integration.
 2. in `HACS > Integrations > Explore & Add Repositories` search for "Sharesight". 
 3. Restart Home Assistant.
 4. Enable Advanced Mode using Profile (click on your username at the bottom of the navigation column) -> Advanced Mode -> On
