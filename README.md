@@ -4,6 +4,7 @@
 
 ## Currently only supports custom installation 
 
-Real basic at the moment, input your info, and it prints to the LOGS
+Currently, only supports displaying some major information to the integration panel
 
 
+## It is planned to add it to HACS once the full functionality is done
