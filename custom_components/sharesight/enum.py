@@ -13,7 +13,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="portfolio_id",
         name="Portfolio ID",
-        native_unit_of_measurement=None ,
+        native_unit_of_measurement=None,
         device_class=None,
         state_class=None
     ),
