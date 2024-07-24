@@ -1,18 +1,17 @@
-
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import Entity
 from . import DOMAIN
-from .const import PORTFOLIO_ID, API_VERSION
-from datetime import timedelta
+from .const import API_VERSION, get_portfolio_id, PORTFOLIO_ID
 import logging
-import asyncio
 from .enum import SENSOR_DESCRIPTIONS
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+)
+
+from .coordinator import SharesightCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
-
-SCAN_INTERVAL = timedelta(minutes=5)
-
-endpoint_list_version = "v2"
 
 
 async def merge_dicts(d1, d2):
@@ -24,95 +23,53 @@ async def merge_dicts(d1, d2):
     return d1
 
 
-async def fetch_and_update_data(sharesight, sensors):
-    while True:
-        await sharesight.get_token_data()
-        access_token = await sharesight.validate_token()
-        try:
-            _LOGGER.info(f"CALLED FROM: update loop")
-            _LOGGER.info(f"ACCESS CODE IS: {access_token}")
-            _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
-            v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
-                                f"portfolios/{PORTFOLIO_ID}/valuation", "memberships",
-                                f"portfolios/{PORTFOLIO_ID}/trades", f"portfolios/{PORTFOLIO_ID}/payouts",
-                                "cash_accounts",
-                                "user_instruments", "currencies", "my_user.json"]
-            combined_dict = {}
-            for endpoint in v2_endpoint_list:
-                _LOGGER.info(f"Calling {endpoint}")
-                response = await sharesight.get_api_request(endpoint, API_VERSION, access_token)
-                combined_dict = await merge_dicts(combined_dict, response)
-
-            _LOGGER.info(f"DATA RECEIVED")
-            data = combined_dict
-        except Exception as e:
-            _LOGGER.error(e)
-            data = None
-
-        for sensor in sensors:
-            sensor.update_data(data)
-
-        await asyncio.sleep(SCAN_INTERVAL.total_seconds())
-
-
 async def async_setup_entry(hass, entry, async_add_entities):
+    coordinator: SharesightCoordinator = hass.data[DOMAIN][entry.entry_id]
     sharesight = hass.data[DOMAIN]
-    _LOGGER.info(f"GETTING INITIAL DATA")
-
-    await sharesight.get_token_data()
-    access_token = await sharesight.validate_token()
-    try:
-        _LOGGER.info(f"CALLED FROM: STARTUP BOOT")
-        _LOGGER.info(f"ACCESS CODE IS: {access_token}")
-        _LOGGER.info(f"PORTFOLIO ID IS: {PORTFOLIO_ID}")
-        v2_endpoint_list = ["portfolios", "groups", f"portfolios/{PORTFOLIO_ID}/performance",
-                            f"portfolios/{PORTFOLIO_ID}/valuation", "memberships",
-                            f"portfolios/{PORTFOLIO_ID}/trades", f"portfolios/{PORTFOLIO_ID}/payouts",
-                            "cash_accounts",
-                            "user_instruments", "currencies", "my_user.json"]
-        combined_dict = {}
-        for endpoint in v2_endpoint_list:
-            _LOGGER.info(f"Calling {endpoint}")
-            response = await sharesight.get_api_request(endpoint, API_VERSION, access_token)
-            combined_dict = await merge_dicts(combined_dict, response)
-
-        _LOGGER.info(f"GETTING INITIAL DATA - COMPLETE")
-        data = combined_dict
-
-    except Exception as e:
-        _LOGGER.error(f"GETTING INITIAL DATA - FAILED")
-        _LOGGER.error(e)
-        data = None
-
     sensors = []
 
     for sensor in SENSOR_DESCRIPTIONS:
-        sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement, data, sensor.device_class, sensor.name, sensor.key))
+        _LOGGER.info(f"PARSING VALUE: {sensor.key}")
+        sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
+                                        sensor.device_class, sensor.name, sensor.key, coordinator))
 
     async_add_entities(sensors, True)
 
-    for sensor in sensors:
-        sensor.update_data(data)
-
-    hass.loop.create_task(fetch_and_update_data(sharesight, sensors))
+    return
 
 
-class SharesightSensor(Entity):
-    def __init__(self, sharesight, entry, native_unit_of_measurement, data, device_class, name, key):
+async def get_port_id():
+    return await get_portfolio_id()
+
+
+class SharesightSensor(CoordinatorEntity, Entity):
+    def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, coordinator):
+        super().__init__(coordinator)
+        self._state = None
+        self._coordinator = coordinator
+        self.portfolioID = PORTFOLIO_ID
         self.datapoint = key
-        self.data = data
+        _LOGGER.info(f"NEW SENSOR WITH KEY: {self.datapoint}")
         self.entry = entry
         self._sharesight = sharesight
-        self._state = None
         self._native_unit_of_measurement = native_unit_of_measurement
         self._device_class = device_class
         self._name = name
-        self._unique_id = f"{PORTFOLIO_ID}_{key}_{API_VERSION}"
-        self._entry_id = f"{PORTFOLIO_ID}_{key}"
+        self._unique_id = f"{self.portfolioID}_{key}_{API_VERSION}"
+        self._entry_id = f"{self.portfolioID}_{key}"
+
+    @callback
+    def _handle_coordinator_update(self):
+        self._state = self._coordinator.data[self.datapoint]
+        self.async_write_ha_state()
 
     @property
     def name(self):
         return self._name
+
+    @property
+    def native_value(self):
+        return self._coordinator.data[self.datapoint]
 
     @property
     def state(self):
@@ -133,20 +90,8 @@ class SharesightSensor(Entity):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, PORTFOLIO_ID)},
-            "name": f"Sharesight Portfolio {PORTFOLIO_ID}",
+            "identifiers": {(DOMAIN, self.portfolioID)},
+            "name": f"Sharesight Portfolio {self.portfolioID}",
             "model": f"Sharesight API {API_VERSION}",
             "entry_type": DeviceEntryType.SERVICE,
         }
-
-    def update_data(self, data):
-        self.data = data
-        if self.data:
-            self._state = self.data.get(self.datapoint, None)
-            if self._state is not None:
-                self._state = float(self._state)
-            else:
-                _LOGGER.warning(f"Requested value for '{self.datapoint}' is None")
-        else:
-            _LOGGER.warning("No data received from Sharesight API")
-        self.async_write_ha_state()

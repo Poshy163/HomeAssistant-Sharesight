@@ -15,6 +15,11 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         name="Portfolio Value",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
+    ),SharesightSensorDescription(
+        key="value",
+        name="Portfolio Value",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
     ),
     SharesightSensorDescription(
         key="total_gain",
@@ -34,4 +39,10 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
     ),
+    SharesightSensorDescription(
+        key="payout_gain",
+        name="Payout Gain",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+    )
 ]
