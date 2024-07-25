@@ -33,9 +33,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
         combined_dict = {}
 
         v2_endpoint_list = [
-            "portfolios", "groups", f"portfolios/{portfolioID}/performance",
-            f"portfolios/{portfolioID}/valuation",
-            f"portfolios/{portfolioID}/trades"
+            f"portfolios/{portfolioID}/performance",
+            f"portfolios/{portfolioID}/valuation"
         ]
         try:
             for endpoint in v2_endpoint_list:
@@ -45,6 +44,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
             _LOGGER.info("DATA RECEIVED")
             self.data = combined_dict
+            return self.data
         except Exception as e:
             _LOGGER.error(e)
             self.data = None
+            return self.data
