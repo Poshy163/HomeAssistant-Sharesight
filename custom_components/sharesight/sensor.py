@@ -1,3 +1,4 @@
+from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import Entity
@@ -26,11 +27,17 @@ async def merge_dicts(d1, d2):
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator: SharesightCoordinator = hass.data[DOMAIN][entry.entry_id]
     sharesight = hass.data[DOMAIN]
+
+    local_currency = coordinator.data['portfolios'][0]['currency_code']
+    _LOGGER.info(f"USING CURRENCY: {local_currency}")
+
     sensors = []
+
     for sensor in SENSOR_DESCRIPTIONS:
         _LOGGER.info(f"PARSING VALUE: {sensor.key}")
         sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
-                                        sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator))
+                                        sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator,
+                                        local_currency))
     async_add_entities(sensors, True)
 
     return
@@ -41,7 +48,8 @@ async def get_port_id():
 
 
 class SharesightSensor(CoordinatorEntity, Entity):
-    def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, state, coordinator):
+    def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, state, coordinator,
+                 currency):
         super().__init__(coordinator)
         self._state = state
         self._coordinator = coordinator
@@ -54,7 +62,9 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self._device_class = device_class
         self._name = name
         self._unique_id = f"{self.portfolioID}_{key}_{API_VERSION}"
-        self._entry_id = f"{self.portfolioID}_{key}"
+        self._entry_id = f"{key}_{self.portfolioID}"
+        self._state = coordinator.data[self.datapoint]
+        self.currency = currency
 
     @callback
     def _handle_coordinator_update(self):
@@ -79,7 +89,11 @@ class SharesightSensor(CoordinatorEntity, Entity):
 
     @property
     def unit_of_measurement(self):
-        return self._native_unit_of_measurement
+        if self._native_unit_of_measurement == CURRENCY_DOLLAR:
+            self._native_unit_of_measurement = self.currency
+            return self._native_unit_of_measurement
+        else:
+            return self._native_unit_of_measurement
 
     @property
     def device_class(self):

@@ -33,6 +33,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
         combined_dict = {}
 
         v2_endpoint_list = [
+            "portfolios",
             f"portfolios/{portfolioID}/performance",
             f"portfolios/{portfolioID}/valuation"
         ]
