@@ -9,39 +9,77 @@ class SharesightSensorDescription(SensorEntityDescription):
     native_value: Union[Callable[[Union[str, int, float]], Union[str, int, float]], None] = None
 
 
+MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
+    SharesightSensorDescription(
+        key="sub_totals",
+        name="MARKET value",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=None
+    )
+]
+
 SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="value",
-        name="Portfolio Value",
+        name="Portfolio value",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
     ),
     SharesightSensorDescription(
+        key="capital_gain",
+        name="Capital gain",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=None
+    ),
+    SharesightSensorDescription(
+        key="capital_gain_percent",
+        name="Capital gain percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=None
+    ),
+    SharesightSensorDescription(
         key="total_gain",
-        name="Total Gain",
+        name="Total gain",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
     ),
     SharesightSensorDescription(
         key="total_gain_percent",
-        name="Total Gain Percent",
+        name="Total gain percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
     ),
     SharesightSensorDescription(
         key="currency_gain",
-        name="Currency Gain",
+        name="Currency gain",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
     ),
     SharesightSensorDescription(
+        key="currency_gain_percent",
+        name="Currency gain percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=None
+    ),
+    SharesightSensorDescription(
         key="payout_gain",
-        name="Payout Gain",
+        name="Payout gain",
         native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=None
+    ),
+    SharesightSensorDescription(
+        key="payout_gain_percent",
+        name="Payout gain percent",
+        native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
     )
