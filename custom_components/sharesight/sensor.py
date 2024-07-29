@@ -27,14 +27,9 @@ async def merge_dicts(d1, d2):
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator: SharesightCoordinator = hass.data[DOMAIN][entry.entry_id]
     sharesight = hass.data[DOMAIN]
-
     local_currency = coordinator.data['portfolios'][0]['currency_code']
-    _LOGGER.info(f"USING CURRENCY: {local_currency}")
-
     sensors = []
-
     for sensor in SENSOR_DESCRIPTIONS:
-        _LOGGER.info(f"PARSING VALUE: {sensor.key}")
         sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
                                         sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator,
                                         local_currency))

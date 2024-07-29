@@ -41,10 +41,9 @@ class SharesightOptionsFlowHandler(config_entries.OptionsFlow):
         errors = {}
         if user_input is not None:
             try:
-                # Validate input (optional: add any validation logic here)
                 return self.async_create_entry(title="", data=user_input)
             except Exception:
-                errors["base"] = "auth"  # Change this based on specific errors you want to catch
+                errors["base"] = "auth"
 
         data_schema = vol.Schema({
             vol.Required("client_id", default=self.config_entry.data.get("client_id")): str,
