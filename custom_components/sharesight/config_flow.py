@@ -18,7 +18,7 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                return self.async_create_entry(title=f"Sharesight portfolio", data=user_input)
+                return self.async_create_entry(title=f"Sharesight portfolio: {user_input["portfolio_id"]}", data=user_input)
             except Exception:
                 errors["base"] = "auth"
 
