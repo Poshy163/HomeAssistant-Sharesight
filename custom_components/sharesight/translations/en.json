@@ -7,7 +7,7 @@
                     "client_secret": "Client Secret",
                     "portfolio_id": "Portfolio ID",
                     "authorization_code": "Authorization Code",
-                    "use_edge_url": "Use edge URLs"
+                    "use_edge_url": "Use edge API (Developer account)"
                 },
                 "description": "Please enter your Sharesight API credentials.",
                 "title": "Sharesight Integration Setup"
@@ -25,7 +25,7 @@
                     "client_secret": "Client Secret",
                     "portfolio_id": "Portfolio ID",
                     "authorization_code": "Authorization Code",
-                     "use_edge_url": "Use edge URLs"
+                     "use_edge_url": "Use edge API (Developer account)"
                 },
                 "title": "Adjust your Sharesight integration settings",
                 "description": "Update your Sharesight credentials and settings as needed."

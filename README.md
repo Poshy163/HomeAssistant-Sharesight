@@ -2,14 +2,24 @@
 ![Project Stage](https://img.shields.io/badge/project%20stage-in%20production-green.svg?style=for-the-badge)
 ![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)
 
+
+Supports both normal sharesight accounts, and edge accounts (developer accounts)
+
 ## Services
 This allows you to monitor your sharesight portfolio value, currently supports:
-- Payout Gain
+- Dividend Gain
+- Dividend Gain Percent
 - Currency Gain
-- Total Gain Percent
+- Currency Gain Percent
 - Total Gain
+- Total Gain Percent
+- Capital Gain
+- Capital Gain Percent
 - Portfolio Value
+- Market Value (for each market you hold shares in, shown in local currency)
 
+
+Get API details by following these steps here: https://portfolio.sharesight.com/api/
 
 ## Installation using HACS
 
