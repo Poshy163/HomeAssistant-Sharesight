@@ -4,7 +4,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import Entity
 
 from . import DOMAIN
-from .const import API_VERSION, get_portfolio_id, PORTFOLIO_ID
+from .const import API_VERSION
 import logging
 from .enum import SENSOR_DESCRIPTIONS, MARKET_SENSOR_DESCRIPTIONS
 from homeassistant.helpers.update_coordinator import (
@@ -19,13 +19,14 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator: SharesightCoordinator = hass.data[DOMAIN][entry.entry_id]
     sharesight = hass.data[DOMAIN]
+    portfolio_id = hass.data[DOMAIN]["portfolio_id"]
     local_currency = coordinator.data['portfolios'][0]['currency_code']
     markets = coordinator.data['sub_totals']
     sensors = []
     for sensor in SENSOR_DESCRIPTIONS:
         sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
                                         sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator,
-                                        local_currency))
+                                        local_currency, portfolio_id))
 
     market_codes = []
     index = 0
@@ -38,25 +39,20 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                             market_sensor.device_class, market_sensor.name, market_sensor.key,
                                             market_sensor.state_class,
                                             coordinator,
-                                            local_currency))
+                                            local_currency, portfolio_id))
             index += 1
 
     async_add_entities(sensors, True)
-
     return
-
-
-async def get_port_id():
-    return await get_portfolio_id()
 
 
 class SharesightSensor(CoordinatorEntity, Entity):
     def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, state, coordinator,
-                 currency):
+                 currency, portfolio_id):
         super().__init__(coordinator)
         self._state = state
         self._coordinator = coordinator
-        self.portfolioID = PORTFOLIO_ID
+        self.portfolioID = portfolio_id
         self.datapoint = []
         self.key = key
 

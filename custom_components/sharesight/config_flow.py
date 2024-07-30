@@ -14,6 +14,7 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required("client_secret"): str,
             vol.Required("portfolio_id"): str,
             vol.Required("authorization_code"): str,
+            vol.Required("use_edge_url"): bool,
         })
 
         if user_input is not None:
@@ -50,6 +51,7 @@ class SharesightOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Required("client_secret", default=self.config_entry.data.get("client_secret")): str,
             vol.Required("portfolio_id", default=self.config_entry.data.get("portfolio_id")): str,
             vol.Required("authorization_code", default=self.config_entry.data.get("authorization_code")): str,
+            vol.Required("use_edge_url", default=self.config_entry.data.get("use_edge_urls")): bool,
         })
 
         return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
