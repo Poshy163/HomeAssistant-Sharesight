@@ -71,14 +71,14 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     ),
     SharesightSensorDescription(
         key="payout_gain",
-        name="Payout gain",
+        name="Dividend gain",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
     ),
     SharesightSensorDescription(
         key="payout_gain_percent",
-        name="Payout gain percent",
+        name="Dividend gain percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
