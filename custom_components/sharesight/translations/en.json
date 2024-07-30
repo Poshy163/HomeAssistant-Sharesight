@@ -14,7 +14,8 @@
             }
         },
         "error": {
-            "auth": "Authentication error, please check your credentials."
+            "auth": "Authentication error, please check your credentials.",
+            "other": "Something has gone very wrong if you can see this"
         }
     },
     "options": {

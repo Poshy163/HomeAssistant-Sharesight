@@ -21,7 +21,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     sharesight = hass.data[DOMAIN]
     portfolio_id = hass.data[DOMAIN]["portfolio_id"]
     local_currency = coordinator.data['portfolios'][0]['currency_code']
-    markets = coordinator.data['sub_totals']
     sensors = []
     for sensor in SENSOR_DESCRIPTIONS:
         sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
@@ -30,7 +29,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     market_codes = []
     index = 0
-    for market in markets:
+    for market in coordinator.data['sub_totals']:
         for market_sensor in MARKET_SENSOR_DESCRIPTIONS:
             market_codes.append(market['market'])
             market_sensor.name = f"{market['market']} value"
@@ -54,13 +53,15 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self._coordinator = coordinator
         self.portfolioID = portfolio_id
         self.datapoint = []
+        self._name = f"{name}"
         self.key = key
-
         if "sub_totals" in self.key and "value" in self.key:
             parts = self.key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
+            self.entity_id = f"sensor.{name.lower().replace(' ', '_')}_{self.portfolioID}"
             _LOGGER.info(f"NEW SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
         else:
+            self.entity_id = f"sensor.{key}_{self.portfolioID}"
             self.datapoint.append(key)
             self._state = coordinator.data[self.datapoint[0]]
             _LOGGER.info(f"NEW SENSOR WITH KEY: {self.datapoint[0]}")
@@ -69,9 +70,9 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self._sharesight = sharesight
         self._native_unit_of_measurement = native_unit_of_measurement
         self._device_class = device_class
-        self._name = name
+
         self._unique_id = f"{self.portfolioID}_{key}_{API_VERSION}"
-        self._entry_id = f"{key}_{self.portfolioID}"
+
         self.currency = currency
 
     @callback
