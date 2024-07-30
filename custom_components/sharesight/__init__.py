@@ -21,7 +21,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     client_secret = entry.data["client_secret"]
     authorization_code = entry.data["authorization_code"]
     use_edge = entry.data["use_edge_url"]
-    _LOGGER.info(f"USING {use_edge}")
     token_file = "HA.txt"
 
     if not use_edge:
@@ -55,10 +54,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _LOGGER.info(f"Removing Sharesight integration: {entry.entry_id}")
-    if entry.entry_id in hass.data[DOMAIN]:
-        hass.data[DOMAIN].pop(entry.entry_id)
     sharesight = hass.data[DOMAIN]["sharesight_client"]
     await sharesight.delete_token()
+    if entry.entry_id in hass.data[DOMAIN]:
+        hass.data[DOMAIN].pop(entry.entry_id)
     return
 
 

@@ -2,17 +2,11 @@ from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import Entity
-
-from . import DOMAIN
-from .const import API_VERSION
+from .const import API_VERSION, DOMAIN
 import logging
 from .enum import SENSOR_DESCRIPTIONS, MARKET_SENSOR_DESCRIPTIONS
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-)
-
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import SharesightCoordinator
-
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
@@ -57,7 +51,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
             parts = self.key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
             self.entity_id = f"sensor.{name.lower().replace(' ', '_')}_{self.portfolioID}"
-            _LOGGER.info(f"NEW SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
+            _LOGGER.info(f"NEW MARKET SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
         else:
             self.entity_id = f"sensor.{key}_{self.portfolioID}"
             self.datapoint.append(key)

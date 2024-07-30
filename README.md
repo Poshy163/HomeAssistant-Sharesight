@@ -4,7 +4,7 @@
 
 
 - Supports both normal sharesight accounts, and edge accounts (developer accounts)
-- To add additional markets, you need to refresh the integration manually
+- To add additional markets, you need to refresh the integration manually (working on making it automatic)
 
 ## Services
 This allows you to monitor your sharesight portfolio value, currently supports:
