@@ -27,11 +27,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                         sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator,
                                         local_currency, portfolio_id))
 
-    market_codes = []
     index = 0
     for market in coordinator.data['sub_totals']:
         for market_sensor in MARKET_SENSOR_DESCRIPTIONS:
-            market_codes.append(market['market'])
             market_sensor.name = f"{market['market']} value"
             market_sensor.key = f'sub_totals/{index}/value'
             sensors.append(SharesightSensor(sharesight, entry, market_sensor.native_unit_of_measurement,
@@ -70,9 +68,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self._sharesight = sharesight
         self._native_unit_of_measurement = native_unit_of_measurement
         self._device_class = device_class
-
         self._unique_id = f"{self.portfolioID}_{key}_{API_VERSION}"
-
         self.currency = currency
 
     @callback

@@ -3,7 +3,8 @@
 ![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)
 
 
-Supports both normal sharesight accounts, and edge accounts (developer accounts)
+- Supports both normal sharesight accounts, and edge accounts (developer accounts)
+- To add additional markets, you need to refresh the integration manually
 
 ## Services
 This allows you to monitor your sharesight portfolio value, currently supports:
@@ -17,6 +18,7 @@ This allows you to monitor your sharesight portfolio value, currently supports:
 - Capital Gain Percent
 - Portfolio Value
 - Market Value (for each market you hold shares in, shown in local currency)
+
 
 
 Get API details by following these steps here: https://portfolio.sharesight.com/api/
