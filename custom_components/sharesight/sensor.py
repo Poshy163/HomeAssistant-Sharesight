@@ -7,6 +7,7 @@ import logging
 from .enum import SENSOR_DESCRIPTIONS, MARKET_SENSOR_DESCRIPTIONS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import SharesightCoordinator
+
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
@@ -15,11 +16,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
     sharesight = hass.data[DOMAIN]
     portfolio_id = hass.data[DOMAIN]["portfolio_id"]
     local_currency = coordinator.data['portfolios'][0]['currency_code']
+    edge = hass.data[DOMAIN]["edge"]
     sensors = []
     for sensor in SENSOR_DESCRIPTIONS:
         sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
                                         sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator,
-                                        local_currency, portfolio_id, sensor.icon))
+                                        local_currency, portfolio_id, sensor.icon, edge))
 
     index = 0
     for market in coordinator.data['sub_totals']:
@@ -30,7 +32,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                             market_sensor.device_class, market_sensor.name, market_sensor.key,
                                             market_sensor.state_class,
                                             coordinator,
-                                            local_currency, portfolio_id, market_sensor.icon))
+                                            local_currency, portfolio_id, market_sensor.icon, edge))
             index += 1
 
     async_add_entities(sensors, True)
@@ -39,17 +41,18 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class SharesightSensor(CoordinatorEntity, Entity):
     def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, state, coordinator,
-                 currency, portfolio_id, icon):
+                 currency, portfolio_id, icon, edge):
         super().__init__(coordinator)
         self._state = state
         self._coordinator = coordinator
         self.portfolioID = portfolio_id
         self.datapoint = []
         self._name = f"{name}"
-        self.key = key
+        self._edge = edge
+        self._key = key
         self._icon = icon
-        if "sub_totals" in self.key and "value" in self.key:
-            parts = self.key.split('/')
+        if "sub_totals" in self._key and "value" in self._key:
+            parts = self._key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
             self.entity_id = f"sensor.{name.lower().replace(' ', '_')}_{self.portfolioID}"
             _LOGGER.info(f"NEW MARKET SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
@@ -68,8 +71,8 @@ class SharesightSensor(CoordinatorEntity, Entity):
 
     @callback
     def _handle_coordinator_update(self):
-        if "sub_totals" in self.key and "value" in self.key:
-            parts = self.key.split('/')
+        if "sub_totals" in self._key and "value" in self._key:
+            parts = self._key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
         else:
             self._state = self._coordinator.data[self.datapoint[0]]
@@ -101,12 +104,22 @@ class SharesightSensor(CoordinatorEntity, Entity):
 
     @property
     def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self.portfolioID)},
-            "name": f"Sharesight Portfolio {self.portfolioID}",
-            "model": f"Sharesight API {API_VERSION}",
-            "entry_type": DeviceEntryType.SERVICE,
-        }
+        if self._edge:
+            return {
+                "configuration_url": f"https://edge-portfolio.sharesight.com/portfolios/{self.portfolioID}",
+                "identifiers": {(DOMAIN, self.portfolioID)},
+                "name": f"Sharesight Edge Portfolio {self.portfolioID}",
+                "model": f"Sharesight EDGE API {API_VERSION}",
+                "entry_type": DeviceEntryType.SERVICE,
+            }
+        else:
+            return {
+                "configuration_url": f"https://portfolio.sharesight.com/portfolios/{self.portfolioID}",
+                "identifiers": {(DOMAIN, self.portfolioID)},
+                "name": f"Sharesight Portfolio {self.portfolioID}",
+                "model": f"Sharesight API {API_VERSION}",
+                "entry_type": DeviceEntryType.SERVICE,
+            }
 
     @property
     def icon(self):
