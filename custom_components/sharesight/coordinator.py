@@ -4,16 +4,23 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
+from typing import Dict, Any
+import itertools
+
+
 from .const import DOMAIN, SCAN_INTERVAL, API_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def merge_dicts(d1, d2):
-    for key in d2:
-        if key in d1 and isinstance(d1[key], dict) and isinstance(d2[key], dict):
-            await merge_dicts(d1[key], d2[key])
-        else:
+async def merge_dicts(d1: Dict[Any, Any], d2: Dict[Any, Any]) -> Dict[Any, Any]:
+    for key in itertools.chain(d1.keys(), d2.keys()):
+        if key in d1 and key in d2:
+            if isinstance(d1[key], dict) and isinstance(d2[key], dict):
+                d1[key] = await merge_dicts(d1[key], d2[key])
+            else:
+                d1[key] = d2[key]
+        elif key in d2:
             d1[key] = d2[key]
     return d1
 
