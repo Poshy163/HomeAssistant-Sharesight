@@ -19,7 +19,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     for sensor in SENSOR_DESCRIPTIONS:
         sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
                                         sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator,
-                                        local_currency, portfolio_id))
+                                        local_currency, portfolio_id, sensor.icon))
 
     index = 0
     for market in coordinator.data['sub_totals']:
@@ -30,7 +30,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                             market_sensor.device_class, market_sensor.name, market_sensor.key,
                                             market_sensor.state_class,
                                             coordinator,
-                                            local_currency, portfolio_id))
+                                            local_currency, portfolio_id, market_sensor.icon))
             index += 1
 
     async_add_entities(sensors, True)
@@ -39,7 +39,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class SharesightSensor(CoordinatorEntity, Entity):
     def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, state, coordinator,
-                 currency, portfolio_id):
+                 currency, portfolio_id, icon):
         super().__init__(coordinator)
         self._state = state
         self._coordinator = coordinator
@@ -47,6 +47,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self.datapoint = []
         self._name = f"{name}"
         self.key = key
+        self._icon = icon
         if "sub_totals" in self.key and "value" in self.key:
             parts = self.key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
@@ -106,3 +107,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
             "model": f"Sharesight API {API_VERSION}",
             "entry_type": DeviceEntryType.SERVICE,
         }
+
+    @property
+    def icon(self):
+        return self._icon
