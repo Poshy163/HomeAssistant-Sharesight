@@ -46,7 +46,10 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                                          EDGE_API_URL_BASE, token_file, True)
                 await client.get_token_data()
                 if await client.validate_token() is None:
-                    errors["base"] = "auth"
+                    if use_edge:
+                        errors["base"] = "auth_edge"
+                    else:
+                        errors["base"] = "auth"
                     return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
 
                 return self.async_create_entry(title=f"Sharesight portfolio: {user_input["portfolio_id"]}",

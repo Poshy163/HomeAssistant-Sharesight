@@ -15,6 +15,7 @@
         },
         "error": {
             "auth": "Authentication error, please check your credentials.",
+            "auth_edge": "Authentication error. Did you accidentally select Edge profile?",
             "other": "Something has gone very wrong if you can see this"
         }
     },
