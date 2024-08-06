@@ -9,6 +9,17 @@ class SharesightSensorDescription(SensorEntityDescription):
     native_value: Union[Callable[[Union[str, int, float]], Union[str, int, float]], None] = None
 
 
+CASH_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
+    SharesightSensorDescription(
+        key="sub_totals",
+        name="CASH balance",
+        icon="mdi:cash",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=None
+    )
+]
+
 MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="sub_totals",

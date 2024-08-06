@@ -42,7 +42,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
         v2_endpoint_list = [
             "portfolios",
             f"portfolios/{self.portfolioID}/performance",
-            f"portfolios/{self.portfolioID}/valuation"
+            f"portfolios/{self.portfolioID}/valuation",
+            "cash_accounts"
         ]
         try:
             for endpoint in v2_endpoint_list:

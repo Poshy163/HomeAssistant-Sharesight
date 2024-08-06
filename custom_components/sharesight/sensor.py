@@ -4,7 +4,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import Entity
 from .const import API_VERSION, DOMAIN
 import logging
-from .enum import SENSOR_DESCRIPTIONS, MARKET_SENSOR_DESCRIPTIONS
+from .enum import SENSOR_DESCRIPTIONS, MARKET_SENSOR_DESCRIPTIONS, CASH_SENSOR_DESCRIPTIONS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import SharesightCoordinator
 
@@ -23,17 +23,29 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                         sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator,
                                         local_currency, portfolio_id, sensor.icon, edge))
 
-    index = 0
+    __index_market = 0
     for market in coordinator.data['sub_totals']:
         for market_sensor in MARKET_SENSOR_DESCRIPTIONS:
             market_sensor.name = f"{market['market']} value"
-            market_sensor.key = f'sub_totals/{index}/value'
+            market_sensor.key = f'sub_totals/{__index_market}/value'
             sensors.append(SharesightSensor(sharesight, entry, market_sensor.native_unit_of_measurement,
                                             market_sensor.device_class, market_sensor.name, market_sensor.key,
                                             market_sensor.state_class,
                                             coordinator,
                                             local_currency, portfolio_id, market_sensor.icon, edge))
-            index += 1
+            __index_market += 1
+
+    __index_cash = 0
+    for cash in coordinator.data['cash_accounts']:
+        for cash_sensor in CASH_SENSOR_DESCRIPTIONS:
+            cash_sensor.name = f"{cash['name']} cash balance"
+            cash_sensor.key = f'cash_accounts/{__index_cash}/balance_in_portfolio_currency'
+            sensors.append(SharesightSensor(sharesight, entry, cash_sensor.native_unit_of_measurement,
+                                            cash_sensor.device_class, cash_sensor.name, cash_sensor.key,
+                                            cash_sensor.state_class,
+                                            coordinator,
+                                            local_currency, portfolio_id, cash_sensor.icon, edge))
+            __index_cash += 1
 
     async_add_entities(sensors, True)
     return
@@ -51,11 +63,17 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self._edge = edge
         self._key = key
         self._icon = icon
+
         if "sub_totals" in self._key and "value" in self._key:
             parts = self._key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
             self.entity_id = f"sensor.{name.lower().replace(' ', '_')}_{self.portfolioID}"
             _LOGGER.info(f"NEW MARKET SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
+        elif "cash_accounts" in self._key and "balance" in self._key:
+            parts = self._key.split('/')
+            self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
+            self.entity_id = f"sensor.{name.lower().replace(' ', '_')}_{self.portfolioID}"
+            _LOGGER.info(f"NEW CASH SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
         else:
             self.entity_id = f"sensor.{key}_{self.portfolioID}"
             self.datapoint.append(key)
@@ -71,7 +89,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
 
     @callback
     def _handle_coordinator_update(self):
-        if "sub_totals" in self._key and "value" in self._key:
+        if "sub_totals" in self._key and "value" in self._key or "cash_accounts" in self._key and "value" in self._key:
             parts = self._key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
         else:
