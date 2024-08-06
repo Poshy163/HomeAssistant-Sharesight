@@ -3,16 +3,11 @@ import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from SharesightAPI import SharesightAPI
-from .const import DOMAIN, REDIRECT_URL, PLATFORMS
+from .const import DOMAIN, REDIRECT_URL, PLATFORMS, API_URL_BASE, TOKEN_URL, EDGE_TOKEN_URL, EDGE_API_URL_BASE
 
 from .coordinator import SharesightCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-TOKEN_URL = 'https://api.sharesight.com/oauth2/token'
-API_URL_BASE = 'https://api.sharesight.com/api/'
-EDGE_TOKEN_URL = 'https://edge-api.sharesight.com/oauth2/token'
-EDGE_API_URL_BASE = 'https://edge-api.sharesight.com/api/'
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):

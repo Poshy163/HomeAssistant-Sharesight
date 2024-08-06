@@ -58,22 +58,23 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self._state = state
         self._coordinator = coordinator
         self.portfolioID = portfolio_id
-        self.datapoint = []
         self._name = f"{name}"
         self._edge = edge
         self._key = key
         self._icon = icon
-
-        if "sub_totals" in self._key and "value" in self._key:
+        self.datapoint = []
+        if "sub_totals" in self._key:
             parts = self._key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
             self.entity_id = f"sensor.{name.lower().replace(' ', '_')}_{self.portfolioID}"
             _LOGGER.info(f"NEW MARKET SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
-        elif "cash_accounts" in self._key and "balance" in self._key:
+
+        elif "cash_accounts" in self._key:
             parts = self._key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
             self.entity_id = f"sensor.{name.lower().replace(' ', '_')}_{self.portfolioID}"
             _LOGGER.info(f"NEW CASH SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
+
         else:
             self.entity_id = f"sensor.{key}_{self.portfolioID}"
             self.datapoint.append(key)
@@ -87,9 +88,12 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self._unique_id = f"{self.portfolioID}_{key}_{API_VERSION}"
         self.currency = currency
 
+        if self._native_unit_of_measurement == CURRENCY_DOLLAR:
+            self._native_unit_of_measurement = self.currency
+
     @callback
     def _handle_coordinator_update(self):
-        if "sub_totals" in self._key and "value" in self._key or "cash_accounts" in self._key and "value" in self._key:
+        if "sub_totals" in self._key or "cash_accounts" in self._key:
             parts = self._key.split('/')
             self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
         else:
@@ -110,11 +114,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
 
     @property
     def unit_of_measurement(self):
-        if self._native_unit_of_measurement == CURRENCY_DOLLAR:
-            self._native_unit_of_measurement = self.currency
-            return self._native_unit_of_measurement
-        else:
-            return self._native_unit_of_measurement
+        return self._native_unit_of_measurement
 
     @property
     def device_class(self):

@@ -2,14 +2,9 @@ import voluptuous as vol
 from homeassistant import config_entries
 import logging
 from SharesightAPI import SharesightAPI
-from .const import DOMAIN, REDIRECT_URL
+from .const import DOMAIN, REDIRECT_URL, TOKEN_URL, API_URL_BASE, EDGE_TOKEN_URL, EDGE_API_URL_BASE
 
 _LOGGER = logging.getLogger(__name__)
-
-TOKEN_URL = 'https://api.sharesight.com/oauth2/token'
-API_URL_BASE = 'https://api.sharesight.com/api/'
-EDGE_TOKEN_URL = 'https://edge-api.sharesight.com/oauth2/token'
-EDGE_API_URL_BASE = 'https://edge-api.sharesight.com/api/'
 
 
 class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
