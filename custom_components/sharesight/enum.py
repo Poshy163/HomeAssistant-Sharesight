@@ -24,7 +24,7 @@ MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="sub_totals",
         name="MARKET value",
-        icon="mdi:cash",
+        icon="mdi:finance",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
@@ -91,7 +91,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="payout_gain",
         name="Dividend gain",
-        icon="mdi:cash",
+        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
