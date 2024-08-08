@@ -21,7 +21,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     for sensor in SENSOR_DESCRIPTIONS:
         sensors.append(SharesightSensor(sharesight, entry, sensor.native_unit_of_measurement,
                                         sensor.device_class, sensor.name, sensor.key, sensor.state_class, coordinator,
-                                        local_currency, portfolio_id, sensor.icon, edge))
+                                        local_currency, portfolio_id, sensor.icon, edge, sensor.entity_category))
 
     __index_market = 0
     for market in coordinator.data['sub_totals']:
@@ -32,7 +32,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                             market_sensor.device_class, market_sensor.name, market_sensor.key,
                                             market_sensor.state_class,
                                             coordinator,
-                                            local_currency, portfolio_id, market_sensor.icon, edge))
+                                            local_currency, portfolio_id, market_sensor.icon, edge, market_sensor.entity_category))
             __index_market += 1
 
     __index_cash = 0
@@ -44,7 +44,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                             cash_sensor.device_class, cash_sensor.name, cash_sensor.key,
                                             cash_sensor.state_class,
                                             coordinator,
-                                            local_currency, portfolio_id, cash_sensor.icon, edge))
+                                            local_currency, portfolio_id, cash_sensor.icon, edge, cash_sensor.entity_category))
             __index_cash += 1
 
     async_add_entities(sensors, True)
@@ -53,11 +53,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class SharesightSensor(CoordinatorEntity, Entity):
     def __init__(self, sharesight, entry, native_unit_of_measurement, device_class, name, key, state, coordinator,
-                 currency, portfolio_id, icon, edge):
+                 currency, portfolio_id, icon, edge, entity_category):
         super().__init__(coordinator)
         self._state = state
         self._coordinator = coordinator
         self.portfolioID = portfolio_id
+        self._entity_category = entity_category
         self._name = f"{name}"
         self._edge = edge
         self._key = key
@@ -109,6 +110,14 @@ class SharesightSensor(CoordinatorEntity, Entity):
         return self._state
 
     @property
+    def icon(self):
+        return self._icon
+
+    @property
+    def entity_category(self):
+        return self._entity_category
+
+    @property
     def unique_id(self):
         return self._unique_id
 
@@ -138,7 +147,3 @@ class SharesightSensor(CoordinatorEntity, Entity):
                 "model": f"Sharesight API {API_VERSION}",
                 "entry_type": DeviceEntryType.SERVICE,
             }
-
-    @property
-    def icon(self):
-        return self._icon

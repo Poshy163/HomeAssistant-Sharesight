@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, List, Union
 from homeassistant.components.sensor import SensorEntityDescription, SensorDeviceClass
-from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE
+from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE, CONTENT_TYPE_TEXT_PLAIN, EntityCategory
 
 
 @dataclass
@@ -16,7 +16,8 @@ CASH_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:cash",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     )
 ]
 
@@ -27,7 +28,8 @@ MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:finance",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     )
 ]
 
@@ -38,7 +40,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:cash",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     ),
     SharesightSensorDescription(
         key="capital_gain",
@@ -46,7 +49,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     ),
     SharesightSensorDescription(
         key="capital_gain_percent",
@@ -54,7 +58,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     ),
     SharesightSensorDescription(
         key="total_gain",
@@ -62,7 +67,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     ),
     SharesightSensorDescription(
         key="total_gain_percent",
@@ -70,7 +76,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     ),
     SharesightSensorDescription(
         key="currency_gain",
@@ -78,7 +85,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     ),
     SharesightSensorDescription(
         key="currency_gain_percent",
@@ -86,7 +94,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     ),
     SharesightSensorDescription(
         key="payout_gain",
@@ -94,7 +103,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None
     ),
     SharesightSensorDescription(
         key="payout_gain_percent",
@@ -103,5 +113,15 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None
+
+    ),
+    SharesightSensorDescription(
+        key="portfolio_id",
+        name="Portfolio ID",
+        icon="mdi:identifier",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
     )
 ]
