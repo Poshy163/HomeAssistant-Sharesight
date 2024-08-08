@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, List, Union
 from homeassistant.components.sensor import SensorEntityDescription, SensorDeviceClass
-from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE, CONTENT_TYPE_TEXT_PLAIN, EntityCategory
+from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE, EntityCategory
 
 
 @dataclass
@@ -17,7 +17,8 @@ CASH_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     )
 ]
 
@@ -29,7 +30,8 @@ MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     )
 ]
 
@@ -41,7 +43,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     ),
     SharesightSensorDescription(
         key="capital_gain",
@@ -50,7 +53,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     ),
     SharesightSensorDescription(
         key="capital_gain_percent",
@@ -59,7 +63,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     ),
     SharesightSensorDescription(
         key="total_gain",
@@ -68,7 +73,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     ),
     SharesightSensorDescription(
         key="total_gain_percent",
@@ -77,7 +83,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     ),
     SharesightSensorDescription(
         key="currency_gain",
@@ -86,7 +93,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     ),
     SharesightSensorDescription(
         key="currency_gain_percent",
@@ -95,7 +103,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     ),
     SharesightSensorDescription(
         key="payout_gain",
@@ -104,7 +113,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=None,
-        entity_category=None
+        entity_category=None,
+        suggested_display_precision=2
     ),
     SharesightSensorDescription(
         key="payout_gain_percent",
@@ -112,7 +122,9 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=None
+        state_class=None,
+        entity_category=None,
+        suggested_display_precision=2
 
     ),
     SharesightSensorDescription(
@@ -122,6 +134,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         native_unit_of_measurement=None,
         device_class=None,
         state_class=None,
-        entity_category=EntityCategory.DIAGNOSTIC
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=2
     )
 ]
