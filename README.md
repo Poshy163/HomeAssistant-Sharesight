@@ -4,7 +4,7 @@
 
 
 - Supports both normal sharesight accounts, and edge accounts (developer accounts)
-- To add additional markets and/or cash accounts, you need to refresh the integration manually (working on making it automatic)
+- Supports automatically adding additional markets and/or cash accounts (set to check every 10 minutes)
 
 ## Services
 This allows you to monitor your sharesight portfolio value, currently supports:
@@ -19,6 +19,7 @@ This allows you to monitor your sharesight portfolio value, currently supports:
 - Portfolio Value
 - Market Value (for each market you hold shares in, shown in local currency)
 - Cash Account Value (for each cash account (includes xero cash accounts))
+- Portfolio ID
 
 
 
