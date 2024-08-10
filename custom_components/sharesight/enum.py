@@ -136,5 +136,15 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="user/id",
+        name="User ID",
+        icon="mdi:identifier",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=2
     )
 ]
