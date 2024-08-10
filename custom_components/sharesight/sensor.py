@@ -109,34 +109,49 @@ class SharesightSensor(CoordinatorEntity, Entity):
         else:
             self._native_unit_of_measurement = sensor.native_unit_of_measurement
 
-        if "sub_totals" in self._key:
-            parts = self._key.split('/')
-            self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
-            self.entity_id = f"sensor.{self._name.lower().replace(' ', '_')}_{self._portfolioID}"
-            _LOGGER.info(f"NEW MARKET SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
+        parts = self._key.split('/')
+        entity_type = "sensor"
+        base_entity_id = f"{self._name.lower().replace(' ', '_')}_{self._portfolioID}"
 
-        elif "cash_accounts" in self._key:
-            parts = self._key.split('/')
-            self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
-            self.entity_id = f"sensor.{self._name.lower().replace(' ', '_')}_{self._portfolioID}"
-            _LOGGER.info(f"NEW CASH SENSOR WITH KEY: {[parts[0]]}{[int(parts[1])]}{[parts[2]]}")
+        try:
+            if "user" in self._key:
+                self._state = self._coordinator.data[parts[0]][parts[1]]
+                sensor_type = "MARKET"
+            elif "sub_totals" in self._key or "cash_accounts" in self._key:
+                index = int(parts[1])
+                self._state = self._coordinator.data[parts[0]][index][parts[2]]
+                sensor_type = "MARKET" if "sub_totals" in self._key else "CASH"
+            else:
+                self.datapoint.append(self._key)
+                self._state = self._coordinator.data[self.datapoint[0]]
+                sensor_type = "GENERAL"
 
-        else:
-            self.entity_id = f"sensor.{self._key}_{self._portfolioID}"
-            self.datapoint.append(self._key)
-            self._state = coordinator.data[self.datapoint[0]]
-            _LOGGER.info(f"NEW SENSOR WITH KEY: {self.datapoint[0]}")
+            self.entity_id = f"{entity_type}.{base_entity_id}"
+            _LOGGER.info(f"NEW {sensor_type} SENSOR WITH KEY: {self._key}")
+
+        except ValueError as e:
+            _LOGGER.error(f"KeyError accessing data for key '{self._key}': {e}")
+            self._state = None
+        except IndexError as e:
+            _LOGGER.error(f"IndexError accessing data for key '{self._key}': {e}")
+            self._state = None
 
     @callback
     def _handle_coordinator_update(self):
-        if "sub_totals" in self._key or "cash_accounts" in self._key:
-            try:
-                parts = self._key.split('/')
-                self._state = self._coordinator.data[parts[0]][int(parts[1])][parts[2]]
-            except IndexError:
-                self._state = None
-        else:
-            self._state = self._coordinator.data[self.datapoint[0]]
+        try:
+            parts = self._key.split('/')
+
+            if "sub_totals" in self._key or "cash_accounts" in self._key:
+                index = int(parts[1])
+                self._state = self._coordinator.data[parts[0]][index][parts[2]]
+            elif "user" in self._key:
+                self._state = self._coordinator.data[parts[0]][parts[1]]
+            else:
+                self._state = self._coordinator.data[self.datapoint[0]]
+
+        except (KeyError, IndexError) as e:
+            _LOGGER.error(f"Error accessing data for key '{self._key}': {e}: Defaulting to None")
+            self._state = None
         self.async_write_ha_state()
 
     @property

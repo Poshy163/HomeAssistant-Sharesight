@@ -34,7 +34,6 @@ class SharesightCoordinator(DataUpdateCoordinator):
         self.portfolioID = portfolio_id
 
     async def _async_update_data(self):
-
         await self.sharesight.get_token_data()
         access_token = await self.sharesight.validate_token()
         combined_dict = {}
@@ -43,7 +42,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
             "portfolios",
             f"portfolios/{self.portfolioID}/performance",
             f"portfolios/{self.portfolioID}/valuation",
-            "cash_accounts"
+            "cash_accounts",
+            "my_user"
         ]
         try:
             for endpoint in v2_endpoint_list:
