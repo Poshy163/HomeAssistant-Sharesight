@@ -40,7 +40,8 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                                          EDGE_TOKEN_URL,
                                                          EDGE_API_URL_BASE, token_file, True)
                 await client.get_token_data()
-                if await client.validate_token() is None:
+                valid_response = await client.validate_token()
+                if valid_response is 401 or 400:
                     if use_edge:
                         errors["base"] = "auth_edge"
                     else:
