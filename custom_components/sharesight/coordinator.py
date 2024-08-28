@@ -38,17 +38,17 @@ class SharesightCoordinator(DataUpdateCoordinator):
         access_token = await self.sharesight.validate_token()
         combined_dict = {}
 
-        v2_endpoint_list = [
-            "portfolios",
-            f"portfolios/{self.portfolioID}/performance",
-            f"portfolios/{self.portfolioID}/valuation",
-            "cash_accounts",
-            "my_user"
+        endpoint_list = [
+            ["v2", "portfolios"],
+            ["v2", f"portfolios/{self.portfolioID}/performance"],
+            ["v2", f"portfolios/{self.portfolioID}/valuation"],
+            ["v2", "cash_accounts"],
+            ["v2", "my_user"]
         ]
         try:
-            for endpoint in v2_endpoint_list:
+            for endpoint in endpoint_list:
                 _LOGGER.info(f"Calling {endpoint}")
-                response = await self.sharesight.get_api_request(endpoint, API_VERSION, access_token)
+                response = await self.sharesight.get_api_request(endpoint, access_token)
                 combined_dict = await merge_dicts(combined_dict, response)
 
             _LOGGER.info("DATA RECEIVED")
