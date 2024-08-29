@@ -8,7 +8,7 @@ from typing import Dict, Any
 import itertools
 
 
-from .const import DOMAIN, SCAN_INTERVAL, API_VERSION
+from .const import DOMAIN, SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
