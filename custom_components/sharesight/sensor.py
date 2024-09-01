@@ -16,11 +16,14 @@ CASH_SENSORS = []
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    coordinator: SharesightCoordinator = hass.data[DOMAIN][entry.entry_id]
+    data = hass.data[DOMAIN][entry.entry_id]
+
+    coordinator: SharesightCoordinator = data["coordinator"]
     sharesight = hass.data[DOMAIN]
-    portfolio_id = hass.data[DOMAIN]["portfolio_id"]
+    portfolio_id = data["portfolio_id"]
+    edge = data["edge"]
     local_currency = coordinator.data['portfolios'][0]['currency_code']
-    edge = hass.data[DOMAIN]["edge"]
+
     sensors = []
 
     for sensor in SENSOR_DESCRIPTIONS:
