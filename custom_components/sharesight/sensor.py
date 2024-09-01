@@ -1,6 +1,6 @@
 from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.core import callback
-from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import Entity
 from .const import APP_VERSION, DOMAIN, UPDATE_SENSOR_SCAN_INTERVAL
 import logging
@@ -137,6 +137,18 @@ class SharesightSensor(CoordinatorEntity, Entity):
             _LOGGER.error(f"IndexError accessing data for key '{self._key}': {e}")
             self._state = None
 
+        if self._edge:
+            edge_name = " Edge "
+        else:
+            edge_name = " "
+
+        self._attr_device_info = DeviceInfo(
+            entry_type=DeviceEntryType.SERVICE,
+            identifiers={(DOMAIN, self._portfolioID)},
+            configuration_url=f"https://edge-portfolio.sharesight.com/portfolios/{self._portfolioID}",
+            model=f"Sharesight{edge_name}API",
+            name=f"Sharesight{edge_name}Portfolio {self._portfolioID}")
+
     @callback
     def _handle_coordinator_update(self):
         try:
@@ -187,22 +199,3 @@ class SharesightSensor(CoordinatorEntity, Entity):
     @property
     def device_class(self):
         return self._device_class
-
-    @property
-    def device_info(self):
-        if self._edge:
-            return {
-                "configuration_url": f"https://edge-portfolio.sharesight.com/portfolios/{self._portfolioID}",
-                "identifiers": {(DOMAIN, self._portfolioID)},
-                "name": f"Sharesight Edge Portfolio {self._portfolioID}",
-                "model": f"Sharesight EDGE API",
-                "entry_type": DeviceEntryType.SERVICE,
-            }
-        else:
-            return {
-                "configuration_url": f"https://portfolio.sharesight.com/portfolios/{self._portfolioID}",
-                "identifiers": {(DOMAIN, self._portfolioID)},
-                "name": f"Sharesight Portfolio {self._portfolioID}",
-                "model": f"Sharesight API",
-                "entry_type": DeviceEntryType.SERVICE,
-            }

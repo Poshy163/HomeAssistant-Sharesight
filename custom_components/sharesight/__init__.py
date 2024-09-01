@@ -35,8 +35,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.data.setdefault(DOMAIN, {})["portfolio_id"] = portfolio_id
     hass.data.setdefault(DOMAIN, {})["edge"] = use_edge
     hass.data.setdefault(DOMAIN, {})["sharesight_client"] = client
-    entry.async_on_unload(entry.add_update_listener(update_listener))
 
+    entry.async_on_unload(entry.add_update_listener(update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
