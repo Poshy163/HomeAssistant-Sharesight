@@ -39,11 +39,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
         combined_dict = {}
 
         endpoint_list = [
-            ["v2", "portfolios"],
-            ["v2", f"portfolios/{self.portfolioID}/performance"],
-            ["v2", f"portfolios/{self.portfolioID}/valuation"],
-            ["v2", "cash_accounts"],
-            ["v2", "my_user"]
+            ["v3", "portfolios"],
+            ["v3", f"portfolios/{self.portfolioID}/performance"]
         ]
         try:
             for endpoint in endpoint_list:
@@ -51,8 +48,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 response = await self.sharesight.get_api_request(endpoint, access_token)
                 combined_dict = await merge_dicts(combined_dict, response)
 
-            _LOGGER.info("DATA RECEIVED")
             self.data = combined_dict
+            _LOGGER.info(f"DATA RECEIVED IT IS: {self.data}")
             return self.data
         except Exception as e:
             _LOGGER.error(e)
