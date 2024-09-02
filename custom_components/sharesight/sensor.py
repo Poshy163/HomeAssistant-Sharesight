@@ -55,7 +55,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     async def update_sensors(_):
         _LOGGER.info(f"CHECKING FOR NEW MARKET/CASH SENSORS")
-        update_coordinator: SharesightCoordinator = hass.data[DOMAIN][entry.entry_id]
+        update_data = hass.data[DOMAIN][entry.entry_id]
+        update_coordinator: SharesightCoordinator = update_data["coordinator"]
         __update_index_market = 0
 
         for update_market in update_coordinator.data['report']['sub_totals']:
@@ -115,13 +116,15 @@ class SharesightSensor(CoordinatorEntity, Entity):
 
         if edge:
             edge_name = " Edge "
+            edge_url = "edge-"
         else:
             edge_name = " "
+            edge_url = ""
 
         self._attr_device_info = DeviceInfo(
             entry_type=DeviceEntryType.SERVICE,
             identifiers={(DOMAIN, self._portfolioID)},
-            configuration_url=f"https://edge-portfolio.sharesight.com/portfolios/{self._portfolioID}",
+            configuration_url=f"https://{edge_url}portfolio.sharesight.com/portfolios/{self._portfolioID}",
             model=f"Sharesight{edge_name}API",
             name=f"Sharesight{edge_name}Portfolio {self._portfolioID}")
 
