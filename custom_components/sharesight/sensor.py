@@ -61,7 +61,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
         for update_market in update_coordinator.data['report']['sub_totals']:
             for update_market_sensor in MARKET_SENSOR_DESCRIPTIONS:
-                __local_name = update_market['market']
+                __local_name = update_market['group_name']
                 update_market_sensor.name = f"{__local_name} value"
                 if update_market_sensor.name not in MARKET_SENSORS:
                     local_market_currency = coordinator.data['portfolios'][0]['currency_code']
@@ -98,6 +98,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
         self._portfolioID = portfolio_id
         self._entity_category = sensor.entity_category
         self._name = str(sensor.name)
+        self._extension_key = sensor.extension_key
         self._index = index
         self._suggested_display_precision = sensor.suggested_display_precision
         self._key = sensor.key
@@ -129,8 +130,10 @@ class SharesightSensor(CoordinatorEntity, Entity):
             name=f"Sharesight{edge_name}Portfolio {self._portfolioID}")
 
         try:
-            if self._sub_key == "report" and self._key != "sub_totals" or self._sub_key == "report" and self._key != "cash_accounts":
-
+            if self._extension_key == "Single Day Data":
+                self._state = self._coordinator.data[self._sub_key][self._key]
+                self._unique_id = f"{self._portfolioID}_{self._sub_key}_{self._key}_{APP_VERSION}"
+            elif self._sub_key == "report" and self._key != "sub_totals" or self._sub_key == "report" and self._key != "cash_accounts":
                 self._state = self._coordinator.data[self._sub_key][self._key]
                 self._unique_id = f"{self._portfolioID}_{self._key}_{APP_VERSION}"
             elif self._key == "user_id":
@@ -150,7 +153,9 @@ class SharesightSensor(CoordinatorEntity, Entity):
     @callback
     def _handle_coordinator_update(self):
         try:
-            if self._sub_key == "report" and self._key != "sub_totals" or self._sub_key == "report" and self._key != "cash_accounts":
+            if self._extension_key == "Single Day Data":
+                self._state = self._coordinator.data[self._sub_key][self._key]
+            elif self._sub_key == "report" and self._key != "sub_totals" or self._sub_key == "report" and self._key != "cash_accounts":
                 self._state = self._coordinator.data[self._sub_key][self._key]
             elif self._key == "user_id":
                 self._state = self._coordinator.data[self._sub_key][0][self._key]

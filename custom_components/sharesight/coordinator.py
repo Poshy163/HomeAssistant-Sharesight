@@ -3,7 +3,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
-
+from datetime import date
 from typing import Dict, Any
 import itertools
 
@@ -39,13 +39,20 @@ class SharesightCoordinator(DataUpdateCoordinator):
         combined_dict = {}
 
         endpoint_list = [
-            ["v3", "portfolios"],
-            ["v3", f"portfolios/{self.portfolioID}/performance"]
+            ["v2", f"portfolios/{self.portfolioID}/performance", {'start_date': f"{date.today()}", 'end_date': f"{date.today()}"}],
+            ["v3", "portfolios", None],
+            ["v3", f"portfolios/{self.portfolioID}/performance", None],
+
         ]
         try:
             for endpoint in endpoint_list:
                 _LOGGER.info(f"Calling {endpoint}")
                 response = await self.sharesight.get_api_request(endpoint, access_token)
+                if endpoint[0] == "v2":
+                    response = {
+                        'one-day': response
+                    }
+
                 combined_dict = await merge_dicts(combined_dict, response)
 
             self.data = combined_dict
