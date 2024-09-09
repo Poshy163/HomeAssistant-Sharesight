@@ -17,10 +17,13 @@ This allows you to monitor your sharesight portfolio value, currently supports:
 - Capital Gain
 - Capital Gain Percent
 - Portfolio Value
+- Daily Change Amount
+- Daily Change Percent
 - Market Value (for each market you hold shares in, shown in local currency)
 - Cash Account Value (for each cash account (includes xero cash accounts))
 - Portfolio ID
 - User ID
+
 
 
 
