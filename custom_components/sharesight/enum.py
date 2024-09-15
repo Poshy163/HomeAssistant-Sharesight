@@ -154,7 +154,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="total_gain_percent",
         sub_key="one-day",
-        extension_key="Single Day Data",
+        extension_key="Extention Data Point",
         name="Daily Change Percent",
         icon="mdi:chart-line-variant",
         native_unit_of_measurement=PERCENTAGE,
@@ -167,7 +167,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="total_gain",
         sub_key="one-day",
-        extension_key="Single Day Data",
+        extension_key="Extention Data Point",
         name="Daily Change Amount",
         icon="mdi:chart-line-variant",
         native_unit_of_measurement=CURRENCY_DOLLAR,
@@ -175,8 +175,33 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
         suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="total_gain",
+        sub_key="one-week",
+        extension_key="Extention Data Point",
+        name="Weekly Change Amount",
+        icon="mdi:chart-line-variant",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="total_gain_percent",
+        sub_key="one-week",
+        extension_key="Extention Data Point",
+        name="Weekly Change Percent",
+        icon="mdi:chart-line-variant",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2
 
     ),
+
     SharesightSensorDescription(
         key="portfolio_id",
         sub_key="report",
