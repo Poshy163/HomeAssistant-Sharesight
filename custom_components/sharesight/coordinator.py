@@ -42,34 +42,27 @@ class SharesightCoordinator(DataUpdateCoordinator):
         start_of_week = (current_date - timedelta(days=current_date.weekday())).strftime('%Y-%m-%d')
         end_of_week = (current_date + timedelta(days=6 - current_date.weekday())).strftime('%Y-%m-%d')
 
-        identifier_list = [
-            [True, 'one-day'],
-            [True, 'one-week'],
-            [False],
-            [False]
-        ]
-
         endpoint_list = [
             ["v2", f"portfolios/{self.portfolioID}/performance",
-             {'start_date': f"{current_date}", 'end_date': f"{current_date}"}],
+             {'start_date': f"{current_date}", 'end_date': f"{current_date}"}, 'one-day'],
             ["v2", f"portfolios/{self.portfolioID}/performance",
-             {'start_date': f"{start_of_week}", 'end_date': f"{end_of_week}"}],
-            ["v3", "portfolios", None],
-            ["v3", f"portfolios/{self.portfolioID}/performance", None],
+             {'start_date': f"{start_of_week}", 'end_date': f"{end_of_week}"}, 'one-week'],
+            ["v3", "portfolios", None, False],
+            ["v3", f"portfolios/{self.portfolioID}/performance", None, False],
 
         ]
-        try:
 
-            _local_identifier = 0
+        try:
             for endpoint in endpoint_list:
                 _LOGGER.info(f"Calling {endpoint}")
                 response = await self.sharesight.get_api_request(endpoint, access_token)
-                if len(identifier_list[_local_identifier]) == 2:
+                extension = endpoint[3]
+
+                if extension is not False:
                     response = {
-                        identifier_list[_local_identifier][1]: response
+                        extension: response
                     }
 
-                _local_identifier += 1
                 combined_dict = await merge_dicts(combined_dict, response)
 
             self.data = combined_dict

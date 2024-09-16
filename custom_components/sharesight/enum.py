@@ -154,7 +154,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="total_gain_percent",
         sub_key="one-day",
-        extension_key="Extention Data Point",
+        extension_key="Extention",
         name="Daily Change Percent",
         icon="mdi:chart-line-variant",
         native_unit_of_measurement=PERCENTAGE,
@@ -167,7 +167,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="total_gain",
         sub_key="one-day",
-        extension_key="Extention Data Point",
+        extension_key="Extention",
         name="Daily Change Amount",
         icon="mdi:chart-line-variant",
         native_unit_of_measurement=CURRENCY_DOLLAR,
@@ -179,7 +179,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="total_gain",
         sub_key="one-week",
-        extension_key="Extention Data Point",
+        extension_key="Extention",
         name="Weekly Change Amount",
         icon="mdi:chart-line-variant",
         native_unit_of_measurement=CURRENCY_DOLLAR,
@@ -191,7 +191,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
     SharesightSensorDescription(
         key="total_gain_percent",
         sub_key="one-week",
-        extension_key="Extention Data Point",
+        extension_key="Extention",
         name="Weekly Change Percent",
         icon="mdi:chart-line-variant",
         native_unit_of_measurement=PERCENTAGE,

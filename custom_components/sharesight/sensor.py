@@ -130,7 +130,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
             name=f"Sharesight{edge_name}Portfolio {self._portfolioID}")
 
         try:
-            if self._extension_key == "Extention Data Point":
+            if self._extension_key == "Extention":
                 self._state = self._coordinator.data[self._sub_key][self._key]
                 self._unique_id = f"{self._portfolioID}_{self._sub_key}_{self._key}_{APP_VERSION}"
             elif self._sub_key == "report" and self._key != "sub_totals" or self._sub_key == "report" and self._key != "cash_accounts":
@@ -153,7 +153,7 @@ class SharesightSensor(CoordinatorEntity, Entity):
     @callback
     def _handle_coordinator_update(self):
         try:
-            if self._extension_key == "Extention Data Point":
+            if self._extension_key == "Extention":
                 self._state = self._coordinator.data[self._sub_key][self._key]
             elif self._sub_key == "report" and self._key != "sub_totals" or self._sub_key == "report" and self._key != "cash_accounts":
                 self._state = self._coordinator.data[self._sub_key][self._key]
