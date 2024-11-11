@@ -201,6 +201,30 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         suggested_display_precision=2
 
     ),
+    SharesightSensorDescription(
+        key="total_gain_percent",
+        sub_key="financial-year",
+        extension_key="Extention",
+        name="Financial Year Change Percent",
+        icon="mdi:chart-line-variant",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="total_gain",
+        sub_key="financial-year",
+        extension_key="Extention",
+        name="Financial Year Change Amount",
+        icon="mdi:chart-line-variant",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2
+    ),
 
     SharesightSensorDescription(
         key="portfolio_id",
