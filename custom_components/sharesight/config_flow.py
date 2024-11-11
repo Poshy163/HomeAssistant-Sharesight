@@ -1,7 +1,7 @@
 import voluptuous as vol
 from homeassistant import config_entries
 import logging
-from SharesightAPI import SharesightAPI
+from SharesightAPI.SharesightAPI import SharesightAPI
 from .const import DOMAIN, REDIRECT_URL, TOKEN_URL, API_URL_BASE, EDGE_TOKEN_URL, EDGE_API_URL_BASE
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,19 +26,17 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 client_secret = user_input.get("client_secret")
                 authorization_code = user_input.get("authorization_code")
                 use_edge = user_input.get("use_edge_url")
-                _LOGGER.info(f"CALLED FROM CONFIG_FLOW 2")
                 token_file = "HA.txt"
 
                 if not use_edge:
-                    _LOGGER.info("USING NORMAL URL'S")
-                    client = SharesightAPI.SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
-                                                         TOKEN_URL,
-                                                         API_URL_BASE, token_file, True)
+                    client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
+                                           TOKEN_URL,
+                                           API_URL_BASE, True, True, token_file)
                 else:
-                    _LOGGER.info("USING EDGE URL'S")
-                    client = SharesightAPI.SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
-                                                         EDGE_TOKEN_URL,
-                                                         EDGE_API_URL_BASE, token_file, True)
+                    _LOGGER.info("USING EDGE URL")
+                    client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
+                                           EDGE_TOKEN_URL,
+                                           EDGE_API_URL_BASE, True, True, token_file)
                 await client.get_token_data()
                 valid_response = await client.validate_token()
                 if valid_response == 401 or valid_response == 400:

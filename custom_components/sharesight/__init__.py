@@ -2,7 +2,7 @@ import logging
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from SharesightAPI import SharesightAPI
+from SharesightAPI.SharesightAPI import SharesightAPI
 from .const import DOMAIN, REDIRECT_URL, PLATFORMS, API_URL_BASE, TOKEN_URL, EDGE_TOKEN_URL, EDGE_API_URL_BASE
 
 from .coordinator import SharesightCoordinator
@@ -19,13 +19,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     token_file = "HA.txt"
 
     if not use_edge:
-        _LOGGER.info("USING NORMAL URL'S")
-        client = SharesightAPI.SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL, TOKEN_URL,
-                                             API_URL_BASE, token_file, True)
+        client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
+                               TOKEN_URL,
+                               API_URL_BASE, True, True, token_file)
     else:
-        _LOGGER.info("USING EDGE URL'S")
-        client = SharesightAPI.SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL, EDGE_TOKEN_URL,
-                                             EDGE_API_URL_BASE, token_file, True)
+        _LOGGER.info("USING EDGE URL")
+        client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
+                               EDGE_TOKEN_URL,
+                               EDGE_API_URL_BASE, True, True, token_file)
     await client.get_token_data()
 
     local_coordinator = SharesightCoordinator(hass, portfolio_id, client=client)

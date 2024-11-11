@@ -86,7 +86,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 combined_dict = await merge_dicts(combined_dict, response)
 
             self.data = combined_dict
-            _LOGGER.info(f"DATA RECEIVED IT IS: {self.data}")
+            _LOGGER.info(f"DATA RECEIVED: {self.data}")
 
             SOFY_DATE, EOFY_DATE = get_financial_year_dates(self.data.get('portfolios', [{}])[0].get('financial_year_end'))
             if self.end_financial_year != EOFY_DATE:
