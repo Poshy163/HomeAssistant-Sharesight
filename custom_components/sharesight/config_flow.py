@@ -29,11 +29,12 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 token_file = "HA.txt"
 
                 if not use_edge:
+                    edge_name = " "
                     client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
                                            TOKEN_URL,
                                            API_URL_BASE, True, True, token_file)
                 else:
-                    _LOGGER.info("USING EDGE URL")
+                    edge_name = " edge "
                     client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
                                            EDGE_TOKEN_URL,
                                            EDGE_API_URL_BASE, True, True, token_file)
@@ -46,7 +47,7 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors["base"] = "auth"
                     return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
 
-                return self.async_create_entry(title=f"Sharesight portfolio: {user_input["portfolio_id"]}",
+                return self.async_create_entry(title=f"Sharesight{edge_name}portfolio: {user_input["portfolio_id"]}",
                                                data=user_input)
             except Exception:
                 errors["base"] = "other"

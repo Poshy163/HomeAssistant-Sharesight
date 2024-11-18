@@ -23,7 +23,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                                TOKEN_URL,
                                API_URL_BASE, True, True, token_file)
     else:
-        _LOGGER.info("USING EDGE URL")
         client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
                                EDGE_TOKEN_URL,
                                EDGE_API_URL_BASE, True, True, token_file)
@@ -46,18 +45,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+        _LOGGER.info(f"Unloaded platforms for entry {entry.entry_id}")
     return unload_ok
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _LOGGER.info(f"Removing Sharesight integration: {entry.entry_id}")
-    data = hass.data[DOMAIN][entry.entry_id]
+    domain_data = hass.data.get(DOMAIN, {})
+    if entry.entry_id not in domain_data:
+        _LOGGER.warning(f"Entry {entry.entry_id} not found in {DOMAIN} during removal")
+        return
+
+    data = domain_data[entry.entry_id]
     sharesight = data.get("sharesight_client")
-    await sharesight.delete_token()
-    if entry.entry_id in hass.data[DOMAIN]:
-        hass.data[DOMAIN].pop(entry.entry_id)
-    return
+    if sharesight:
+        await sharesight.delete_token()
+
+    domain_data.pop(entry.entry_id, None)
+    if not domain_data:
+        hass.data.pop(DOMAIN, None)
+    _LOGGER.info(f"Successfully removed Sharesight integration: {entry.entry_id}")
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

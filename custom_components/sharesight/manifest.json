@@ -4,9 +4,8 @@
   "codeowners": ["@Poshy163"],
   "config_flow": true,
   "documentation": "https://github.com/Poshy163/HomeAssistant-Sharesight",
-  "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Poshy163/HomeAssistant-Sharesight/issues",
   "requirements": ["SharesightAPI==1.1.16"],
-  "version": "1.0.16"
+  "version": "1.0.17"
 }

@@ -153,13 +153,18 @@ class SharesightSensor(CoordinatorEntity, Entity):
     @callback
     def _handle_coordinator_update(self):
         try:
+
             if self._extension_key == "Extention":
+                # Used for one-day, one-week and current financial year
                 self._state = self._coordinator.data[self._sub_key][self._key]
             elif self._sub_key == "report" and self._key != "sub_totals" or self._sub_key == "report" and self._key != "cash_accounts":
+                # Used for cash accounts or sub_totals from the report API
                 self._state = self._coordinator.data[self._sub_key][self._key]
             elif self._key == "user_id":
+                # Used to get the userID
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
+                # Used for cash accounts or market data
                 self._state = self._coordinator.data['report'][self._key][self._index][self._sub_key]
 
         except (KeyError, IndexError) as e:

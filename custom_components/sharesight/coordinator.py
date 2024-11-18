@@ -24,7 +24,7 @@ async def merge_dicts(d1: Dict[Any, Any], d2: Dict[Any, Any]) -> Dict[Any, Any]:
     return d1
 
 
-def get_financial_year_dates(end_date_str):
+async def get_financial_year_dates(end_date_str):
     end_date = datetime.strptime(end_date_str, "%m-%d")
     today = datetime.today()
     end_year = today.year if today.month <= 6 else today.year + 1
@@ -51,7 +51,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
         if self.started_up is False:
             local_data = await self.sharesight.get_api_request(self.startup_endpoint, access_token)
-            self.start_financial_year, self.end_financial_year = get_financial_year_dates(
+            self.start_financial_year, self.end_financial_year = await get_financial_year_dates(
                 local_data.get('portfolio', {}).get('financial_year_end'))
             self.started_up = True
 
@@ -66,7 +66,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
             ["v2", f"portfolios/{self.portfolioID}/performance",
              {'start_date': f"{self.start_of_week}", 'end_date': f"{self.end_of_week}"}, 'one-week'],
             ["v2", f"portfolios/{self.portfolioID}/performance",
-             {'start_date': f"{self.start_financial_year}", 'end_date': f"{self.end_financial_year}"}, 'financial-year'],
+             {'start_date': f"{self.start_financial_year}", 'end_date': f"{self.end_financial_year}"},
+             'financial-year'],
             ["v3", "portfolios", None, False],
             ["v3", f"portfolios/{self.portfolioID}/performance", None, False],
         ]
@@ -88,12 +89,14 @@ class SharesightCoordinator(DataUpdateCoordinator):
             self.data = combined_dict
             _LOGGER.info(f"DATA RECEIVED: {self.data}")
 
-            SOFY_DATE, EOFY_DATE = get_financial_year_dates(self.data.get('portfolios', [{}])[0].get('financial_year_end'))
+            SOFY_DATE, EOFY_DATE = await get_financial_year_dates(
+                self.data.get('portfolios', [{}])[0].get('financial_year_end'))
             if self.end_financial_year != EOFY_DATE:
                 self.end_financial_year = EOFY_DATE
                 self.start_financial_year = SOFY_DATE
 
             return self.data
+
         except Exception as e:
             _LOGGER.error(e)
             self.data = None
