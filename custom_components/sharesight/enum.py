@@ -249,5 +249,17 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         state_class=SensorStateClass.TOTAL,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="currency_code",
+        sub_key="portfolios",
+        extension_key=None,
+        name="Primary Currency",
+        icon="mdi:cash",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=2
     )
 ]

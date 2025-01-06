@@ -142,6 +142,9 @@ class SharesightSensor(CoordinatorEntity, Entity):
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
                 self._state = self._coordinator.data['report'][self._key][self._index][self._sub_key]
                 self._unique_id = f"{self._portfolioID}_{local_name}_VALUE_{APP_VERSION}"
+            else:
+                self._state = self._coordinator.data[self._sub_key][0][self._key]
+                self._unique_id = f"{self._portfolioID}_{self._key}_{APP_VERSION}"
 
         except ValueError as e:
             _LOGGER.error(f"KeyError accessing data for key '{self._key}': {e}")
