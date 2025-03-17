@@ -1,7 +1,8 @@
 from homeassistant.const import CURRENCY_DOLLAR
-from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
-from homeassistant.helpers.entity import Entity
+from homeassistant.components.sensor import (
+    SensorEntity
+)
 from .const import APP_VERSION, DOMAIN, UPDATE_SENSOR_SCAN_INTERVAL
 import logging
 from .enum import SENSOR_DESCRIPTIONS, MARKET_SENSOR_DESCRIPTIONS, CASH_SENSOR_DESCRIPTIONS
@@ -90,7 +91,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_track_time_interval(hass, update_sensors, UPDATE_SENSOR_SCAN_INTERVAL)
 
 
-class SharesightSensor(CoordinatorEntity, Entity):
+class SharesightSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, sensor, entry, coordinator, currency, portfolio_id, edge, index=0, local_name=""):
         super().__init__(coordinator)
         self._state_class = sensor.state_class
@@ -153,35 +154,36 @@ class SharesightSensor(CoordinatorEntity, Entity):
             _LOGGER.error(f"IndexError accessing data for key '{self._key}': {e}")
             self._state = None
 
-    @callback
-    def _handle_coordinator_update(self):
+    @property
+    def native_value(self):
         try:
 
             if self._extension_key == "Extention":
                 # Used for one-day, one-week and current financial year
-                self._state = self._coordinator.data[self._sub_key][self._key]
+                return self._coordinator.data[self._sub_key][self._key]
             elif self._sub_key == "report" and self._key != "sub_totals" or self._sub_key == "report" and self._key != "cash_accounts":
                 # Used for cash accounts or sub_totals from the report API
-                self._state = self._coordinator.data[self._sub_key][self._key]
+                return self._coordinator.data[self._sub_key][self._key]
             elif self._key == "user_id":
                 # Used to get the userID
-                self._state = self._coordinator.data[self._sub_key][0][self._key]
+                return self._coordinator.data[self._sub_key][0][self._key]
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
                 # Used for cash accounts or market data
-                self._state = self._coordinator.data['report'][self._key][self._index][self._sub_key]
+                return self._coordinator.data['report'][self._key][self._index][self._sub_key]
+            else:
+                return self._coordinator.data[self._sub_key][0][self._key]
 
         except (KeyError, IndexError) as e:
             _LOGGER.error(f"Error accessing data for key '{self._key}': {e}: Defaulting to None")
-            self._state = None
-        self.async_write_ha_state()
+            return None
 
     @property
     def name(self):
         return self._name
 
     @property
-    def state(self):
-        return self._state
+    def state_class(self):
+        return self._state_class
 
     @property
     def icon(self):
@@ -196,17 +198,14 @@ class SharesightSensor(CoordinatorEntity, Entity):
         return self._unique_id
 
     @property
-    def unit_of_measurement(self):
-        return self._native_unit_of_measurement
-
-    @property
     def suggested_display_precision(self):
         return self._suggested_display_precision
 
     @property
-    def state_class(self):
-        return self._state_class
-
-    @property
     def device_class(self):
         return self._device_class
+
+    @property
+    def native_unit_of_measurement(self):
+        """Return the native unit of measurement of the sensor."""
+        return self._native_unit_of_measurement

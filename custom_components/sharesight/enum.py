@@ -225,7 +225,6 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         entity_category=None,
         suggested_display_precision=2
     ),
-
     SharesightSensorDescription(
         key="portfolio_id",
         sub_key="report",
@@ -234,7 +233,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:identifier",
         native_unit_of_measurement=None,
         device_class=None,
-        state_class=SensorStateClass.TOTAL,
+        state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=2
     ),
@@ -246,7 +245,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         icon="mdi:identifier",
         native_unit_of_measurement=None,
         device_class=None,
-        state_class=SensorStateClass.TOTAL,
+        state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=2
     ),
@@ -257,9 +256,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         name="Primary Currency",
         icon="mdi:cash",
         native_unit_of_measurement=None,
-        device_class=None,
-        state_class=SensorStateClass.TOTAL,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=2
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC
     )
 ]
