@@ -26,18 +26,16 @@ class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 client_secret = user_input.get("client_secret")
                 authorization_code = user_input.get("authorization_code")
                 use_edge = user_input.get("use_edge_url")
-                token_file = "HA.txt"
-
                 if not use_edge:
                     edge_name = " "
                     client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
                                            TOKEN_URL,
-                                           API_URL_BASE, True, True, token_file)
+                                           API_URL_BASE, True, debugging=False)
                 else:
                     edge_name = " edge "
                     client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
                                            EDGE_TOKEN_URL,
-                                           EDGE_API_URL_BASE, True, True, token_file)
+                                           EDGE_API_URL_BASE, True, debugging=False)
                 await client.get_token_data()
                 valid_response = await client.validate_token()
                 if valid_response == 401 or valid_response == 400:

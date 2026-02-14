@@ -16,16 +16,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     client_secret = entry.data["client_secret"]
     authorization_code = entry.data["authorization_code"]
     use_edge = entry.data["use_edge_url"]
-    token_file = "HA.txt"
-
     if not use_edge:
         client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
                                TOKEN_URL,
-                               API_URL_BASE, True, True, token_file)
+                               API_URL_BASE, True, debugging=False)
     else:
         client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
                                EDGE_TOKEN_URL,
-                               EDGE_API_URL_BASE, True, True, token_file)
+                               EDGE_API_URL_BASE, True, debugging=False)
     await client.get_token_data()
 
     local_coordinator = SharesightCoordinator(hass, portfolio_id, client=client)

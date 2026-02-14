@@ -25,6 +25,11 @@ async def merge_dicts(d1: Dict[Any, Any], d2: Dict[Any, Any]) -> Dict[Any, Any]:
 
 
 async def get_financial_year_dates(end_date_str):
+    if not end_date_str:
+        today = datetime.today()
+        end_year = today.year if today.month <= 6 else today.year + 1
+        return f"{end_year - 1}-07-01", f"{end_year}-06-30"
+
     end_date = datetime.strptime(end_date_str, "%m-%d")
     today = datetime.today()
     end_year = today.year if today.month <= 6 else today.year + 1
@@ -45,7 +50,6 @@ class SharesightCoordinator(DataUpdateCoordinator):
         self.started_up = False
 
     async def _async_update_data(self):
-        await self.sharesight.get_token_data()
         access_token = await self.sharesight.validate_token()
         combined_dict = {}
 
