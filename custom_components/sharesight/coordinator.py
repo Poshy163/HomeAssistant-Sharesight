@@ -1,11 +1,10 @@
 import logging
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-)
-from datetime import date, timedelta, datetime
-from typing import Dict, Any
+from datetime import date, datetime, timedelta
+from typing import Any, Dict
 import itertools
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN, SCAN_INTERVAL
 
@@ -40,61 +39,203 @@ async def get_financial_year_dates(end_date_str):
 
 
 class SharesightCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass: HomeAssistant, portfolio_id, client) -> None:
+    def __init__(self, hass: HomeAssistant, portfolio_id, client, oauth_session) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.sharesight = client
+        self.oauth_session = oauth_session
         self.update_method = self._async_update_data
         self.data: dict = {}
         self.portfolioID = portfolio_id
         self.startup_endpoint = ["v3", f"portfolios/{self.portfolioID}", None, False]
         self.started_up = False
 
+        # Monkey-patch convenience methods if they don't exist
+        if not hasattr(self.sharesight, 'get_portfolio_holdings'):
+            self.sharesight.get_portfolio_holdings = self._get_portfolio_holdings
+        if not hasattr(self.sharesight, 'get_portfolio_income_report'):
+            self.sharesight.get_portfolio_income_report = self._get_portfolio_income_report
+        if not hasattr(self.sharesight, 'get_portfolio_diversity'):
+            self.sharesight.get_portfolio_diversity = self._get_portfolio_diversity
+
+    async def _get_portfolio_holdings(self, portfolio_id, access_token=None):
+        """Get holdings for a portfolio."""
+        return await self.sharesight.get_api_request(['v3', f'portfolios/{portfolio_id}/holdings', None], access_token)
+
+    async def _get_portfolio_income_report(self, portfolio_id, access_token=None):
+        """Get income report for a portfolio."""
+        return await self.sharesight.get_api_request(['v3', f'portfolios/{portfolio_id}/income_report', None], access_token)
+
+    async def _get_portfolio_diversity(self, portfolio_id, access_token=None):
+        """Get diversity report for a portfolio."""
+        return await self.sharesight.get_api_request(['v3', f'portfolios/{portfolio_id}/diversity', None], access_token)
+
     async def _async_update_data(self):
-        access_token = await self.sharesight.validate_token()
+        await self.oauth_session.async_ensure_token_valid()
+        access_token = self.oauth_session.token["access_token"]
         combined_dict = {}
 
         if self.started_up is False:
-            local_data = await self.sharesight.get_api_request(self.startup_endpoint, access_token)
-            self.start_financial_year, self.end_financial_year = await get_financial_year_dates(
-                local_data.get('portfolio', {}).get('financial_year_end'))
+            local_data = await self.sharesight.get_api_request(
+                self.startup_endpoint, access_token
+            )
+            self.start_financial_year, self.end_financial_year = (
+                await get_financial_year_dates(
+                    local_data.get("portfolio", {}).get("financial_year_end")
+                )
+            )
             self.started_up = True
 
         self.current_date = date.today()
 
-        self.start_of_week = (self.current_date - timedelta(days=self.current_date.weekday())).strftime('%Y-%m-%d')
-        self.end_of_week = (self.current_date + timedelta(days=6 - self.current_date.weekday())).strftime('%Y-%m-%d')
+        self.start_of_week = (
+            self.current_date - timedelta(days=self.current_date.weekday())
+        ).strftime("%Y-%m-%d")
+        self.end_of_week = (
+            self.current_date + timedelta(days=6 - self.current_date.weekday())
+        ).strftime("%Y-%m-%d")
 
         endpoint_list = [
-            ["v2", f"portfolios/{self.portfolioID}/performance",
-             {'start_date': f"{self.current_date}", 'end_date': f"{self.current_date}"}, 'one-day'],
-            ["v2", f"portfolios/{self.portfolioID}/performance",
-             {'start_date': f"{self.start_of_week}", 'end_date': f"{self.end_of_week}"}, 'one-week'],
-            ["v2", f"portfolios/{self.portfolioID}/performance",
-             {'start_date': f"{self.start_financial_year}", 'end_date': f"{self.end_financial_year}"},
-             'financial-year'],
+            [
+                "v2",
+                f"portfolios/{self.portfolioID}/performance",
+                {"start_date": f"{self.current_date}", "end_date": f"{self.current_date}"},
+                "one-day",
+            ],
+            [
+                "v2",
+                f"portfolios/{self.portfolioID}/performance",
+                {"start_date": f"{self.start_of_week}", "end_date": f"{self.end_of_week}"},
+                "one-week",
+            ],
+            [
+                "v2",
+                f"portfolios/{self.portfolioID}/performance",
+                {
+                    "start_date": f"{self.start_financial_year}",
+                    "end_date": f"{self.end_financial_year}",
+                },
+                "financial-year",
+            ],
             ["v3", "portfolios", None, False],
             ["v3", f"portfolios/{self.portfolioID}/performance", None, False],
+        ]
+
+        # Optional endpoints that may fail (premium features or different API plans)
+        optional_endpoint_list = [
+            ["v3", f"portfolios/{self.portfolioID}/holdings", None, "holdings"],
+            ["v3", f"portfolios/{self.portfolioID}/income_report", None, "income_report"],
+            ["v3", f"portfolios/{self.portfolioID}/diversity", None, "diversity"],
         ]
 
         try:
             for endpoint in endpoint_list:
                 _LOGGER.info(f"Calling {endpoint}")
                 response = await self.sharesight.get_api_request(endpoint, access_token)
-                _LOGGER.info(f"RESPONSE IS: {response}")
+                _LOGGER.debug(f"Response for {endpoint[1]}: {list(response.keys()) if isinstance(response, dict) else type(response)}")
                 extension = endpoint[3]
 
                 if extension is not False:
-                    response = {
-                        extension: response
-                    }
+                    response = {extension: response}
 
                 combined_dict = await merge_dicts(combined_dict, response)
 
+            # Try optional endpoints - don't fail if they error
+            for endpoint in optional_endpoint_list:
+                try:
+                    _LOGGER.info(f"Calling optional endpoint {endpoint}")
+                    response = await self.sharesight.get_api_request(endpoint, access_token)
+                    extension = endpoint[3]
+
+                    # Check if the response is an error or invalid
+                    if response is None:
+                        _LOGGER.info(f"Optional endpoint {endpoint[1]} returned None, skipping")
+                        continue
+                    if not isinstance(response, dict):
+                        _LOGGER.info(f"Optional endpoint {endpoint[1]} returned non-dict: {type(response)}, skipping")
+                        continue
+                    if 'error' in response:
+                        _LOGGER.info(f"Optional endpoint {endpoint[1]} returned error: {response.get('error')}, skipping")
+                        continue
+
+                    if extension is not False:
+                        response = {extension: response}
+
+                    combined_dict = await merge_dicts(combined_dict, response)
+                except Exception as e:
+                    _LOGGER.info(f"Optional endpoint {endpoint[1]} failed: {e}, skipping")
+
             self.data = combined_dict
-            _LOGGER.info(f"DATA RECEIVED: {self.data}")
+            _LOGGER.info(f"Data keys available: {list(self.data.keys())}")
+
+            report_data = self.data.get('report', {})
+            report_holdings = report_data.get('holdings', [])
+            _LOGGER.info(f"Report keys: {list(report_data.keys())}")
+
+            # Always use report holdings as the canonical holdings source since
+            # it contains value, capital_gain, etc. per holding and the
+            # portfolio-level value.  The dedicated v3 holdings endpoint may
+            # succeed but returns a different structure without gain fields.
+            holdings_from_api = self.data.get('holdings', {})
+            _LOGGER.info(f"Holdings keys: {list(holdings_from_api.keys()) if isinstance(holdings_from_api, dict) else type(holdings_from_api)}")
+
+            if report_holdings:
+                self.data['holdings'] = {
+                    'holdings': report_holdings,
+                    'value': report_data.get('value', 0)
+                }
+                _LOGGER.info(f"Using {len(report_holdings)} holdings from report data")
+                if report_holdings:
+                    _LOGGER.info(f"Sample report holding keys: {list(report_holdings[0].keys())}")
+                    _LOGGER.debug(f"Sample report holding data: {report_holdings[0]}")
+            elif isinstance(holdings_from_api, dict) and 'error' not in holdings_from_api:
+                # Fallback to dedicated endpoint data; ensure 'value' key exists
+                api_holdings_list = holdings_from_api.get('holdings', [])
+                if api_holdings_list:
+                    total_val = sum(float(h.get('value', 0) or h.get('market_value', 0) or 0) for h in api_holdings_list)
+                    self.data['holdings'] = {
+                        'holdings': api_holdings_list,
+                        'value': total_val or report_data.get('value', 0)
+                    }
+                else:
+                    self.data['holdings'] = {'holdings': [], 'value': 0}
+            else:
+                self.data['holdings'] = {'holdings': [], 'value': 0}
+
+            # If income_report failed, build what we can from report data
+            income_data = self.data.get('income_report', {})
+            _LOGGER.info(f"Income report keys: {list(income_data.keys()) if isinstance(income_data, dict) else type(income_data)}")
+            if not income_data or 'error' in income_data:
+                self.data['income_report'] = {
+                    'payout_gain': report_data.get('payout_gain'),
+                }
+
+            # If diversity failed, build from report sub_totals
+            diversity_data = self.data.get('diversity', {})
+            _LOGGER.info(f"Diversity keys: {list(diversity_data.keys()) if isinstance(diversity_data, dict) else type(diversity_data)}")
+            if not diversity_data or 'error' in diversity_data:
+                sub_totals = report_data.get('sub_totals', [])
+                if sub_totals:
+                    total_value = float(report_data.get('value', 1) or 1)
+                    breakdown = []
+                    for st in sub_totals:
+                        st_value = float(st.get('value', 0) or 0)
+                        pct = (st_value / total_value * 100) if total_value else 0
+                        breakdown.append({
+                            'group_name': st.get('group_name', ''),
+                            'percentage': round(pct, 2),
+                            'value': st_value
+                        })
+                    self.data['diversity'] = {'breakdown': breakdown}
+                    _LOGGER.info(f"Built diversity from {len(sub_totals)} sub_totals")
+                else:
+                    self.data['diversity'] = {'breakdown': []}
+
+            _LOGGER.debug(f"Holdings count: {len(self.data.get('holdings', {}).get('holdings', []))}")
+            _LOGGER.debug(f"Diversity breakdown count: {len(self.data.get('diversity', {}).get('breakdown', []))}")
 
             SOFY_DATE, EOFY_DATE = await get_financial_year_dates(
-                self.data.get('portfolios', [{}])[0].get('financial_year_end'))
+                self.data.get("portfolios", [{}])[0].get("financial_year_end")
+            )
             if self.end_financial_year != EOFY_DATE:
                 self.end_financial_year = EOFY_DATE
                 self.start_financial_year = SOFY_DATE
@@ -102,6 +243,4 @@ class SharesightCoordinator(DataUpdateCoordinator):
             return self.data
 
         except Exception as e:
-            _LOGGER.error(e)
-            self.data = None
-            return self.data
+            _LOGGER.error(f"Error in coordinator update: {e}", exc_info=True)

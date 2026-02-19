@@ -1,54 +1,72 @@
-import voluptuous as vol
-from homeassistant import config_entries
 import logging
-from SharesightAPI.SharesightAPI import SharesightAPI
-from .const import DOMAIN, REDIRECT_URL, TOKEN_URL, API_URL_BASE, EDGE_TOKEN_URL, EDGE_API_URL_BASE
+
+import voluptuous as vol
+from homeassistant.helpers import config_entry_oauth2_flow
+
+from .const import CONF_PORTFOLIO_ID, CONF_USE_EDGE, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class SharesightConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+class SharesightConfigFlow(
+    config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN
+):
+    VERSION = 2
+    DOMAIN = DOMAIN
+
+    def __init__(self):
+        super().__init__()
+        self._oauth_data: dict = {}
+
+    @property
+    def logger(self) -> logging.Logger:
+        return _LOGGER
 
     async def async_step_user(self, user_input=None):
-        errors = {}
-        data_schema = vol.Schema({
-            vol.Required("client_id"): str,
-            vol.Required("client_secret"): str,
-            vol.Required("portfolio_id"): str,
-            vol.Required("authorization_code"): str,
-            vol.Required("use_edge_url"): bool,
-        })
+        # Skip domain-level unique_id (which would block multiple portfolios)
+        # and go straight to the credential picker.
+        return await self.async_step_pick_implementation()
 
+    async def async_oauth_create_entry(self, data: dict):
+        # OAuth succeeded — stash the token data and collect portfolio details.
+        self._oauth_data = data
+        return await self.async_step_portfolio()
+
+    async def async_step_portfolio(self, user_input=None):
         if user_input is not None:
-            try:
-                client_id = user_input.get("client_id")
-                client_secret = user_input.get("client_secret")
-                authorization_code = user_input.get("authorization_code")
-                use_edge = user_input.get("use_edge_url")
-                if not use_edge:
-                    edge_name = " "
-                    client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
-                                           TOKEN_URL,
-                                           API_URL_BASE, True, debugging=False)
-                else:
-                    edge_name = " edge "
-                    client = SharesightAPI(client_id, client_secret, authorization_code, REDIRECT_URL,
-                                           EDGE_TOKEN_URL,
-                                           EDGE_API_URL_BASE, True, debugging=False)
-                await client.get_token_data()
-                valid_response = await client.validate_token()
-                if valid_response == 401 or valid_response == 400:
-                    if use_edge:
-                        errors["base"] = "auth_edge"
-                    else:
-                        errors["base"] = "auth"
-                    return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+            portfolio_id = user_input[CONF_PORTFOLIO_ID]
+            use_edge = user_input[CONF_USE_EDGE]
 
-                return self.async_create_entry(title=f"Sharesight{edge_name}portfolio: {user_input["portfolio_id"]}",
-                                               data=user_input)
-            except Exception:
-                errors["base"] = "other"
-                return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+            await self.async_set_unique_id(portfolio_id)
+            self._abort_if_unique_id_configured()
 
-        return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+            edge_label = " edge " if use_edge else " "
+            return self.async_create_entry(
+                title=f"Sharesight{edge_label}portfolio: {portfolio_id}",
+                data={
+                    **self._oauth_data,
+                    CONF_PORTFOLIO_ID: portfolio_id,
+                    CONF_USE_EDGE: use_edge,
+                },
+            )
+
+        return self.async_show_form(
+            step_id="portfolio",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_PORTFOLIO_ID): str,
+                    vol.Required(CONF_USE_EDGE, default=False): bool,
+                }
+            ),
+        )
+
+    async def async_step_reauth(self, entry_data):
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        if user_input is None:
+            return self.async_show_form(
+                step_id="reauth_confirm",
+                data_schema=vol.Schema({}),
+            )
+        return await self.async_step_user()
