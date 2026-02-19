@@ -273,14 +273,14 @@ async def async_setup_entry(hass, entry, async_add_entities):
         for update_market in update_coordinator.data['report']['sub_totals']:
             for update_market_sensor in MARKET_SENSOR_DESCRIPTIONS:
                 __local_name = update_market['group_name']
-                display_name = f"{__local_name} value"
-                if display_name not in MARKET_SENSORS:
+                update_display_name = f"{__local_name} value"
+                if update_display_name not in MARKET_SENSORS:
                     local_market_currency = coordinator.data['portfolios'][0]['currency_code']
                     update_new_sensor = SharesightSensor(update_market_sensor, entry, update_coordinator,
                                                          local_market_currency, portfolio_id, edge,
-                                                         __update_index_market, __local_name, display_name)
+                                                         __update_index_market, __local_name, update_display_name)
                     async_add_entities([update_new_sensor], True)
-                    MARKET_SENSORS.append(display_name)
+                    MARKET_SENSORS.append(update_display_name)
             __update_index_market += 1
 
         __update_index_cash = 0
@@ -288,13 +288,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
         for update_cash in update_coordinator.data['report']['cash_accounts']:
             for update_cash_sensor in CASH_SENSOR_DESCRIPTIONS:
                 __local_name = update_cash['name']
-                display_name = f"{__local_name} cash balance"
-                if display_name not in CASH_SENSORS:
+                update_display_name = f"{__local_name} cash balance"
+                if update_display_name not in CASH_SENSORS:
                     local_cash_currency = coordinator.data['portfolios'][0]['currency_code']
                     update_new_sensor = SharesightSensor(update_cash_sensor, entry, update_coordinator,
                                                          local_cash_currency, portfolio_id, edge, __update_index_cash,
-                                                         __local_name, display_name)
-                    CASH_SENSORS.append(display_name)
+                                                         __local_name, update_display_name)
+                    CASH_SENSORS.append(update_display_name)
                     async_add_entities([update_new_sensor], True)
             __update_index_cash += 1
 
@@ -306,7 +306,7 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._state_class = sensor.state_class
         self._coordinator = coordinator
-        self._portfolioID = portfolio_id
+        self._portfolio_id = portfolio_id
         self._entity_category = sensor.entity_category
         # Use display_name if provided, otherwise use sensor.name
         self._name = display_name if display_name else str(sensor.name)
@@ -324,7 +324,7 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         else:
             self._native_unit_of_measurement = sensor.native_unit_of_measurement
 
-        base_entity_id = f"{self._name.lower().replace(' ', '_')}_{self._portfolioID}"
+        base_entity_id = f"{self._name.lower().replace(' ', '_')}_{self._portfolio_id}"
         self.entity_id = f"sensor.{base_entity_id}"
 
         if edge:
@@ -336,32 +336,32 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
 
         self._attr_device_info = DeviceInfo(
             entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, self._portfolioID)},
-            configuration_url=f"https://{edge_url}portfolio.sharesight.com/portfolios/{self._portfolioID}",
+            identifiers={(DOMAIN, self._portfolio_id)},
+            configuration_url=f"https://{edge_url}portfolio.sharesight.com/portfolios/{self._portfolio_id}",
             model=f"Sharesight{edge_name}API",
-            name=f"Sharesight{edge_name}Portfolio {self._portfolioID}")
+            name=f"Sharesight{edge_name}Portfolio {self._portfolio_id}")
 
         try:
             if self._extension_key == "Extention":
                 self._state = self._coordinator.data[self._sub_key][self._key]
-                self._unique_id = f"{self._portfolioID}_{self._sub_key}_{self._key}_{APP_VERSION}"
+                self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
             elif self._sub_key == "report" and self._key != "sub_totals" and self._key != "cash_accounts":
                 self._state = self._coordinator.data[self._sub_key][self._key]
-                self._unique_id = f"{self._portfolioID}_{self._key}_{APP_VERSION}"
+                self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
             elif self._key == "user_id":
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
-                self._unique_id = f"{self._portfolioID}_{self._key}_{APP_VERSION}"
+                self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
                 self._state = self._coordinator.data['report'][self._key][self._index][self._sub_key]
-                self._unique_id = f"{self._portfolioID}_{local_name}_VALUE_{APP_VERSION}"
+                self._unique_id = f"{self._portfolio_id}_{local_name}_VALUE_{APP_VERSION}"
             else:
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
-                self._unique_id = f"{self._portfolioID}_{self._key}_{APP_VERSION}"
+                self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
 
         except (ValueError, KeyError, IndexError, TypeError) as e:
             _LOGGER.debug(f"Could not initialize sensor '{self._key}': {type(e).__name__}: {e}")
             self._state = None
-            self._unique_id = f"{self._portfolioID}_{self._sub_key}_{self._key}_{APP_VERSION}"
+            self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
 
     @property
     def native_value(self):

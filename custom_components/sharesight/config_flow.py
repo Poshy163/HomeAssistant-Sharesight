@@ -60,7 +60,7 @@ class SharesightConfigFlow(
             ),
         )
 
-    async def async_step_reauth(self, entry_data):
+    async def async_step_reauth(self, _entry_data):
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input=None):

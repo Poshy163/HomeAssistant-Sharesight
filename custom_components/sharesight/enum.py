@@ -1,13 +1,13 @@
 from dataclasses import dataclass
-from typing import Callable, List, Union
+from typing import Callable, List, Optional, Union
 from homeassistant.components.sensor import SensorEntityDescription, SensorDeviceClass, SensorStateClass
 from homeassistant.const import CURRENCY_DOLLAR, PERCENTAGE, EntityCategory
 
 
-@dataclass
+@dataclass(frozen=True)
 class SharesightSensorDescription(SensorEntityDescription):
-    sub_key: str = None
-    extension_key: str = None
+    sub_key: Optional[str] = None
+    extension_key: Optional[str] = None
     native_value: Union[Callable[[Union[str, int, float]], Union[str, int, float]], None] = None
 
 

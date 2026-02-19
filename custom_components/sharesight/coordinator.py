@@ -45,8 +45,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
         self.oauth_session = oauth_session
         self.update_method = self._async_update_data
         self.data: dict = {}
-        self.portfolioID = portfolio_id
-        self.startup_endpoint = ["v3", f"portfolios/{self.portfolioID}", None, False]
+        self.portfolio_id = portfolio_id
+        self.startup_endpoint = ["v3", f"portfolios/{self.portfolio_id}", None, False]
         self.started_up = False
 
         # Monkey-patch convenience methods if they don't exist
@@ -74,7 +74,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
         access_token = self.oauth_session.token["access_token"]
         combined_dict = {}
 
-        if self.started_up is False:
+        if not self.started_up:
             local_data = await self.sharesight.get_api_request(
                 self.startup_endpoint, access_token
             )
@@ -97,19 +97,19 @@ class SharesightCoordinator(DataUpdateCoordinator):
         endpoint_list = [
             [
                 "v2",
-                f"portfolios/{self.portfolioID}/performance",
+                f"portfolios/{self.portfolio_id}/performance",
                 {"start_date": f"{self.current_date}", "end_date": f"{self.current_date}"},
                 "one-day",
             ],
             [
                 "v2",
-                f"portfolios/{self.portfolioID}/performance",
+                f"portfolios/{self.portfolio_id}/performance",
                 {"start_date": f"{self.start_of_week}", "end_date": f"{self.end_of_week}"},
                 "one-week",
             ],
             [
                 "v2",
-                f"portfolios/{self.portfolioID}/performance",
+                f"portfolios/{self.portfolio_id}/performance",
                 {
                     "start_date": f"{self.start_financial_year}",
                     "end_date": f"{self.end_financial_year}",
@@ -117,14 +117,14 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 "financial-year",
             ],
             ["v3", "portfolios", None, False],
-            ["v3", f"portfolios/{self.portfolioID}/performance", None, False],
+            ["v3", f"portfolios/{self.portfolio_id}/performance", None, False],
         ]
 
         # Optional endpoints that may fail (premium features or different API plans)
         optional_endpoint_list = [
-            ["v3", f"portfolios/{self.portfolioID}/holdings", None, "holdings"],
-            ["v3", f"portfolios/{self.portfolioID}/income_report", None, "income_report"],
-            ["v3", f"portfolios/{self.portfolioID}/diversity", None, "diversity"],
+            ["v3", f"portfolios/{self.portfolio_id}/holdings", None, "holdings"],
+            ["v3", f"portfolios/{self.portfolio_id}/income_report", None, "income_report"],
+            ["v3", f"portfolios/{self.portfolio_id}/diversity", None, "diversity"],
         ]
 
         try:
@@ -134,7 +134,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug(f"Response for {endpoint[1]}: {list(response.keys()) if isinstance(response, dict) else type(response)}")
                 extension = endpoint[3]
 
-                if extension is not False:
+                if extension:
                     response = {extension: response}
 
                 combined_dict = await merge_dicts(combined_dict, response)
@@ -157,7 +157,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
                         _LOGGER.info(f"Optional endpoint {endpoint[1]} returned error: {response.get('error')}, skipping")
                         continue
 
-                    if extension is not False:
+                    if extension:
                         response = {extension: response}
 
                     combined_dict = await merge_dicts(combined_dict, response)
@@ -233,12 +233,12 @@ class SharesightCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(f"Holdings count: {len(self.data.get('holdings', {}).get('holdings', []))}")
             _LOGGER.debug(f"Diversity breakdown count: {len(self.data.get('diversity', {}).get('breakdown', []))}")
 
-            SOFY_DATE, EOFY_DATE = await get_financial_year_dates(
+            sofy_date, eofy_date = await get_financial_year_dates(
                 self.data.get("portfolios", [{}])[0].get("financial_year_end")
             )
-            if self.end_financial_year != EOFY_DATE:
-                self.end_financial_year = EOFY_DATE
-                self.start_financial_year = SOFY_DATE
+            if self.end_financial_year != eofy_date:
+                self.end_financial_year = eofy_date
+                self.start_financial_year = sofy_date
 
             return self.data
 
