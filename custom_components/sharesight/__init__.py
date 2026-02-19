@@ -62,7 +62,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        _LOGGER.info(f"Unloaded platforms for entry {entry.entry_id}")
+        # Clean up per-entry sensor tracking
+        from .sensor import _MARKET_SENSORS, _CASH_SENSORS
+        _MARKET_SENSORS.pop(entry.entry_id, None)
+        _CASH_SENSORS.pop(entry.entry_id, None)
+        _LOGGER.debug(f"Unloaded platforms for entry {entry.entry_id}")
     return unload_ok
 
 

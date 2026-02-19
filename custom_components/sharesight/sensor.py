@@ -13,8 +13,9 @@ from homeassistant.helpers.event import async_track_time_interval
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
-MARKET_SENSORS = []
-CASH_SENSORS = []
+# Per-entry tracking of discovered market/cash sensors to avoid duplicates
+_MARKET_SENSORS: dict[str, list[str]] = {}
+_CASH_SENSORS: dict[str, list[str]] = {}
 
 
 def _get_holding_value(h):
@@ -235,6 +236,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
     edge = data["edge"]
     local_currency = coordinator.data['portfolios'][0]['currency_code']
 
+    entry_id = entry.entry_id
+    _MARKET_SENSORS.setdefault(entry_id, [])
+    _CASH_SENSORS.setdefault(entry_id, [])
+
     sensors = []
 
     for sensor in SENSOR_DESCRIPTIONS:
@@ -249,7 +254,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             new_sensor = SharesightSensor(market_sensor, entry, coordinator,
                                           local_currency, portfolio_id, edge, __index_market, local_name, display_name)
             sensors.append(new_sensor)
-            MARKET_SENSORS.append(display_name)
+            _MARKET_SENSORS[entry_id].append(display_name)
         __index_market += 1
 
     __index_cash = 0
@@ -260,13 +265,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
             new_sensor = SharesightSensor(cash_sensor, entry, coordinator,
                                           local_currency, portfolio_id, edge, __index_cash, local_name, display_name)
             sensors.append(new_sensor)
-            CASH_SENSORS.append(display_name)
+            _CASH_SENSORS[entry_id].append(display_name)
         __index_cash += 1
 
     async_add_entities(sensors, True)
 
     async def update_sensors(_):
-        _LOGGER.info(f"CHECKING FOR NEW MARKET/CASH SENSORS")
+        _LOGGER.debug("Checking for new market/cash sensors")
         update_data = hass.data[DOMAIN][entry.entry_id]
         update_coordinator: SharesightCoordinator = update_data["coordinator"]
         __update_index_market = 0
@@ -275,13 +280,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
             __local_name = update_market['group_name']
             for update_market_sensor in MARKET_SENSOR_DESCRIPTIONS:
                 update_display_name = f"{__local_name} {update_market_sensor.sub_key.replace('_', ' ')}"
-                if update_display_name not in MARKET_SENSORS:
+                if update_display_name not in _MARKET_SENSORS.get(entry_id, []):
                     local_market_currency = coordinator.data['portfolios'][0]['currency_code']
                     update_new_sensor = SharesightSensor(update_market_sensor, entry, update_coordinator,
                                                          local_market_currency, portfolio_id, edge,
                                                          __update_index_market, __local_name, update_display_name)
                     async_add_entities([update_new_sensor], True)
-                    MARKET_SENSORS.append(update_display_name)
+                    _MARKET_SENSORS.setdefault(entry_id, []).append(update_display_name)
             __update_index_market += 1
 
         __update_index_cash = 0
@@ -290,12 +295,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
             __local_name = update_cash['name']
             for update_cash_sensor in CASH_SENSOR_DESCRIPTIONS:
                 update_display_name = f"{__local_name} cash balance"
-                if update_display_name not in CASH_SENSORS:
+                if update_display_name not in _CASH_SENSORS.get(entry_id, []):
                     local_cash_currency = coordinator.data['portfolios'][0]['currency_code']
                     update_new_sensor = SharesightSensor(update_cash_sensor, entry, update_coordinator,
                                                          local_cash_currency, portfolio_id, edge, __update_index_cash,
                                                          __local_name, update_display_name)
-                    CASH_SENSORS.append(update_display_name)
+                    _CASH_SENSORS.setdefault(entry_id, []).append(update_display_name)
                     async_add_entities([update_new_sensor], True)
             __update_index_cash += 1
 

@@ -4,7 +4,7 @@ from typing import Any, Dict
 import itertools
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, SCAN_INTERVAL
 
@@ -131,7 +131,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
         try:
             for endpoint in endpoint_list:
-                _LOGGER.info(f"Calling {endpoint}")
+                _LOGGER.debug(f"Calling {endpoint}")
                 response = await self.sharesight.get_api_request(endpoint, access_token)
                 _LOGGER.debug(f"Response for {endpoint[1]}: {list(response.keys()) if isinstance(response, dict) else type(response)}")
                 extension = endpoint[3]
@@ -144,7 +144,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
             # Try optional endpoints - don't fail if they error
             for endpoint in optional_endpoint_list:
                 try:
-                    _LOGGER.info(f"Calling optional endpoint {endpoint}")
+                    _LOGGER.debug(f"Calling optional endpoint {endpoint}")
                     response = await self.sharesight.get_api_request(endpoint, access_token)
                     extension = endpoint[3]
 
@@ -167,40 +167,38 @@ class SharesightCoordinator(DataUpdateCoordinator):
                     _LOGGER.info(f"Optional endpoint {endpoint[1]} failed: {e}, skipping")
 
             self.data = combined_dict
-            _LOGGER.info(f"Data keys available: {list(self.data.keys())}")
+            _LOGGER.debug(f"Data keys available: {list(self.data.keys())}")
 
             report_data = self.data.get('report', {})
             report_holdings = report_data.get('holdings', [])
-            _LOGGER.info(f"Report keys: {list(report_data.keys())}")
+            _LOGGER.debug(f"Report keys: {list(report_data.keys())}")
 
             sub_totals = report_data.get('sub_totals', [])
             if sub_totals:
-                _LOGGER.info(f"Sub totals count: {len(sub_totals)}, sample keys: {list(sub_totals[0].keys())}")
+                _LOGGER.debug(f"Sub totals count: {len(sub_totals)}, sample keys: {list(sub_totals[0].keys())}")
                 _LOGGER.debug(f"Sub totals sample data: {sub_totals[0]}")
 
             one_day_data = self.data.get('one-day', {})
             if one_day_data:
-                _LOGGER.info(f"One-day keys: {list(one_day_data.keys())}")
+                _LOGGER.debug(f"One-day keys: {list(one_day_data.keys())}")
             one_week_data = self.data.get('one-week', {})
             if one_week_data:
-                _LOGGER.info(f"One-week keys: {list(one_week_data.keys())}")
+                _LOGGER.debug(f"One-week keys: {list(one_week_data.keys())}")
 
             # Always use report holdings as the canonical holdings source since
             # it contains value, capital_gain, etc. per holding and the
             # portfolio-level value.  The dedicated v3 holdings endpoint may
             # succeed but returns a different structure without gain fields.
             holdings_from_api = self.data.get('holdings', {})
-            _LOGGER.info(f"Holdings keys: {list(holdings_from_api.keys()) if isinstance(holdings_from_api, dict) else type(holdings_from_api)}")
+            _LOGGER.debug(f"Holdings keys: {list(holdings_from_api.keys()) if isinstance(holdings_from_api, dict) else type(holdings_from_api)}")
 
             if report_holdings:
                 self.data['holdings'] = {
                     'holdings': report_holdings,
                     'value': report_data.get('value', 0)
                 }
-                _LOGGER.info(f"Using {len(report_holdings)} holdings from report data")
-                if report_holdings:
-                    _LOGGER.info(f"Sample report holding keys: {list(report_holdings[0].keys())}")
-                    _LOGGER.debug(f"Sample report holding data: {report_holdings[0]}")
+                _LOGGER.debug(f"Using {len(report_holdings)} holdings from report data")
+                _LOGGER.debug(f"Sample report holding keys: {list(report_holdings[0].keys())}")
             elif isinstance(holdings_from_api, dict) and 'error' not in holdings_from_api:
                 # Fallback to dedicated endpoint data; ensure 'value' key exists
                 api_holdings_list = holdings_from_api.get('holdings', [])
@@ -217,7 +215,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
             # If income_report failed, build what we can from report data
             income_data = self.data.get('income_report', {})
-            _LOGGER.info(f"Income report keys: {list(income_data.keys()) if isinstance(income_data, dict) else type(income_data)}")
+            _LOGGER.debug(f"Income report keys: {list(income_data.keys()) if isinstance(income_data, dict) else type(income_data)}")
             if not income_data or 'error' in income_data:
                 self.data['income_report'] = {
                     'payout_gain': report_data.get('payout_gain'),
@@ -225,7 +223,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
             # If diversity failed, build from report sub_totals
             diversity_data = self.data.get('diversity', {})
-            _LOGGER.info(f"Diversity keys: {list(diversity_data.keys()) if isinstance(diversity_data, dict) else type(diversity_data)}")
+            _LOGGER.debug(f"Diversity keys: {list(diversity_data.keys()) if isinstance(diversity_data, dict) else type(diversity_data)}")
             if not diversity_data or 'error' in diversity_data:
                 sub_totals = report_data.get('sub_totals', [])
                 if sub_totals:
@@ -240,7 +238,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
                             'value': st_value
                         })
                     self.data['diversity'] = {'breakdown': breakdown}
-                    _LOGGER.info(f"Built diversity from {len(sub_totals)} sub_totals")
+                    _LOGGER.debug(f"Built diversity from {len(sub_totals)} sub_totals")
                 else:
                     self.data['diversity'] = {'breakdown': []}
 
@@ -251,24 +249,24 @@ class SharesightCoordinator(DataUpdateCoordinator):
             trades_data = self.data.get('trades', {})
             if trades_data and isinstance(trades_data, dict) and 'error' not in trades_data:
                 trades_list = trades_data.get('trades', [])
-                _LOGGER.info(f"Trades count: {len(trades_list)}")
+                _LOGGER.debug(f"Trades count: {len(trades_list)}")
                 if trades_list:
-                    _LOGGER.info(f"Sample trade keys: {list(trades_list[0].keys())}")
+                    _LOGGER.debug(f"Sample trade keys: {list(trades_list[0].keys())}")
                     _LOGGER.debug(f"Sample trade data: {trades_list[0]}")
             else:
-                _LOGGER.info(f"Trades data unavailable or error: {type(trades_data)}")
+                _LOGGER.debug(f"Trades data unavailable or error: {type(trades_data)}")
                 self.data['trades'] = {'trades': []}
 
             # Log contributions data
             contributions_data = self.data.get('contributions', {})
             if contributions_data and isinstance(contributions_data, dict) and 'error' not in contributions_data:
                 contributions_list = contributions_data.get('contributions', [])
-                _LOGGER.info(f"Contributions count: {len(contributions_list)}")
+                _LOGGER.debug(f"Contributions count: {len(contributions_list)}")
                 if contributions_list:
-                    _LOGGER.info(f"Sample contribution keys: {list(contributions_list[0].keys())}")
+                    _LOGGER.debug(f"Sample contribution keys: {list(contributions_list[0].keys())}")
                     _LOGGER.debug(f"Sample contribution data: {contributions_list[0]}")
             else:
-                _LOGGER.info(f"Contributions data unavailable or error: {type(contributions_data)}")
+                _LOGGER.debug(f"Contributions data unavailable or error: {type(contributions_data)}")
                 self.data['contributions'] = {'contributions': []}
 
             sofy_date, eofy_date = await get_financial_year_dates(
@@ -282,3 +280,4 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
         except Exception as e:
             _LOGGER.error(f"Error in coordinator update: {e}", exc_info=True)
+            raise UpdateFailed(f"Error fetching Sharesight data: {e}") from e
