@@ -8,10 +8,10 @@
                 "title": "Select Sharesight credentials"
             },
             "portfolio": {
-                "title": "Configure Portfolio",
-                "description": "Enter your Sharesight portfolio ID. You can find it in the URL when viewing your portfolio (e.g. `https://portfolio.sharesight.com/portfolios/12345`).",
+                "title": "Select Portfolio",
+                "description": "Select the Sharesight portfolio you want to monitor.",
                 "data": {
-                    "portfolio_id": "Portfolio ID",
+                    "portfolio_id": "Portfolio",
                     "use_edge_url": "Use Edge API (Developer accounts only)"
                 }
             },

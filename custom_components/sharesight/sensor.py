@@ -5,6 +5,7 @@ from homeassistant.components.sensor import (
 )
 from .const import APP_VERSION, DOMAIN, UPDATE_SENSOR_SCAN_INTERVAL
 import logging
+from datetime import date, timedelta
 from .enum import SENSOR_DESCRIPTIONS, MARKET_SENSOR_DESCRIPTIONS, CASH_SENSOR_DESCRIPTIONS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import SharesightCoordinator
@@ -375,6 +376,16 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 "identifier": f"{self._portfolio_id}_diversity",
                 "model": f"{base_model} - Diversity",
             },
+            "trades": {
+                "name": f"Sharesight{edge_name}Trades",
+                "identifier": f"{self._portfolio_id}_trades",
+                "model": f"{base_model} - Trades",
+            },
+            "contributions": {
+                "name": f"Sharesight{edge_name}Contributions",
+                "identifier": f"{self._portfolio_id}_contributions",
+                "model": f"{base_model} - Contributions",
+            },
         }
 
         if self._device_group == "market" and local_name:
@@ -409,7 +420,11 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
                 self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
-                self._state = self._coordinator.data['report'][self._key][self._index][self._sub_key]
+                if self._sub_key == "holding_count":
+                    sub_total_entry = self._coordinator.data['report'][self._key][self._index]
+                    self._state = len(sub_total_entry.get('holdings', []))
+                else:
+                    self._state = self._coordinator.data['report'][self._key][self._index][self._sub_key]
                 self._unique_id = f"{self._portfolio_id}_{local_name}_{self._sub_key}_{APP_VERSION}"
             else:
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
@@ -535,12 +550,28 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 return self._coordinator.data[self._sub_key][0][self._key]
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
                 # Used for cash accounts or market data
+                if self._sub_key == "holding_count":
+                    # Count holdings nested inside this sub_total
+                    sub_total_entry = self._coordinator.data['report'][self._key][self._index]
+                    return len(sub_total_entry.get('holdings', []))
                 return self._coordinator.data['report'][self._key][self._index][self._sub_key]
             # Holdings sensors
             elif self._sub_key == "holdings":
                 holdings_data = self._coordinator.data.get('holdings', {})
                 if self._key == "holding_count":
                     return len(holdings_data.get('holdings', []))
+                elif self._key == "unconfirmed_transactions":
+                    # Sum unconfirmed transactions across all report holdings
+                    report_holdings = self._coordinator.data.get('report', {}).get('holdings', [])
+                    total = 0
+                    for h in report_holdings:
+                        val = h.get('number_of_unconfirmed_transactions', 0)
+                        if val:
+                            try:
+                                total += int(val)
+                            except (ValueError, TypeError):
+                                pass
+                    return total
                 elif self._key == "largest_holding_symbol":
                     largest = _get_largest_holding(holdings_data)
                     return largest.get('symbol') if largest else None
@@ -568,6 +599,12 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 elif self._key == "worst_gain_percent":
                     worst_gain = _get_worst_gain_holding(holdings_data)
                     return worst_gain.get('percent') if worst_gain else None
+                elif self._key == "positive_holdings_count":
+                    holdings_list = holdings_data.get('holdings', [])
+                    return sum(1 for h in holdings_list if _get_holding_gain(h) > 0)
+                elif self._key == "negative_holdings_count":
+                    holdings_list = holdings_data.get('holdings', [])
+                    return sum(1 for h in holdings_list if _get_holding_gain(h) < 0)
             # Income Report sensors
             elif self._sub_key == "income_report":
                 income_data = self._coordinator.data.get('income_report', {})
@@ -577,6 +614,21 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                     return income_summary.get('total_income')
                 elif self._key == "dividend_count":
                     return income_summary.get('dividend_count')
+                elif self._key == "last_dividend_date":
+                    payouts = income_data.get('payouts', [])
+                    if payouts:
+                        # Sort by date descending, return the most recent
+                        try:
+                            sorted_payouts = sorted(
+                                [p for p in payouts if p.get('paid_on') or p.get('date')],
+                                key=lambda p: p.get('paid_on') or p.get('date', ''),
+                                reverse=True
+                            )
+                            if sorted_payouts:
+                                return sorted_payouts[0].get('paid_on') or sorted_payouts[0].get('date')
+                        except (TypeError, ValueError):
+                            pass
+                    return None
             # Diversity sensors
             elif self._sub_key == "diversity":
                 diversity_data = self._coordinator.data.get('diversity', {})
@@ -599,6 +651,123 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                     return market_3.get('percent') if market_3 else None
                 elif self._key == "market_3_value":
                     return market_3.get('value') if market_3 else None
+            # Trades sensors
+            elif self._sub_key == "trades":
+                trades_data = self._coordinator.data.get('trades', {})
+                trades_list = trades_data.get('trades', [])
+                if self._key == "total_trades":
+                    return len(trades_list)
+                elif self._key == "trade_count_30d":
+                    if not trades_list:
+                        return 0
+                    cutoff = (date.today() - timedelta(days=30)).isoformat()
+                    count = 0
+                    for t in trades_list:
+                        trade_date = t.get('trade_date') or t.get('date') or t.get('traded_at', '')
+                        if trade_date and str(trade_date)[:10] >= cutoff:
+                            count += 1
+                    return count
+                else:
+                    # last_trade_date, last_trade_symbol, last_trade_type, last_trade_value
+                    if not trades_list:
+                        return None
+                    try:
+                        sorted_trades = sorted(
+                            trades_list,
+                            key=lambda t: t.get('trade_date') or t.get('date') or t.get('traded_at', ''),
+                            reverse=True
+                        )
+                        last = sorted_trades[0]
+                        if self._key == "last_trade_date":
+                            return last.get('trade_date') or last.get('date') or last.get('traded_at')
+                        elif self._key == "last_trade_symbol":
+                            return (
+                                last.get('symbol')
+                                or last.get('code')
+                                or last.get('instrument_code')
+                                or (last.get('instrument', {}) or {}).get('code', '')
+                                or (last.get('instrument', {}) or {}).get('symbol', '')
+                            )
+                        elif self._key == "last_trade_type":
+                            return last.get('trade_type') or last.get('type') or last.get('transaction_type')
+                        elif self._key == "last_trade_value":
+                            val = last.get('value') or last.get('cost_base') or last.get('amount')
+                            if val is not None:
+                                try:
+                                    return round(float(val), 2)
+                                except (ValueError, TypeError):
+                                    pass
+                            # Compute from price * quantity
+                            price = last.get('price', 0)
+                            quantity = last.get('quantity', 0)
+                            if price and quantity:
+                                try:
+                                    return round(float(price) * float(quantity), 2)
+                                except (ValueError, TypeError):
+                                    pass
+                            return None
+                    except (TypeError, ValueError, IndexError):
+                        return None
+            # Contributions sensors
+            elif self._sub_key == "contributions":
+                contributions_data = self._coordinator.data.get('contributions', {})
+                contributions_list = contributions_data.get('contributions', [])
+                if self._key == "total_contributions":
+                    total = 0
+                    for c in contributions_list:
+                        amt = c.get('amount', 0)
+                        if amt:
+                            try:
+                                val = float(amt)
+                                if val > 0:
+                                    total += val
+                            except (ValueError, TypeError):
+                                pass
+                    return round(total, 2) if total else 0
+                elif self._key == "total_withdrawals":
+                    total = 0
+                    for c in contributions_list:
+                        amt = c.get('amount', 0)
+                        if amt:
+                            try:
+                                val = float(amt)
+                                if val < 0:
+                                    total += abs(val)
+                            except (ValueError, TypeError):
+                                pass
+                    return round(total, 2) if total else 0
+                elif self._key == "net_contributions":
+                    total = 0
+                    for c in contributions_list:
+                        amt = c.get('amount', 0)
+                        if amt:
+                            try:
+                                total += float(amt)
+                            except (ValueError, TypeError):
+                                pass
+                    return round(total, 2)
+                elif self._key == "last_contribution_date" or self._key == "last_contribution_amount":
+                    if not contributions_list:
+                        return None
+                    try:
+                        sorted_contributions = sorted(
+                            contributions_list,
+                            key=lambda c: c.get('date') or c.get('paid_on') or c.get('created_at', ''),
+                            reverse=True
+                        )
+                        last = sorted_contributions[0]
+                        if self._key == "last_contribution_date":
+                            return last.get('date') or last.get('paid_on') or last.get('created_at')
+                        elif self._key == "last_contribution_amount":
+                            val = last.get('amount')
+                            if val is not None:
+                                try:
+                                    return round(float(val), 2)
+                                except (ValueError, TypeError):
+                                    pass
+                            return None
+                    except (TypeError, ValueError, IndexError):
+                        return None
             else:
                 return self._coordinator.data[self._sub_key][0][self._key]
 

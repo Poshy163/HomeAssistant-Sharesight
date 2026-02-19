@@ -7,24 +7,81 @@
 - Supports automatically adding additional markets and/or cash accounts (set to check every 10 minutes)
 
 ## Services
-This allows you to monitor your sharesight portfolio value, currently supports:
-- Dividend Gain
-- Dividend Gain Percent
-- Currency Gain
-- Currency Gain Percent
-- Total Gain
-- Total Gain Percent
-- Capital Gain
-- Capital Gain Percent
+This allows you to monitor your sharesight portfolio value. Sensors are organized into separate HA devices by category:
+
+### Portfolio
 - Portfolio Value
-- Daily Portfolio Change Amount
-- Daily Portfolio Change Percent
-- Weekly Portfolio Change Amount
-- Weekly Portfolio Change Percent
-- Market Portfolio Value (for each market you hold shares in, shown in local currency)
-- Cash Account Value (for each cash account (includes xero cash accounts))
-- Portfolio ID
-- User ID
+- Capital Gain / Capital Gain Percent
+- Total Gain / Total Gain Percent
+- Currency Gain / Currency Gain Percent
+- Dividend Gain / Dividend Gain Percent
+- Cost Basis
+- Unrealised Gain / Unrealised Gain Percent
+- Annualised Return Percent
+- Portfolio Start Value
+- Portfolio ID, User ID, Primary Currency, Portfolio Name, Financial Year End
+
+### Daily Performance
+- Daily Change Amount / Daily Change Percent
+- Daily Capital Gain / Daily Capital Gain Percent
+- Daily Currency Gain / Daily Currency Gain Percent
+- Daily Dividend Gain / Daily Dividend Gain Percent
+- Daily Start Value / Daily End Value
+
+### Weekly Performance
+- Weekly Change Amount / Weekly Change Percent
+- Weekly Capital Gain / Weekly Capital Gain Percent
+- Weekly Currency Gain / Weekly Currency Gain Percent
+- Weekly Dividend Gain / Weekly Dividend Gain Percent
+- Weekly Start Value / Weekly End Value
+
+### Financial Year
+- FY Change Amount / FY Change Percent
+- FY Capital Gain / FY Capital Gain Percent
+- FY Currency Gain / FY Currency Gain Percent
+- FY Dividend Gain / FY Dividend Gain Percent
+- FY Annualised Return Percent
+- FY Start Value / FY End Value
+
+### Per-Market (one device per exchange, e.g. ASX, NYSE, LSE)
+- Value
+- Capital Gain / Capital Gain Percent
+- Total Gain / Total Gain Percent
+- Currency Gain / Currency Gain Percent
+- Dividend Gain / Dividend Gain Percent
+- Cost Basis
+- Annualised Return Percent
+- Holding Count
+
+### Holdings
+- Number of Holdings
+- Largest Holding (Symbol / Value / Percent)
+- Top Gain (Symbol / Amount / Percent)
+- Worst Gain (Symbol / Amount / Percent)
+- Positive Holdings Count / Negative Holdings Count
+- Unconfirmed Transactions
+
+### Cash Accounts
+- Cash Balance (one per cash account)
+
+### Income
+- Total Dividend Income
+- Number of Dividends
+- Last Dividend Date
+
+### Diversity
+- Top 3 Markets (Name / Percent / Value each)
+
+### Trades
+- Last Trade Date / Symbol / Type / Value
+- Trades Last 30 Days
+- Total Trades
+
+### Contributions
+- Total Contributions
+- Total Withdrawals
+- Net Contributions
+- Last Contribution Date / Amount
 
 
 

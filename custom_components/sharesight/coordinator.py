@@ -125,6 +125,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
             ["v3", f"portfolios/{self.portfolio_id}/holdings", None, "holdings"],
             ["v3", f"portfolios/{self.portfolio_id}/income_report", None, "income_report"],
             ["v3", f"portfolios/{self.portfolio_id}/diversity", None, "diversity"],
+            ["v3", f"portfolios/{self.portfolio_id}/trades", None, "trades"],
+            ["v3", f"portfolios/{self.portfolio_id}/contributions", None, "contributions"],
         ]
 
         try:
@@ -175,6 +177,13 @@ class SharesightCoordinator(DataUpdateCoordinator):
             if sub_totals:
                 _LOGGER.info(f"Sub totals count: {len(sub_totals)}, sample keys: {list(sub_totals[0].keys())}")
                 _LOGGER.debug(f"Sub totals sample data: {sub_totals[0]}")
+
+            one_day_data = self.data.get('one-day', {})
+            if one_day_data:
+                _LOGGER.info(f"One-day keys: {list(one_day_data.keys())}")
+            one_week_data = self.data.get('one-week', {})
+            if one_week_data:
+                _LOGGER.info(f"One-week keys: {list(one_week_data.keys())}")
 
             # Always use report holdings as the canonical holdings source since
             # it contains value, capital_gain, etc. per holding and the
@@ -237,6 +246,30 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
             _LOGGER.debug(f"Holdings count: {len(self.data.get('holdings', {}).get('holdings', []))}")
             _LOGGER.debug(f"Diversity breakdown count: {len(self.data.get('diversity', {}).get('breakdown', []))}")
+
+            # Log trades data
+            trades_data = self.data.get('trades', {})
+            if trades_data and isinstance(trades_data, dict) and 'error' not in trades_data:
+                trades_list = trades_data.get('trades', [])
+                _LOGGER.info(f"Trades count: {len(trades_list)}")
+                if trades_list:
+                    _LOGGER.info(f"Sample trade keys: {list(trades_list[0].keys())}")
+                    _LOGGER.debug(f"Sample trade data: {trades_list[0]}")
+            else:
+                _LOGGER.info(f"Trades data unavailable or error: {type(trades_data)}")
+                self.data['trades'] = {'trades': []}
+
+            # Log contributions data
+            contributions_data = self.data.get('contributions', {})
+            if contributions_data and isinstance(contributions_data, dict) and 'error' not in contributions_data:
+                contributions_list = contributions_data.get('contributions', [])
+                _LOGGER.info(f"Contributions count: {len(contributions_list)}")
+                if contributions_list:
+                    _LOGGER.info(f"Sample contribution keys: {list(contributions_list[0].keys())}")
+                    _LOGGER.debug(f"Sample contribution data: {contributions_list[0]}")
+            else:
+                _LOGGER.info(f"Contributions data unavailable or error: {type(contributions_data)}")
+                self.data['contributions'] = {'contributions': []}
 
             sofy_date, eofy_date = await get_financial_year_dates(
                 self.data.get("portfolios", [{}])[0].get("financial_year_end")
