@@ -9,6 +9,7 @@ class SharesightSensorDescription(SensorEntityDescription):
     sub_key: Optional[str] = None
     extension_key: Optional[str] = None
     native_value: Union[Callable[[Union[str, int, float]], Union[str, int, float]], None] = None
+    device_group: Optional[str] = "portfolio"
 
 
 CASH_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
@@ -22,7 +23,8 @@ CASH_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="cash"
     )
 ]
 
@@ -37,7 +39,8 @@ MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="market"
     )
 ]
 
@@ -161,8 +164,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
-
+        suggested_display_precision=2,
+        device_group="daily"
     ),
     SharesightSensorDescription(
         key="total_gain",
@@ -174,7 +177,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="daily"
     ),
     SharesightSensorDescription(
         key="total_gain",
@@ -186,7 +190,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="weekly"
     ),
     SharesightSensorDescription(
         key="total_gain_percent",
@@ -198,8 +203,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
-
+        suggested_display_precision=2,
+        device_group="weekly"
     ),
     SharesightSensorDescription(
         key="total_gain_percent",
@@ -211,7 +216,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     SharesightSensorDescription(
         key="total_gain",
@@ -223,7 +229,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     SharesightSensorDescription(
         key="portfolio_id",
@@ -351,7 +358,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="daily"
     ),
     SharesightSensorDescription(
         key="capital_gain_percent",
@@ -363,7 +371,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="daily"
     ),
     SharesightSensorDescription(
         key="currency_gain",
@@ -375,7 +384,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="daily"
     ),
     SharesightSensorDescription(
         key="currency_gain_percent",
@@ -387,7 +397,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="daily"
     ),
     SharesightSensorDescription(
         key="payout_gain",
@@ -399,7 +410,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="daily"
     ),
     SharesightSensorDescription(
         key="payout_gain_percent",
@@ -411,7 +423,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="daily"
     ),
     # Weekly breakdown sensors
     SharesightSensorDescription(
@@ -424,7 +437,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="weekly"
     ),
     SharesightSensorDescription(
         key="capital_gain_percent",
@@ -436,7 +450,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="weekly"
     ),
     SharesightSensorDescription(
         key="currency_gain",
@@ -448,7 +463,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="weekly"
     ),
     SharesightSensorDescription(
         key="currency_gain_percent",
@@ -460,7 +476,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="weekly"
     ),
     SharesightSensorDescription(
         key="payout_gain",
@@ -472,7 +489,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="weekly"
     ),
     SharesightSensorDescription(
         key="payout_gain_percent",
@@ -484,7 +502,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="weekly"
     ),
     # Financial Year breakdown sensors
     SharesightSensorDescription(
@@ -497,7 +516,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     SharesightSensorDescription(
         key="capital_gain_percent",
@@ -509,7 +529,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     SharesightSensorDescription(
         key="currency_gain",
@@ -521,7 +542,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     SharesightSensorDescription(
         key="currency_gain_percent",
@@ -533,7 +555,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     SharesightSensorDescription(
         key="payout_gain",
@@ -545,7 +568,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     SharesightSensorDescription(
         key="payout_gain_percent",
@@ -557,7 +581,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     SharesightSensorDescription(
         key="annualised_return_percent",
@@ -569,7 +594,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="financial_year"
     ),
     # Holdings sensors
     SharesightSensorDescription(
@@ -582,7 +608,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=0
+        suggested_display_precision=0,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="largest_holding_symbol",
@@ -594,7 +621,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=None
+        suggested_display_precision=None,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="largest_holding_value",
@@ -606,7 +634,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="largest_holding_percent",
@@ -618,7 +647,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="top_gain_symbol",
@@ -630,7 +660,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=None
+        suggested_display_precision=None,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="top_gain_amount",
@@ -642,7 +673,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="top_gain_percent",
@@ -654,7 +686,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="worst_gain_symbol",
@@ -666,7 +699,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=None
+        suggested_display_precision=None,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="worst_gain_amount",
@@ -678,7 +712,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="holdings"
     ),
     SharesightSensorDescription(
         key="worst_gain_percent",
@@ -690,7 +725,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="holdings"
     ),
     # Income Report sensors
     SharesightSensorDescription(
@@ -703,7 +739,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="income"
     ),
 
     SharesightSensorDescription(
@@ -716,7 +753,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=0
+        suggested_display_precision=0,
+        device_group="income"
     ),
     # Diversity sensors - Top 3 markets by percentage
     SharesightSensorDescription(
@@ -729,7 +767,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=None
+        suggested_display_precision=None,
+        device_group="diversity"
     ),
     SharesightSensorDescription(
         key="market_1_percent",
@@ -741,7 +780,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="diversity"
     ),
     SharesightSensorDescription(
         key="market_1_value",
@@ -753,7 +793,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="diversity"
     ),
     SharesightSensorDescription(
         key="market_2_name",
@@ -765,7 +806,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=None
+        suggested_display_precision=None,
+        device_group="diversity"
     ),
     SharesightSensorDescription(
         key="market_2_percent",
@@ -777,7 +819,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="diversity"
     ),
     SharesightSensorDescription(
         key="market_2_value",
@@ -789,7 +832,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="diversity"
     ),
     SharesightSensorDescription(
         key="market_3_name",
@@ -801,7 +845,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=None
+        suggested_display_precision=None,
+        device_group="diversity"
     ),
     SharesightSensorDescription(
         key="market_3_percent",
@@ -813,7 +858,8 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=None,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="diversity"
     ),
     SharesightSensorDescription(
         key="market_3_value",
@@ -825,6 +871,7 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
-        suggested_display_precision=2
+        suggested_display_precision=2,
+        device_group="diversity"
     ),
 ]

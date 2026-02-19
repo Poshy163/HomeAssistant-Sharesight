@@ -318,6 +318,7 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         self._entry = entry
         self._device_class = sensor.device_class
         self._sub_key = sensor.sub_key
+        self._device_group = getattr(sensor, 'device_group', 'portfolio')
 
         if sensor.native_unit_of_measurement == CURRENCY_DOLLAR:
             self._native_unit_of_measurement = currency
@@ -334,12 +335,68 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
             edge_name = " "
             edge_url = ""
 
+        base_config_url = f"https://{edge_url}portfolio.sharesight.com/portfolios/{self._portfolio_id}"
+        base_model = f"Sharesight{edge_name}API"
+
+        # Device group labels and identifiers for separate HA devices
+        device_group_config = {
+            "portfolio": {
+                "name": f"Sharesight{edge_name}Portfolio {self._portfolio_id}",
+                "identifier": f"{self._portfolio_id}_portfolio",
+                "model": f"{base_model} - Portfolio",
+            },
+            "daily": {
+                "name": f"Sharesight{edge_name}Daily Performance",
+                "identifier": f"{self._portfolio_id}_daily",
+                "model": f"{base_model} - Daily Performance",
+            },
+            "weekly": {
+                "name": f"Sharesight{edge_name}Weekly Performance",
+                "identifier": f"{self._portfolio_id}_weekly",
+                "model": f"{base_model} - Weekly Performance",
+            },
+            "financial_year": {
+                "name": f"Sharesight{edge_name}Financial Year",
+                "identifier": f"{self._portfolio_id}_financial_year",
+                "model": f"{base_model} - Financial Year",
+            },
+            "holdings": {
+                "name": f"Sharesight{edge_name}Holdings",
+                "identifier": f"{self._portfolio_id}_holdings",
+                "model": f"{base_model} - Holdings",
+            },
+            "income": {
+                "name": f"Sharesight{edge_name}Income",
+                "identifier": f"{self._portfolio_id}_income",
+                "model": f"{base_model} - Income",
+            },
+            "diversity": {
+                "name": f"Sharesight{edge_name}Diversity",
+                "identifier": f"{self._portfolio_id}_diversity",
+                "model": f"{base_model} - Diversity",
+            },
+        }
+
+        if self._device_group == "market" and local_name:
+            device_id = f"{self._portfolio_id}_market_{local_name}"
+            device_name = f"Sharesight{edge_name}{local_name}"
+            device_model = f"{base_model} - Market: {local_name}"
+        elif self._device_group == "cash" and local_name:
+            device_id = f"{self._portfolio_id}_cash_{local_name}"
+            device_name = f"Sharesight{edge_name}Cash: {local_name}"
+            device_model = f"{base_model} - Cash: {local_name}"
+        else:
+            cfg = device_group_config.get(self._device_group, device_group_config["portfolio"])
+            device_id = cfg["identifier"]
+            device_name = cfg["name"]
+            device_model = cfg["model"]
+
         self._attr_device_info = DeviceInfo(
             entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, self._portfolio_id)},
-            configuration_url=f"https://{edge_url}portfolio.sharesight.com/portfolios/{self._portfolio_id}",
-            model=f"Sharesight{edge_name}API",
-            name=f"Sharesight{edge_name}Portfolio {self._portfolio_id}")
+            identifiers={(DOMAIN, device_id)},
+            configuration_url=base_config_url,
+            model=device_model,
+            name=device_name)
 
         try:
             if self._extension_key == "Extention":
