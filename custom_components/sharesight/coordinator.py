@@ -171,6 +171,11 @@ class SharesightCoordinator(DataUpdateCoordinator):
             report_holdings = report_data.get('holdings', [])
             _LOGGER.info(f"Report keys: {list(report_data.keys())}")
 
+            sub_totals = report_data.get('sub_totals', [])
+            if sub_totals:
+                _LOGGER.info(f"Sub totals count: {len(sub_totals)}, sample keys: {list(sub_totals[0].keys())}")
+                _LOGGER.debug(f"Sub totals sample data: {sub_totals[0]}")
+
             # Always use report holdings as the canonical holdings source since
             # it contains value, capital_gain, etc. per holding and the
             # portfolio-level value.  The dedicated v3 holdings endpoint may

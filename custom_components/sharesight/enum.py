@@ -41,7 +41,111 @@ MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         entity_category=None,
         suggested_display_precision=2,
         device_group="market"
-    )
+    ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="capital_gain",
+        extension_key=None,
+        name="MARKET capital gain",
+        icon="mdi:cash-plus",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="capital_gain_percent",
+        extension_key=None,
+        name="MARKET capital gain percent",
+        icon="mdi:sack-percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="total_gain",
+        extension_key=None,
+        name="MARKET total gain",
+        icon="mdi:cash-plus",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="total_gain_percent",
+        extension_key=None,
+        name="MARKET total gain percent",
+        icon="mdi:sack-percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="currency_gain",
+        extension_key=None,
+        name="MARKET currency gain",
+        icon="mdi:cash-plus",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="currency_gain_percent",
+        extension_key=None,
+        name="MARKET currency gain percent",
+        icon="mdi:sack-percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="payout_gain",
+        extension_key=None,
+        name="MARKET dividend gain",
+        icon="mdi:hand-coin",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="payout_gain_percent",
+        extension_key=None,
+        name="MARKET dividend gain percent",
+        icon="mdi:hand-coin",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
 ]
 
 SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [

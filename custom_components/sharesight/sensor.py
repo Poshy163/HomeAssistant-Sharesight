@@ -242,25 +242,25 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     __index_market = 0
     for market in coordinator.data['report']['sub_totals']:
+        local_name = market['group_name']
         for market_sensor in MARKET_SENSOR_DESCRIPTIONS:
-            local_name = market['group_name']
-            display_name = f"{local_name} value"
+            display_name = f"{local_name} {market_sensor.sub_key.replace('_', ' ')}"
             new_sensor = SharesightSensor(market_sensor, entry, coordinator,
                                           local_currency, portfolio_id, edge, __index_market, local_name, display_name)
             sensors.append(new_sensor)
             MARKET_SENSORS.append(display_name)
-            __index_market += 1
+        __index_market += 1
 
     __index_cash = 0
     for cash in coordinator.data['report']['cash_accounts']:
+        local_name = cash['name']
         for cash_sensor in CASH_SENSOR_DESCRIPTIONS:
-            local_name = cash['name']
             display_name = f"{local_name} cash balance"
             new_sensor = SharesightSensor(cash_sensor, entry, coordinator,
                                           local_currency, portfolio_id, edge, __index_cash, local_name, display_name)
             sensors.append(new_sensor)
             CASH_SENSORS.append(display_name)
-            __index_cash += 1
+        __index_cash += 1
 
     async_add_entities(sensors, True)
 
@@ -271,9 +271,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
         __update_index_market = 0
 
         for update_market in update_coordinator.data['report']['sub_totals']:
+            __local_name = update_market['group_name']
             for update_market_sensor in MARKET_SENSOR_DESCRIPTIONS:
-                __local_name = update_market['group_name']
-                update_display_name = f"{__local_name} value"
+                update_display_name = f"{__local_name} {update_market_sensor.sub_key.replace('_', ' ')}"
                 if update_display_name not in MARKET_SENSORS:
                     local_market_currency = coordinator.data['portfolios'][0]['currency_code']
                     update_new_sensor = SharesightSensor(update_market_sensor, entry, update_coordinator,
@@ -286,8 +286,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         __update_index_cash = 0
 
         for update_cash in update_coordinator.data['report']['cash_accounts']:
+            __local_name = update_cash['name']
             for update_cash_sensor in CASH_SENSOR_DESCRIPTIONS:
-                __local_name = update_cash['name']
                 update_display_name = f"{__local_name} cash balance"
                 if update_display_name not in CASH_SENSORS:
                     local_cash_currency = coordinator.data['portfolios'][0]['currency_code']
@@ -410,7 +410,7 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
                 self._state = self._coordinator.data['report'][self._key][self._index][self._sub_key]
-                self._unique_id = f"{self._portfolio_id}_{local_name}_VALUE_{APP_VERSION}"
+                self._unique_id = f"{self._portfolio_id}_{local_name}_{self._sub_key}_{APP_VERSION}"
             else:
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
                 self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
