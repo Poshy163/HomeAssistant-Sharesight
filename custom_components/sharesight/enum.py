@@ -172,19 +172,6 @@ MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         suggested_display_precision=2,
         device_group="market"
     ),
-    SharesightSensorDescription(
-        key='sub_totals',
-        sub_key="annualised_return_percent",
-        extension_key=None,
-        name="MARKET annualised return percent",
-        icon="mdi:chart-areaspline",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=None,
-        state_class=SensorStateClass.TOTAL,
-        entity_category=None,
-        suggested_display_precision=2,
-        device_group="market"
-    ),
 ]
 
 SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
@@ -460,18 +447,6 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         extension_key=None,
         name="Unrealised Gain Percent",
         icon="mdi:percent",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=None,
-        state_class=SensorStateClass.TOTAL,
-        entity_category=None,
-        suggested_display_precision=2
-    ),
-    SharesightSensorDescription(
-        key="annualised_return_percent",
-        sub_key="report",
-        extension_key=None,
-        name="Annualised Return Percent",
-        icon="mdi:chart-areaspline",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.TOTAL,
@@ -813,19 +788,6 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         extension_key="Extention",
         name="Financial Year Dividend Gain Percent",
         icon="mdi:hand-coin",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=None,
-        state_class=SensorStateClass.TOTAL,
-        entity_category=None,
-        suggested_display_precision=2,
-        device_group="financial_year"
-    ),
-    SharesightSensorDescription(
-        key="annualised_return_percent",
-        sub_key="financial-year",
-        extension_key="Extention",
-        name="Financial Year Annualised Return Percent",
-        icon="mdi:chart-areaspline",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.TOTAL,

@@ -425,12 +425,19 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
                 self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
+                sub_entry = self._coordinator.data['report'][self._key][self._index]
                 if self._sub_key == "holding_count":
-                    sub_total_entry = self._coordinator.data['report'][self._key][self._index]
-                    self._state = len(sub_total_entry.get('holdings', []))
+                    self._state = len(sub_entry.get('holdings', []))
+                elif self._sub_key == "cost_base":
+                    val = sub_entry.get('value')
+                    cg = sub_entry.get('capital_gain')
+                    if val is not None and cg is not None:
+                        self._state = round(float(val) - float(cg), 2)
+                    else:
+                        self._state = None
                 else:
-                    self._state = self._coordinator.data['report'][self._key][self._index][self._sub_key]
-                self._unique_id = f"{self._portfolio_id}_{local_name}_{self._sub_key}_{APP_VERSION}"
+                    self._state = sub_entry.get(self._sub_key)
+                self._unique_id = f"{self._portfolio_id}_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
             else:
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
                 self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
@@ -438,7 +445,10 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         except (ValueError, KeyError, IndexError, TypeError) as e:
             _LOGGER.debug(f"Could not initialize sensor '{self._key}': {type(e).__name__}: {e}")
             self._state = None
-            self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
+            if local_name and ("sub_totals" in self._key or "cash_accounts" in self._key):
+                self._unique_id = f"{self._portfolio_id}_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
+            else:
+                self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
 
     @property
     def native_value(self):
@@ -449,26 +459,6 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 if not data or not isinstance(data, dict):
                     return None
 
-                # annualised_return_percent is not a direct field in the v2
-                # performance response.  When the API returns percentages as
-                # annualised (percentages_annualised == True) we use
-                # total_gain_percent.  For the financial-year period, the v2
-                # API does not include a percentages_annualised flag so we
-                # fall back to total_gain_percent as the best available value.
-                if self._key == 'annualised_return_percent':
-                    _LOGGER.debug(
-                        f"annualised_return_percent lookup in '{self._sub_key}': "
-                        f"percentages_annualised={data.get('percentages_annualised')}, "
-                        f"total_gain_percent={data.get('total_gain_percent')}, "
-                        f"keys={list(data.keys())}"
-                    )
-                    val = data.get('total_gain_percent')
-                    if val is not None:
-                        try:
-                            return round(float(val), 2)
-                        except (ValueError, TypeError):
-                            return None
-                    return None
 
                 return data.get(self._key)
             elif self._sub_key == "report" and self._key != "sub_totals" and self._key != "cash_accounts":
@@ -519,25 +509,6 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                             return round(float(capital_gain_percent), 2)
                         return None
 
-                    elif self._key == 'annualised_return_percent':
-                        # Try explicit annualised fields first
-                        for field in ('annualised_return_percent', 'annualised_return', 'annualised_percent'):
-                            val = report_data.get(field)
-                            if val is not None:
-                                try:
-                                    return round(float(val), 2)
-                                except (ValueError, TypeError):
-                                    continue
-                        # Fall back to total_gain_percent when annualised
-                        if report_data.get('percentages_annualised'):
-                            val = report_data.get('total_gain_percent')
-                            if val is not None:
-                                try:
-                                    return round(float(val), 2)
-                                except (ValueError, TypeError):
-                                    pass
-                        return None
-
                     elif self._key == 'start_value':
                         value = report_data.get('value')
                         total_gain = report_data.get('total_gain')
@@ -555,11 +526,21 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 return self._coordinator.data[self._sub_key][0][self._key]
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
                 # Used for cash accounts or market data
+                sub_entry = self._coordinator.data['report'][self._key][self._index]
                 if self._sub_key == "holding_count":
                     # Count holdings nested inside this sub_total
-                    sub_total_entry = self._coordinator.data['report'][self._key][self._index]
-                    return len(sub_total_entry.get('holdings', []))
-                return self._coordinator.data['report'][self._key][self._index][self._sub_key]
+                    return len(sub_entry.get('holdings', []))
+                if self._sub_key == "cost_base":
+                    # cost_base is not in the API response; derive it
+                    val = sub_entry.get('value')
+                    cg = sub_entry.get('capital_gain')
+                    if val is not None and cg is not None:
+                        try:
+                            return round(float(val) - float(cg), 2)
+                        except (ValueError, TypeError):
+                            return None
+                    return None
+                return sub_entry.get(self._sub_key)
             # Holdings sensors
             elif self._sub_key == "holdings":
                 holdings_data = self._coordinator.data.get('holdings', {})

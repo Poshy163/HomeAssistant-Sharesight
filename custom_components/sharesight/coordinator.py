@@ -48,6 +48,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
         self.portfolio_id = portfolio_id
         self.startup_endpoint = ["v3", f"portfolios/{self.portfolio_id}", None, False]
         self.started_up = False
+        self._failed_optional_endpoints: set[str] = set()
 
         # Monkey-patch convenience methods if they don't exist
         if not hasattr(self.sharesight, 'get_portfolio_holdings'):
@@ -143,6 +144,10 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
             # Try optional endpoints - don't fail if they error
             for endpoint in optional_endpoint_list:
+                endpoint_path = endpoint[1]
+                if endpoint_path in self._failed_optional_endpoints:
+                    _LOGGER.debug(f"Skipping previously failed optional endpoint {endpoint_path}")
+                    continue
                 try:
                     _LOGGER.debug(f"Calling optional endpoint {endpoint}")
                     response = await self.sharesight.get_api_request(endpoint, access_token)
@@ -150,13 +155,16 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
                     # Check if the response is an error or invalid
                     if response is None:
-                        _LOGGER.info(f"Optional endpoint {endpoint[1]} returned None, skipping")
+                        _LOGGER.info(f"Optional endpoint {endpoint_path} returned None, skipping")
+                        self._failed_optional_endpoints.add(endpoint_path)
                         continue
                     if not isinstance(response, dict):
-                        _LOGGER.info(f"Optional endpoint {endpoint[1]} returned non-dict: {type(response)}, skipping")
+                        _LOGGER.info(f"Optional endpoint {endpoint_path} returned non-dict: {type(response)}, skipping")
+                        self._failed_optional_endpoints.add(endpoint_path)
                         continue
                     if 'error' in response:
-                        _LOGGER.info(f"Optional endpoint {endpoint[1]} returned error: {response.get('error')}, skipping")
+                        _LOGGER.info(f"Optional endpoint {endpoint_path} returned error: {response.get('error')}, skipping future calls")
+                        self._failed_optional_endpoints.add(endpoint_path)
                         continue
 
                     if extension:
@@ -164,7 +172,8 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
                     combined_dict = await merge_dicts(combined_dict, response)
                 except Exception as e:
-                    _LOGGER.info(f"Optional endpoint {endpoint[1]} failed: {e}, skipping")
+                    _LOGGER.info(f"Optional endpoint {endpoint_path} failed: {e}, skipping future calls")
+                    self._failed_optional_endpoints.add(endpoint_path)
 
             self.data = combined_dict
             _LOGGER.debug(f"Data keys available: {list(self.data.keys())}")
