@@ -127,7 +127,6 @@ class SharesightCoordinator(DataUpdateCoordinator):
             ["v3", f"portfolios/{self.portfolio_id}/income_report", None, "income_report"],
             ["v3", f"portfolios/{self.portfolio_id}/diversity", None, "diversity"],
             ["v3", f"portfolios/{self.portfolio_id}/trades", None, "trades"],
-            ["v3", f"portfolios/{self.portfolio_id}/contributions", None, "contributions"],
         ]
 
         try:
@@ -184,8 +183,36 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
             sub_totals = report_data.get('sub_totals', [])
             if sub_totals:
+                # Deduplicate sub_totals by group_name (API may return duplicates)
+                seen_groups: set[str] = set()
+                deduped_sub_totals = []
+                for st in sub_totals:
+                    gn = st.get('group_name', '')
+                    if gn not in seen_groups:
+                        seen_groups.add(gn)
+                        deduped_sub_totals.append(st)
+                    else:
+                        _LOGGER.debug(f"Deduplicating sub_total group_name: {gn}")
+                if len(deduped_sub_totals) < len(sub_totals):
+                    self.data['report']['sub_totals'] = deduped_sub_totals
+                    sub_totals = deduped_sub_totals
                 _LOGGER.debug(f"Sub totals count: {len(sub_totals)}, sample keys: {list(sub_totals[0].keys())}")
                 _LOGGER.debug(f"Sub totals sample data: {sub_totals[0]}")
+
+            # Deduplicate cash_accounts by name
+            cash_accounts = report_data.get('cash_accounts', [])
+            if cash_accounts:
+                seen_cash_names: set[str] = set()
+                deduped_cash = []
+                for ca in cash_accounts:
+                    cn = ca.get('name', '')
+                    if cn not in seen_cash_names:
+                        seen_cash_names.add(cn)
+                        deduped_cash.append(ca)
+                    else:
+                        _LOGGER.debug(f"Deduplicating cash_account name: {cn}")
+                if len(deduped_cash) < len(cash_accounts):
+                    self.data['report']['cash_accounts'] = deduped_cash
 
             one_day_data = self.data.get('one-day', {})
             if one_day_data:
@@ -266,17 +293,6 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug(f"Trades data unavailable or error: {type(trades_data)}")
                 self.data['trades'] = {'trades': []}
 
-            # Log contributions data
-            contributions_data = self.data.get('contributions', {})
-            if contributions_data and isinstance(contributions_data, dict) and 'error' not in contributions_data:
-                contributions_list = contributions_data.get('contributions', [])
-                _LOGGER.debug(f"Contributions count: {len(contributions_list)}")
-                if contributions_list:
-                    _LOGGER.debug(f"Sample contribution keys: {list(contributions_list[0].keys())}")
-                    _LOGGER.debug(f"Sample contribution data: {contributions_list[0]}")
-            else:
-                _LOGGER.debug(f"Contributions data unavailable or error: {type(contributions_data)}")
-                self.data['contributions'] = {'contributions': []}
 
             sofy_date, eofy_date = await get_financial_year_dates(
                 self.data.get("portfolios", [{}])[0].get("financial_year_end")

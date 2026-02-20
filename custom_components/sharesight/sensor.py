@@ -241,27 +241,52 @@ async def async_setup_entry(hass, entry, async_add_entities):
     _CASH_SENSORS.setdefault(entry_id, [])
 
     sensors = []
+    seen_unique_ids: set[str] = set()
 
     for sensor in SENSOR_DESCRIPTIONS:
         sensors.append(SharesightSensor(sensor, entry, coordinator,
                                         local_currency, portfolio_id, edge))
 
+    # Deduplicate sub_totals by group_name (API may return duplicates)
+    seen_markets: set[str] = set()
     __index_market = 0
     for market in coordinator.data['report']['sub_totals']:
         local_name = market['group_name']
+        if local_name in seen_markets:
+            _LOGGER.debug(f"Skipping duplicate market sub_total: {local_name}")
+            __index_market += 1
+            continue
+        seen_markets.add(local_name)
         for market_sensor in MARKET_SENSOR_DESCRIPTIONS:
             display_name = f"{local_name} {market_sensor.sub_key.replace('_', ' ')}"
+            uid = f"{portfolio_id}_{local_name}_{market_sensor.sub_key}_{market_sensor.key}_{APP_VERSION}"
+            if uid in seen_unique_ids:
+                _LOGGER.debug(f"Skipping duplicate market sensor unique_id: {uid}")
+                continue
+            seen_unique_ids.add(uid)
             new_sensor = SharesightSensor(market_sensor, entry, coordinator,
                                           local_currency, portfolio_id, edge, __index_market, local_name, display_name)
             sensors.append(new_sensor)
             _MARKET_SENSORS[entry_id].append(display_name)
         __index_market += 1
 
+    # Deduplicate cash_accounts by name
+    seen_cash: set[str] = set()
     __index_cash = 0
     for cash in coordinator.data['report']['cash_accounts']:
         local_name = cash['name']
+        if local_name in seen_cash:
+            _LOGGER.debug(f"Skipping duplicate cash account: {local_name}")
+            __index_cash += 1
+            continue
+        seen_cash.add(local_name)
         for cash_sensor in CASH_SENSOR_DESCRIPTIONS:
             display_name = f"{local_name} cash balance"
+            uid = f"{portfolio_id}_{local_name}_{cash_sensor.sub_key}_{cash_sensor.key}_{APP_VERSION}"
+            if uid in seen_unique_ids:
+                _LOGGER.debug(f"Skipping duplicate cash sensor unique_id: {uid}")
+                continue
+            seen_unique_ids.add(uid)
             new_sensor = SharesightSensor(cash_sensor, entry, coordinator,
                                           local_currency, portfolio_id, edge, __index_cash, local_name, display_name)
             sensors.append(new_sensor)
@@ -274,10 +299,16 @@ async def async_setup_entry(hass, entry, async_add_entities):
         _LOGGER.debug("Checking for new market/cash sensors")
         update_data = hass.data[DOMAIN][entry.entry_id]
         update_coordinator: SharesightCoordinator = update_data["coordinator"]
-        __update_index_market = 0
 
+        # Deduplicate by group_name when checking for new markets
+        seen_update_markets: set[str] = set()
+        __update_index_market = 0
         for update_market in update_coordinator.data['report']['sub_totals']:
             __local_name = update_market['group_name']
+            if __local_name in seen_update_markets:
+                __update_index_market += 1
+                continue
+            seen_update_markets.add(__local_name)
             for update_market_sensor in MARKET_SENSOR_DESCRIPTIONS:
                 update_display_name = f"{__local_name} {update_market_sensor.sub_key.replace('_', ' ')}"
                 if update_display_name not in _MARKET_SENSORS.get(entry_id, []):
@@ -289,10 +320,15 @@ async def async_setup_entry(hass, entry, async_add_entities):
                     _MARKET_SENSORS.setdefault(entry_id, []).append(update_display_name)
             __update_index_market += 1
 
+        # Deduplicate by name when checking for new cash accounts
+        seen_update_cash: set[str] = set()
         __update_index_cash = 0
-
         for update_cash in update_coordinator.data['report']['cash_accounts']:
             __local_name = update_cash['name']
+            if __local_name in seen_update_cash:
+                __update_index_cash += 1
+                continue
+            seen_update_cash.add(__local_name)
             for update_cash_sensor in CASH_SENSOR_DESCRIPTIONS:
                 update_display_name = f"{__local_name} cash balance"
                 if update_display_name not in _CASH_SENSORS.get(entry_id, []):
@@ -304,7 +340,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
                     async_add_entities([update_new_sensor], True)
             __update_index_cash += 1
 
-    async_track_time_interval(hass, update_sensors, UPDATE_SENSOR_SCAN_INTERVAL)
+    unsub = async_track_time_interval(hass, update_sensors, UPDATE_SENSOR_SCAN_INTERVAL)
+    # Store the unsub handle for cleanup on unload
+    hass.data[DOMAIN][entry.entry_id]["update_sensors_unsub"] = unsub
 
 
 class SharesightSensor(CoordinatorEntity, SensorEntity):
@@ -325,6 +363,7 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         self._device_class = sensor.device_class
         self._sub_key = sensor.sub_key
         self._device_group = getattr(sensor, 'device_group', 'portfolio')
+        self._local_name = local_name
 
         if sensor.native_unit_of_measurement == CURRENCY_DOLLAR:
             self._native_unit_of_measurement = currency
@@ -385,11 +424,6 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 "name": f"Sharesight{edge_name}Trades",
                 "identifier": f"{self._portfolio_id}_trades",
                 "model": f"{base_model} - Trades",
-            },
-            "contributions": {
-                "name": f"Sharesight{edge_name}Contributions",
-                "identifier": f"{self._portfolio_id}_contributions",
-                "model": f"{base_model} - Contributions",
             },
         }
 
@@ -528,8 +562,22 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 # Used for cash accounts or market data
                 sub_entry = self._coordinator.data['report'][self._key][self._index]
                 if self._sub_key == "holding_count":
-                    # Count holdings nested inside this sub_total
-                    return len(sub_entry.get('holdings', []))
+                    # Count holdings nested inside this sub_total or from report holdings
+                    holdings = sub_entry.get('holdings', [])
+                    if holdings:
+                        return len(holdings)
+                    report_holdings = self._coordinator.data.get('report', {}).get('holdings', [])
+                    if report_holdings and self._local_name:
+                        count = 0
+                        for h in report_holdings:
+                            group_name = h.get('group_name')
+                            if not group_name:
+                                instrument = h.get('instrument', {}) or {}
+                                group_name = instrument.get('market_code') or h.get('market')
+                            if group_name == self._local_name:
+                                count += 1
+                        return count
+                    return 0
                 if self._sub_key == "cost_base":
                     # cost_base is not in the API response; derive it
                     val = sub_entry.get('value')
@@ -541,7 +589,7 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                             return None
                     return None
                 return sub_entry.get(self._sub_key)
-            # Holdings sensors
+
             elif self._sub_key == "holdings":
                 holdings_data = self._coordinator.data.get('holdings', {})
                 if self._key == "holding_count":
@@ -689,66 +737,6 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                             if price and quantity:
                                 try:
                                     return round(float(price) * float(quantity), 2)
-                                except (ValueError, TypeError):
-                                    pass
-                            return None
-                    except (TypeError, ValueError, IndexError):
-                        return None
-            # Contributions sensors
-            elif self._sub_key == "contributions":
-                contributions_data = self._coordinator.data.get('contributions', {})
-                contributions_list = contributions_data.get('contributions', [])
-                if self._key == "total_contributions":
-                    total = 0
-                    for c in contributions_list:
-                        amt = c.get('amount', 0)
-                        if amt:
-                            try:
-                                val = float(amt)
-                                if val > 0:
-                                    total += val
-                            except (ValueError, TypeError):
-                                pass
-                    return round(total, 2) if total else 0
-                elif self._key == "total_withdrawals":
-                    total = 0
-                    for c in contributions_list:
-                        amt = c.get('amount', 0)
-                        if amt:
-                            try:
-                                val = float(amt)
-                                if val < 0:
-                                    total += abs(val)
-                            except (ValueError, TypeError):
-                                pass
-                    return round(total, 2) if total else 0
-                elif self._key == "net_contributions":
-                    total = 0
-                    for c in contributions_list:
-                        amt = c.get('amount', 0)
-                        if amt:
-                            try:
-                                total += float(amt)
-                            except (ValueError, TypeError):
-                                pass
-                    return round(total, 2)
-                elif self._key == "last_contribution_date" or self._key == "last_contribution_amount":
-                    if not contributions_list:
-                        return None
-                    try:
-                        sorted_contributions = sorted(
-                            contributions_list,
-                            key=lambda c: c.get('date') or c.get('paid_on') or c.get('created_at', ''),
-                            reverse=True
-                        )
-                        last = sorted_contributions[0]
-                        if self._key == "last_contribution_date":
-                            return last.get('date') or last.get('paid_on') or last.get('created_at')
-                        elif self._key == "last_contribution_amount":
-                            val = last.get('amount')
-                            if val is not None:
-                                try:
-                                    return round(float(val), 2)
                                 except (ValueError, TypeError):
                                     pass
                             return None
