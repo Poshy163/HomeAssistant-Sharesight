@@ -172,6 +172,19 @@ MARKET_SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         suggested_display_precision=2,
         device_group="market"
     ),
+    SharesightSensorDescription(
+        key='sub_totals',
+        sub_key="annualised_return_percent",
+        extension_key=None,
+        name="MARKET annualised return percent",
+        icon="mdi:percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="market"
+    ),
 ]
 
 SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
@@ -229,6 +242,18 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         extension_key=None,
         name="Total gain percent",
         icon="mdi:sack-percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="annualised_return_percent",
+        sub_key="report",
+        extension_key=None,
+        name="Annualised Return Percent",
+        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.TOTAL,
@@ -363,6 +388,19 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         device_group="financial_year"
     ),
     SharesightSensorDescription(
+        key="annualised_return_percent",
+        sub_key="financial-year",
+        extension_key="Extention",
+        name="Financial Year Annualised Return Percent",
+        icon="mdi:percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="financial_year"
+    ),
+    SharesightSensorDescription(
         key="portfolio_id",
         sub_key="report",
         extension_key=None,
@@ -373,6 +411,150 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="market_count",
+        sub_key="report",
+        extension_key=None,
+        name="Market Count",
+        icon="mdi:format-list-numbered",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=0
+    ),
+    SharesightSensorDescription(
+        key="cash_accounts_count",
+        sub_key="report",
+        extension_key=None,
+        name="Cash Accounts Count",
+        icon="mdi:bank",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=0
+    ),
+    SharesightSensorDescription(
+        key="total_cash_value",
+        sub_key="report",
+        extension_key=None,
+        name="Total Cash Value",
+        icon="mdi:cash-multiple",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="largest_market_name",
+        sub_key="report",
+        extension_key=None,
+        name="Largest Market Name",
+        icon="mdi:earth",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None
+    ),
+    SharesightSensorDescription(
+        key="largest_market_value",
+        sub_key="report",
+        extension_key=None,
+        name="Largest Market Value",
+        icon="mdi:earth",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="largest_market_percent",
+        sub_key="report",
+        extension_key=None,
+        name="Largest Market Percent",
+        icon="mdi:earth",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=None,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2
+    ),
+    SharesightSensorDescription(
+        key="portfolio_tz_name",
+        sub_key="report",
+        extension_key=None,
+        name="Portfolio Timezone",
+        icon="mdi:map-clock-outline",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None
+    ),
+    SharesightSensorDescription(
+        key="grouping",
+        sub_key="report",
+        extension_key=None,
+        name="Active Grouping",
+        icon="mdi:view-grid-outline",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None
+    ),
+    SharesightSensorDescription(
+        key="report_currency",
+        sub_key="user_setting",
+        extension_key=None,
+        name="Report Currency",
+        icon="mdi:cash",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None
+    ),
+    SharesightSensorDescription(
+        key="report_grouping",
+        sub_key="user_setting",
+        extension_key=None,
+        name="Report Grouping",
+        icon="mdi:view-list-outline",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None
+    ),
+    SharesightSensorDescription(
+        key="report_combined",
+        sub_key="user_setting",
+        extension_key=None,
+        name="Report Combined",
+        icon="mdi:call-merge",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None
+    ),
+    SharesightSensorDescription(
+        key="report_include_sold_shares",
+        sub_key="user_setting",
+        extension_key=None,
+        name="Report Includes Sold Shares",
+        icon="mdi:identifier",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=None
     ),
     SharesightSensorDescription(
         key="user_id",
@@ -1112,6 +1294,72 @@ SENSOR_DESCRIPTIONS: List[SharesightSensorDescription] = [
         entity_category=None,
         suggested_display_precision=None,
         device_group="income"
+    ),
+    # Contribution sensors
+    SharesightSensorDescription(
+        key="total_contributions",
+        sub_key="contributions",
+        extension_key=None,
+        name="Total Contributions",
+        icon="mdi:cash-plus",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="contributions"
+    ),
+    SharesightSensorDescription(
+        key="total_withdrawals",
+        sub_key="contributions",
+        extension_key=None,
+        name="Total Withdrawals",
+        icon="mdi:cash-minus",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="contributions"
+    ),
+    SharesightSensorDescription(
+        key="net_contributions",
+        sub_key="contributions",
+        extension_key=None,
+        name="Net Contributions",
+        icon="mdi:cash-sync",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="contributions"
+    ),
+    SharesightSensorDescription(
+        key="last_contribution_date",
+        sub_key="contributions",
+        extension_key=None,
+        name="Last Contribution Date",
+        icon="mdi:calendar-clock",
+        native_unit_of_measurement=None,
+        device_class=None,
+        state_class=None,
+        entity_category=None,
+        suggested_display_precision=None,
+        device_group="contributions"
+    ),
+    SharesightSensorDescription(
+        key="last_contribution_amount",
+        sub_key="contributions",
+        extension_key=None,
+        name="Last Contribution Amount",
+        icon="mdi:cash-fast",
+        native_unit_of_measurement=CURRENCY_DOLLAR,
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=None,
+        entity_category=None,
+        suggested_display_precision=2,
+        device_group="contributions"
     ),
     # Trades sensors
     SharesightSensorDescription(

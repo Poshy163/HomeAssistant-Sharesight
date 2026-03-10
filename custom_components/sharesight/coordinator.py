@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from datetime import date, datetime, timedelta
 from typing import Any, Dict
 import itertools
@@ -49,6 +50,11 @@ class SharesightCoordinator(DataUpdateCoordinator):
         self.startup_endpoint = ["v3", f"portfolios/{self.portfolio_id}", None, False]
         self.started_up = False
         self._failed_optional_endpoints: set[str] = set()
+        self._failed_cash_transaction_accounts: set[int] = set()
+        # Sharesight limits intensive report endpoints to 3 concurrent requests.
+        self._heavy_request_semaphore = asyncio.Semaphore(3)
+        # General cap to avoid request bursts across many portfolios.
+        self._request_semaphore = asyncio.Semaphore(8)
 
         # Monkey-patch convenience methods if they don't exist
         if not hasattr(self.sharesight, 'get_portfolio_holdings'):
@@ -69,6 +75,22 @@ class SharesightCoordinator(DataUpdateCoordinator):
     async def _get_portfolio_diversity(self, portfolio_id, access_token=None):
         """Get diversity report for a portfolio."""
         return await self.sharesight.get_api_request(['v3', f'portfolios/{portfolio_id}/diversity', None], access_token)
+
+    @staticmethod
+    def _is_heavy_endpoint(path: str) -> bool:
+        """Whether this endpoint should be constrained by the heavy concurrency limit."""
+        heavy_markers = ("/performance", "/diversity", "/valuation")
+        return any(marker in path for marker in heavy_markers)
+
+    async def _call_endpoint(self, endpoint, access_token):
+        """Call one API endpoint with concurrency controls."""
+        version, path, params, _ = endpoint
+
+        async with self._request_semaphore:
+            if self._is_heavy_endpoint(path):
+                async with self._heavy_request_semaphore:
+                    return await self.sharesight.get_api_request([version, path, params, False], access_token)
+            return await self.sharesight.get_api_request([version, path, params, False], access_token)
 
     async def _async_update_data(self):
         await self.oauth_session.async_ensure_token_valid()
@@ -95,6 +117,17 @@ class SharesightCoordinator(DataUpdateCoordinator):
             self.current_date + timedelta(days=6 - self.current_date.weekday())
         ).strftime("%Y-%m-%d")
 
+        performance_params: dict[str, Any] = {
+            "include_limited": "true",
+            "report_combined": "true",
+        }
+
+        _LOGGER.debug(
+            "Performance request params: include_limited=%s report_combined=%s",
+            performance_params.get("include_limited"),
+            performance_params.get("report_combined"),
+        )
+
         endpoint_list = [
             [
                 "v2",
@@ -118,61 +151,134 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 "financial-year",
             ],
             ["v3", "portfolios", None, False],
-            ["v3", f"portfolios/{self.portfolio_id}/performance", None, False],
+            ["v3", f"portfolios/{self.portfolio_id}/performance", performance_params, False],
         ]
 
         # Optional endpoints that may fail (premium features or different API plans)
         optional_endpoint_list = [
             ["v3", f"portfolios/{self.portfolio_id}/holdings", None, "holdings"],
-            ["v3", f"portfolios/{self.portfolio_id}/income_report", None, "income_report"],
-            ["v3", f"portfolios/{self.portfolio_id}/diversity", None, "diversity"],
-            ["v3", f"portfolios/{self.portfolio_id}/trades", None, "trades"],
+            ["v2", f"portfolios/{self.portfolio_id}/payouts", None, "payouts"],
+            ["v2", f"portfolios/{self.portfolio_id}/diversity", None, "diversity_v2"],
+            ["v2", f"portfolios/{self.portfolio_id}/trades", None, "trades"],
+            ["v2", "cash_accounts", None, "cash_accounts_v2"],
+            ["v3", f"portfolios/{self.portfolio_id}/user_setting", None, "user_setting"],
+            ["v2", "user_instruments", None, "user_instruments"],
         ]
 
         try:
-            for endpoint in endpoint_list:
-                _LOGGER.debug(f"Calling {endpoint}")
-                response = await self.sharesight.get_api_request(endpoint, access_token)
-                _LOGGER.debug(f"Response for {endpoint[1]}: {list(response.keys()) if isinstance(response, dict) else type(response)}")
+            _LOGGER.debug("Calling %s required endpoints in parallel", len(endpoint_list))
+            required_tasks = [self._call_endpoint(endpoint, access_token) for endpoint in endpoint_list]
+            required_results = await asyncio.gather(*required_tasks)
+
+            for endpoint, response in zip(endpoint_list, required_results):
+                _LOGGER.debug(
+                    "Response for %s: %s",
+                    endpoint[1],
+                    list(response.keys()) if isinstance(response, dict) else type(response),
+                )
                 extension = endpoint[3]
+                if extension:
+                    response = {extension: response}
+                combined_dict = await merge_dicts(combined_dict, response)
+
+            # Try optional endpoints - don't fail if they error
+            active_optional = [
+                endpoint
+                for endpoint in optional_endpoint_list
+                if endpoint[1] not in self._failed_optional_endpoints
+            ]
+            _LOGGER.debug("Calling %s optional endpoints in parallel", len(active_optional))
+            optional_tasks = [self._call_endpoint(endpoint, access_token) for endpoint in active_optional]
+            optional_results = await asyncio.gather(*optional_tasks, return_exceptions=True)
+
+            for endpoint, result in zip(active_optional, optional_results):
+                endpoint_path = endpoint[1]
+                extension = endpoint[3]
+
+                if isinstance(result, Exception):
+                    _LOGGER.info("Optional endpoint %s failed: %s, skipping future calls", endpoint_path, result)
+                    self._failed_optional_endpoints.add(endpoint_path)
+                    continue
+
+                response = result
+                if response is None:
+                    _LOGGER.info("Optional endpoint %s returned None, skipping", endpoint_path)
+                    self._failed_optional_endpoints.add(endpoint_path)
+                    continue
+                if not isinstance(response, dict):
+                    _LOGGER.info(
+                        "Optional endpoint %s returned non-dict: %s, skipping",
+                        endpoint_path,
+                        type(response),
+                    )
+                    self._failed_optional_endpoints.add(endpoint_path)
+                    continue
+                if 'error' in response:
+                    _LOGGER.info(
+                        "Optional endpoint %s returned error: %s, skipping future calls",
+                        endpoint_path,
+                        response.get('error'),
+                    )
+                    self._failed_optional_endpoints.add(endpoint_path)
+                    continue
 
                 if extension:
                     response = {extension: response}
 
+                _LOGGER.debug(
+                    "Optional response for %s: %s",
+                    endpoint_path,
+                    list(result.keys()) if isinstance(result, dict) else type(result),
+                )
                 combined_dict = await merge_dicts(combined_dict, response)
 
-            # Try optional endpoints - don't fail if they error
-            for endpoint in optional_endpoint_list:
-                endpoint_path = endpoint[1]
-                if endpoint_path in self._failed_optional_endpoints:
-                    _LOGGER.debug(f"Skipping previously failed optional endpoint {endpoint_path}")
-                    continue
-                try:
-                    _LOGGER.debug(f"Calling optional endpoint {endpoint}")
-                    response = await self.sharesight.get_api_request(endpoint, access_token)
-                    extension = endpoint[3]
+            # Fetch per-account cash transactions for the selected portfolio.
+            # These power contribution sensors and are optional for users/plans
+            # that don't expose cash account transaction APIs.
+            cash_accounts_data = combined_dict.get("cash_accounts_v2", {})
+            cash_accounts = []
+            if isinstance(cash_accounts_data, dict):
+                cash_accounts = cash_accounts_data.get("cash_accounts", [])
 
-                    # Check if the response is an error or invalid
-                    if response is None:
-                        _LOGGER.info(f"Optional endpoint {endpoint_path} returned None, skipping")
-                        self._failed_optional_endpoints.add(endpoint_path)
+            cash_account_transactions: list[dict[str, Any]] = []
+            if cash_accounts:
+                tx_work = []
+                for account in cash_accounts:
+                    account_id = account.get("id")
+                    account_portfolio_id = account.get("portfolio_id")
+                    if account_id is None or str(account_portfolio_id) != str(self.portfolio_id):
                         continue
-                    if not isinstance(response, dict):
-                        _LOGGER.info(f"Optional endpoint {endpoint_path} returned non-dict: {type(response)}, skipping")
-                        self._failed_optional_endpoints.add(endpoint_path)
+                    if account_id in self._failed_cash_transaction_accounts:
                         continue
-                    if 'error' in response:
-                        _LOGGER.info(f"Optional endpoint {endpoint_path} returned error: {response.get('error')}, skipping future calls")
-                        self._failed_optional_endpoints.add(endpoint_path)
-                        continue
+                    endpoint = ["v2", f"cash_accounts/{account_id}/cash_account_transactions", None, False]
+                    tx_work.append((account_id, endpoint))
 
-                    if extension:
-                        response = {extension: response}
+                if tx_work:
+                    tx_tasks = [self._call_endpoint(endpoint, access_token) for _, endpoint in tx_work]
+                    tx_results = await asyncio.gather(*tx_tasks, return_exceptions=True)
 
-                    combined_dict = await merge_dicts(combined_dict, response)
-                except Exception as e:
-                    _LOGGER.info(f"Optional endpoint {endpoint_path} failed: {e}, skipping future calls")
-                    self._failed_optional_endpoints.add(endpoint_path)
+                    for (account_id, endpoint), tx_result in zip(tx_work, tx_results):
+                        tx_endpoint_path = endpoint[1]
+                        if isinstance(tx_result, Exception):
+                            _LOGGER.info(
+                                "Optional cash account transactions endpoint %s failed: %s",
+                                tx_endpoint_path,
+                                tx_result,
+                            )
+                            self._failed_cash_transaction_accounts.add(account_id)
+                            continue
+
+                        tx_response = tx_result
+                        if not isinstance(tx_response, dict) or "error" in tx_response:
+                            self._failed_cash_transaction_accounts.add(account_id)
+                            continue
+                        tx_list = tx_response.get("cash_account_transactions", [])
+                        if isinstance(tx_list, list):
+                            cash_account_transactions.extend(tx_list)
+
+            combined_dict["cash_account_transactions"] = {
+                "cash_account_transactions": cash_account_transactions
+            }
 
             self.data = combined_dict
             _LOGGER.debug(f"Data keys available: {list(self.data.keys())}")
@@ -249,37 +355,84 @@ class SharesightCoordinator(DataUpdateCoordinator):
             else:
                 self.data['holdings'] = {'holdings': [], 'value': 0}
 
-            # If income_report failed, build what we can from report data
-            income_data = self.data.get('income_report', {})
-            _LOGGER.debug(f"Income report keys: {list(income_data.keys()) if isinstance(income_data, dict) else type(income_data)}")
-            if not income_data or 'error' in income_data:
-                self.data['income_report'] = {
-                    'payout_gain': report_data.get('payout_gain'),
+            # Build income_report from payouts when available; otherwise fallback
+            # to report payout gain.
+            payouts_data = self.data.get("payouts", {})
+            payouts = []
+            if isinstance(payouts_data, dict):
+                payouts = payouts_data.get("payouts", [])
+
+            if payouts:
+                self.data["income_report"] = {
+                    "payouts": payouts,
+                    "total_income": sum(
+                        float(p.get("amount", 0) or 0) for p in payouts if isinstance(p, dict)
+                    ),
+                }
+            else:
+                self.data["income_report"] = {
+                    "payout_gain": report_data.get("payout_gain"),
+                    "payouts": [],
                 }
 
-            # If diversity failed, build from report sub_totals
-            diversity_data = self.data.get('diversity', {})
-            _LOGGER.debug(f"Diversity keys: {list(diversity_data.keys()) if isinstance(diversity_data, dict) else type(diversity_data)}")
-            if not diversity_data or 'error' in diversity_data:
-                sub_totals = report_data.get('sub_totals', [])
+            income_data = self.data.get("income_report", {})
+            _LOGGER.debug(
+                "Income report keys: %s",
+                list(income_data.keys()) if isinstance(income_data, dict) else type(income_data),
+            )
+
+            # Build diversity from v2 diversity when available, otherwise fallback
+            # from report sub_totals.
+
+            diversity_v2 = self.data.get("diversity_v2", {})
+            if isinstance(diversity_v2, dict) and "groups" in diversity_v2:
+                breakdown: list[dict[str, Any]] = []
+                for group_entry in diversity_v2.get("groups", []):
+                    if not isinstance(group_entry, dict):
+                        continue
+                    for group_name, group_payload in group_entry.items():
+                        if not isinstance(group_payload, dict):
+                            continue
+                        breakdown.append(
+                            {
+                                "group_name": group_name,
+                                "percentage": group_payload.get("percentage"),
+                                "value": group_payload.get("value"),
+                            }
+                        )
+                self.data["diversity"] = {"breakdown": breakdown}
+            else:
+                sub_totals = report_data.get("sub_totals", [])
                 if sub_totals:
-                    total_value = float(report_data.get('value', 1) or 1)
+                    total_value = float(report_data.get("value", 1) or 1)
                     breakdown = []
                     for st in sub_totals:
-                        st_value = float(st.get('value', 0) or 0)
+                        st_value = float(st.get("value", 0) or 0)
                         pct = (st_value / total_value * 100) if total_value else 0
-                        breakdown.append({
-                            'group_name': st.get('group_name', ''),
-                            'percentage': round(pct, 2),
-                            'value': st_value
-                        })
-                    self.data['diversity'] = {'breakdown': breakdown}
-                    _LOGGER.debug(f"Built diversity from {len(sub_totals)} sub_totals")
+                        breakdown.append(
+                            {
+                                "group_name": st.get("group_name", ""),
+                                "percentage": round(pct, 2),
+                                "value": st_value,
+                            }
+                        )
+                    self.data["diversity"] = {"breakdown": breakdown}
+                    _LOGGER.debug("Built diversity from %s sub_totals", len(sub_totals))
                 else:
-                    self.data['diversity'] = {'breakdown': []}
+                    self.data["diversity"] = {"breakdown": []}
+
+            diversity_data = self.data.get("diversity", {})
+            _LOGGER.debug(
+                "Diversity keys: %s",
+                list(diversity_data.keys()) if isinstance(diversity_data, dict) else type(diversity_data),
+            )
 
             _LOGGER.debug(f"Holdings count: {len(self.data.get('holdings', {}).get('holdings', []))}")
             _LOGGER.debug(f"Diversity breakdown count: {len(self.data.get('diversity', {}).get('breakdown', []))}")
+            _LOGGER.debug(
+                "Cash account transaction count: %s",
+                len(self.data.get("cash_account_transactions", {}).get("cash_account_transactions", [])),
+            )
 
             # Log trades data
             trades_data = self.data.get('trades', {})

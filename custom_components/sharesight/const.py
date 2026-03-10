@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from homeassistant.const import Platform
 
-SCAN_INTERVAL = timedelta(minutes=5)
+SCAN_INTERVAL = timedelta(seconds=30)
 UPDATE_SENSOR_SCAN_INTERVAL = timedelta(minutes=10)
 PLATFORMS = [Platform.SENSOR]
 DOMAIN = "sharesight"

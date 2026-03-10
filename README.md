@@ -74,7 +74,7 @@ After installation and restart:
 
 ## Sensors
 
-All sensors are organized into separate HA devices by category. Data refreshes every **5 minutes**.
+All sensors are organized into separate HA devices by category. Data refreshes every **30 seconds**.
 
 ### Portfolio
 | Sensor | Description |
