@@ -98,15 +98,27 @@ class SharesightCoordinator(DataUpdateCoordinator):
         combined_dict = {}
 
         if not self.started_up:
-            local_data = await self.sharesight.get_api_request(
-                self.startup_endpoint, access_token
-            )
-            self.start_financial_year, self.end_financial_year = (
-                await get_financial_year_dates(
-                    local_data.get("portfolio", {}).get("financial_year_end")
+            try:
+                local_data = await self.sharesight.get_api_request(
+                    self.startup_endpoint, access_token
                 )
-            )
-            self.started_up = True
+                if not isinstance(local_data, dict) or "error" in local_data:
+                    raise ValueError(f"Invalid startup response: {local_data}")
+                self.start_financial_year, self.end_financial_year = (
+                    await get_financial_year_dates(
+                        local_data.get("portfolio", {}).get("financial_year_end")
+                    )
+                )
+                self.started_up = True
+            except Exception as startup_error:
+                if self.data:
+                    _LOGGER.warning(
+                        "Startup request failed (%s), keeping last good data", startup_error
+                    )
+                    return self.data
+                raise UpdateFailed(
+                    f"Error during Sharesight startup fetch: {startup_error}"
+                ) from startup_error
 
         self.current_date = date.today()
 
@@ -168,18 +180,54 @@ class SharesightCoordinator(DataUpdateCoordinator):
         try:
             _LOGGER.debug("Calling %s required endpoints in parallel", len(endpoint_list))
             required_tasks = [self._call_endpoint(endpoint, access_token) for endpoint in endpoint_list]
-            required_results = await asyncio.gather(*required_tasks)
+            required_results = await asyncio.gather(*required_tasks, return_exceptions=True)
 
+            required_failures: list[str] = []
             for endpoint, response in zip(endpoint_list, required_results):
+                endpoint_path = endpoint[1]
+
+                if isinstance(response, Exception):
+                    required_failures.append(f"{endpoint_path}: {response}")
+                    continue
+
+                if response is None:
+                    required_failures.append(f"{endpoint_path}: returned None")
+                    continue
+
+                if not isinstance(response, dict):
+                    required_failures.append(
+                        f"{endpoint_path}: unexpected type {type(response)}"
+                    )
+                    continue
+
+                if "error" in response:
+                    required_failures.append(
+                        f"{endpoint_path}: {response.get('error')}"
+                    )
+                    continue
+
                 _LOGGER.debug(
                     "Response for %s: %s",
-                    endpoint[1],
+                    endpoint_path,
                     list(response.keys()) if isinstance(response, dict) else type(response),
                 )
                 extension = endpoint[3]
                 if extension:
                     response = {extension: response}
                 combined_dict = await merge_dicts(combined_dict, response)
+
+            if required_failures:
+                failure_preview = "; ".join(required_failures[:3])
+                if self.data:
+                    _LOGGER.warning(
+                        "Required Sharesight endpoint(s) failed (%s total): %s. Keeping last good data.",
+                        len(required_failures),
+                        failure_preview,
+                    )
+                    return self.data
+                raise UpdateFailed(
+                    f"Required Sharesight endpoints failed: {failure_preview}"
+                )
 
             # Try optional endpoints - don't fail if they error
             active_optional = [
@@ -290,7 +338,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
             sub_totals = report_data.get('sub_totals', [])
             if sub_totals:
                 # Deduplicate sub_totals by group_name (API may return duplicates)
-                seen_groups: set[str] = set()
+                seen_groups: set = set()
                 deduped_sub_totals = []
                 for st in sub_totals:
                     gn = st.get('group_name', '')
@@ -308,7 +356,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
             # Deduplicate cash_accounts by name
             cash_accounts = report_data.get('cash_accounts', [])
             if cash_accounts:
-                seen_cash_names: set[str] = set()
+                seen_cash_names: set = set()
                 deduped_cash = []
                 for ca in cash_accounts:
                     cn = ca.get('name', '')
@@ -457,5 +505,11 @@ class SharesightCoordinator(DataUpdateCoordinator):
             return self.data
 
         except Exception as e:
+            if self.data:
+                _LOGGER.warning(
+                    "Error in coordinator update (%s), keeping last good data", e,
+                    exc_info=True,
+                )
+                return self.data
             _LOGGER.error(f"Error in coordinator update: {e}", exc_info=True)
             raise UpdateFailed(f"Error fetching Sharesight data: {e}") from e
