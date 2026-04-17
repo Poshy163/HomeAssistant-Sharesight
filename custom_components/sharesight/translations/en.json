@@ -31,5 +31,16 @@
             "missing_credentials": "No application credentials configured. Please add Sharesight credentials first via Settings \u2192 Devices & Services \u2192 Application Credentials.",
             "reauth_successful": "Re-authentication was successful."
         }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Sharesight options",
+                "description": "Configure how frequently Home Assistant polls the Sharesight API for this portfolio. Must be between 60 and 3600 seconds.",
+                "data": {
+                    "scan_interval": "Poll interval (seconds)"
+                }
+            }
+        }
     }
 }
