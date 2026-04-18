@@ -220,11 +220,12 @@ def _get_income_summary(income_data, report_data=None):
     }
 
 
-def _get_diversity_top_markets(diversity_data):
-    """Get top 3 markets by percentage."""
+def _get_diversity_top_markets(diversity_data, n=5):
+    """Get top N markets by percentage as a list of dicts (length always == n)."""
+    empty: list[dict] = [{} for _ in range(n)]
     if not diversity_data:
         _LOGGER.debug("diversity_data is empty")
-        return {}, {}, {}
+        return empty
 
     try:
         breakdown = sorted(
@@ -235,10 +236,10 @@ def _get_diversity_top_markets(diversity_data):
 
         if not breakdown:
             _LOGGER.debug("No breakdown in diversity_data. Keys: %s", list(diversity_data.keys()))
-            return {}, {}, {}
+            return empty
 
-        result = [{}, {}, {}]
-        for i in range(min(3, len(breakdown))):
+        result = [{} for _ in range(n)]
+        for i in range(min(n, len(breakdown))):
             result[i] = {
                 'name': breakdown[i].get('group_name'),
                 'percent': breakdown[i].get('percentage'),
@@ -246,14 +247,14 @@ def _get_diversity_top_markets(diversity_data):
             }
             _LOGGER.debug("Market %s: %s - %s%%", i + 1, breakdown[i].get('group_name'), breakdown[i].get('percentage'))
 
-        return result[0], result[1], result[2]
+        return result
     except (ValueError, TypeError, KeyError) as e:
         _LOGGER.debug(
             "Error in _get_diversity_top_markets: %s, sample breakdown: %s",
             e,
             diversity_data.get('breakdown', [{}])[0] if diversity_data.get('breakdown') else 'no breakdown',
         )
-        return {}, {}, {}
+        return empty
 
 
 def _calculate_annualised_percent(
@@ -302,6 +303,8 @@ def _get_contributions_summary(cash_transactions_data):
 
     total_contributions = 0.0
     total_withdrawals = 0.0
+    contribution_count = 0
+    withdrawal_count = 0
     latest = None
 
     for tx in transactions:
@@ -325,8 +328,10 @@ def _get_contributions_summary(cash_transactions_data):
 
         if amount > 0:
             total_contributions += amount
+            contribution_count += 1
         elif amount < 0:
             total_withdrawals += abs(amount)
+            withdrawal_count += 1
 
         dt = tx.get("date_time") or tx.get("date")
         if dt:
@@ -334,12 +339,21 @@ def _get_contributions_summary(cash_transactions_data):
             if latest is None or dt_value > latest.get("date_time", ""):
                 latest = {"date_time": dt_value, "amount": amount}
 
+    avg_contribution = (
+        round(total_contributions / contribution_count, 2)
+        if contribution_count
+        else None
+    )
+
     return {
         "total_contributions": round(total_contributions, 2),
         "total_withdrawals": round(total_withdrawals, 2),
         "net_contributions": round(total_contributions - total_withdrawals, 2),
         "last_contribution_date": latest.get("date_time", "")[:10] if latest else None,
         "last_contribution_amount": round(float(latest.get("amount")), 2) if latest else None,
+        "contribution_count": contribution_count,
+        "withdrawal_count": withdrawal_count,
+        "average_contribution_amount": avg_contribution,
     }
 
 
@@ -1036,6 +1050,30 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 elif self._key == "smallest_holding_value":
                     smallest = _get_smallest_holding(holdings_data)
                     return smallest.get('value') if smallest else None
+                elif self._key == "median_holding_value":
+                    holdings_list = holdings_data.get('holdings', [])
+                    if not holdings_list:
+                        return None
+                    values = sorted(_get_holding_value(h) for h in holdings_list)
+                    n = len(values)
+                    if n == 0:
+                        return None
+                    if n % 2 == 1:
+                        median = values[n // 2]
+                    else:
+                        median = (values[n // 2 - 1] + values[n // 2]) / 2
+                    return round(median, 2)
+                elif self._key in ("top_3_holdings_percent", "top_5_holdings_percent"):
+                    n = 3 if self._key == "top_3_holdings_percent" else 5
+                    holdings_list = holdings_data.get('holdings', [])
+                    if not holdings_list:
+                        return None
+                    portfolio_value = float(holdings_data.get('value', 0) or 0)
+                    if portfolio_value <= 0:
+                        return None
+                    top_n = sorted(holdings_list, key=_get_holding_value, reverse=True)[:n]
+                    top_value = sum(_get_holding_value(h) for h in top_n)
+                    return round(top_value / portfolio_value * 100, 2)
             # Income Report sensors
             elif self._sub_key == "income_report":
                 income_data = self._coordinator.data.get('income_report', {})
@@ -1147,31 +1185,98 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                             except (ValueError, TypeError):
                                 pass
                     return round(total, 2) if has_any else None
+                elif self._key == "dividend_yield_percent":
+                    total = income_summary.get('total_income')
+                    portfolio_value = report_data.get('value')
+                    if total is None or portfolio_value in (None, 0, 0.0):
+                        return None
+                    try:
+                        return round(float(total) / float(portfolio_value) * 100, 2)
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        return None
+                elif self._key in ("dividends_30d", "dividends_ytd"):
+                    payouts = income_data.get('payouts', [])
+                    if not payouts:
+                        return 0
+                    today = dt_util.now().date()
+                    if self._key == "dividends_30d":
+                        cutoff = (today - timedelta(days=30)).isoformat()
+                    else:
+                        cutoff = f"{today.year}-01-01"
+                    total = 0.0
+                    for p in payouts:
+                        if not isinstance(p, dict):
+                            continue
+                        date = p.get('paid_on') or p.get('date') or p.get('ex_date')
+                        if not date or str(date)[:10] < cutoff:
+                            continue
+                        try:
+                            total += float(p.get('amount', 0) or 0)
+                        except (ValueError, TypeError):
+                            continue
+                    return round(total, 2)
+                elif self._key in ("next_dividend_date", "next_dividend_amount", "next_dividend_symbol"):
+                    payouts = income_data.get('payouts', [])
+                    if not payouts:
+                        return None
+                    today_iso = dt_util.now().date().isoformat()
+                    upcoming = []
+                    for p in payouts:
+                        if not isinstance(p, dict):
+                            continue
+                        ex = p.get('goes_ex_on') or p.get('ex_date') or p.get('paid_on')
+                        if ex and str(ex)[:10] >= today_iso:
+                            upcoming.append((str(ex)[:10], p))
+                    if not upcoming:
+                        return None
+                    upcoming.sort(key=lambda x: x[0])
+                    next_date, next_payout = upcoming[0]
+                    if self._key == "next_dividend_date":
+                        return next_date
+                    if self._key == "next_dividend_amount":
+                        try:
+                            return round(float(next_payout.get('amount', 0) or 0), 2)
+                        except (ValueError, TypeError):
+                            return None
+                    return (
+                        next_payout.get('symbol')
+                        or next_payout.get('instrument_code')
+                        or (next_payout.get('holding', {}) or {}).get('instrument', {}).get('code', '')
+                        or next_payout.get('company_name', '')
+                        or None
+                    )
             # Diversity sensors
             elif self._sub_key == "diversity":
                 diversity_data = self._coordinator.data.get('diversity', {})
-                market_1, market_2, market_3 = _get_diversity_top_markets(diversity_data)
-                if self._key == "market_1_name":
-                    return market_1.get('name') if market_1 else None
-                elif self._key == "market_1_percent":
-                    return market_1.get('percent') if market_1 else None
-                elif self._key == "market_1_value":
-                    return market_1.get('value') if market_1 else None
-                elif self._key == "market_2_name":
-                    return market_2.get('name') if market_2 else None
-                elif self._key == "market_2_percent":
-                    return market_2.get('percent') if market_2 else None
-                elif self._key == "market_2_value":
-                    return market_2.get('value') if market_2 else None
-                elif self._key == "market_3_name":
-                    return market_3.get('name') if market_3 else None
-                elif self._key == "market_3_percent":
-                    return market_3.get('percent') if market_3 else None
-                elif self._key == "market_3_value":
-                    return market_3.get('value') if market_3 else None
-                elif self._key == "diversity_group_count":
+                top_markets = _get_diversity_top_markets(diversity_data, n=5)
+                # Pattern: market_<N>_<field>
+                if self._key.startswith("market_") and "_" in self._key[7:]:
+                    parts = self._key.split("_", 2)
+                    try:
+                        idx = int(parts[1]) - 1
+                    except (ValueError, IndexError):
+                        idx = -1
+                    field = parts[2] if len(parts) >= 3 else ""
+                    if 0 <= idx < len(top_markets):
+                        m = top_markets[idx]
+                        return m.get(field) if m else None
+                    return None
+                if self._key == "diversity_group_count":
                     breakdown = diversity_data.get('breakdown', [])
                     return len(breakdown)
+                if self._key in ("top_3_markets_percent", "top_5_markets_percent"):
+                    n = 3 if self._key == "top_3_markets_percent" else 5
+                    breakdown = sorted(
+                        diversity_data.get('breakdown', []),
+                        key=lambda x: float(x.get('percentage', 0) or 0),
+                        reverse=True,
+                    )[:n]
+                    if not breakdown:
+                        return None
+                    try:
+                        return round(sum(float(m.get('percentage', 0) or 0) for m in breakdown), 2)
+                    except (ValueError, TypeError):
+                        return None
             # Trades sensors
             elif self._sub_key == "trades":
                 trades_data = self._coordinator.data.get('trades', {})
@@ -1281,6 +1386,111 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                     if self._key == "largest_trade_value":
                         return round(_trade_value(largest), 2)
                     return _trade_symbol(largest) or None
+                elif self._key == "trade_count_7d":
+                    if not trades_list:
+                        return 0
+                    cutoff = (dt_util.now().date() - timedelta(days=7)).isoformat()
+                    count = 0
+                    for t in trades_list:
+                        td = (
+                            t.get('transaction_date')
+                            or t.get('trade_date')
+                            or t.get('date')
+                            or t.get('traded_at', '')
+                        )
+                        if td and str(td)[:10] >= cutoff:
+                            count += 1
+                    return count
+                elif self._key == "trade_count_ytd":
+                    if not trades_list:
+                        return 0
+                    cutoff = f"{dt_util.now().year}-01-01"
+                    count = 0
+                    for t in trades_list:
+                        td = (
+                            t.get('transaction_date')
+                            or t.get('trade_date')
+                            or t.get('date')
+                            or t.get('traded_at', '')
+                        )
+                        if td and str(td)[:10] >= cutoff:
+                            count += 1
+                    return count
+                elif self._key in ("average_trade_value", "average_buy_value", "average_sell_value"):
+                    if not trades_list:
+                        return None
+                    if self._key == "average_buy_value":
+                        relevant = [t for t in trades_list if _trade_type(t) in ('BUY', 'OPENING BALANCE')]
+                    elif self._key == "average_sell_value":
+                        relevant = [t for t in trades_list if _trade_type(t) == 'SELL']
+                    else:
+                        relevant = trades_list
+                    if not relevant:
+                        return None
+                    total = sum(_trade_value(t) for t in relevant)
+                    return round(total / len(relevant), 2)
+                elif self._key == "total_brokerage":
+                    if not trades_list:
+                        return 0
+                    total = 0.0
+                    has_any = False
+                    for t in trades_list:
+                        for f in ('brokerage', 'fee', 'commission', 'fees'):
+                            v = t.get(f)
+                            if v is not None:
+                                try:
+                                    total += float(v)
+                                    has_any = True
+                                    break
+                                except (ValueError, TypeError):
+                                    pass
+                    return round(total, 2) if has_any else None
+                elif self._key == "most_traded_symbol":
+                    if not trades_list:
+                        return None
+                    counts: dict[str, int] = {}
+                    for t in trades_list:
+                        sym = _trade_symbol(t) or ""
+                        if sym:
+                            counts[sym] = counts.get(sym, 0) + 1
+                    if not counts:
+                        return None
+                    return max(counts.items(), key=lambda kv: kv[1])[0]
+                elif self._key in (
+                    "last_buy_date", "last_buy_symbol", "last_buy_value",
+                    "last_sell_date", "last_sell_symbol", "last_sell_value",
+                ):
+                    target = 'BUY' if self._key.startswith('last_buy') else 'SELL'
+                    if target == 'BUY':
+                        relevant = [t for t in trades_list if _trade_type(t) in ('BUY', 'OPENING BALANCE')]
+                    else:
+                        relevant = [t for t in trades_list if _trade_type(t) == 'SELL']
+                    if not relevant:
+                        return None
+                    try:
+                        sorted_rel = sorted(
+                            relevant,
+                            key=lambda t: (
+                                t.get('transaction_date')
+                                or t.get('trade_date')
+                                or t.get('date')
+                                or t.get('traded_at', '')
+                            ),
+                            reverse=True,
+                        )
+                        last = sorted_rel[0]
+                    except (TypeError, ValueError, IndexError):
+                        return None
+                    if self._key.endswith('_date'):
+                        return (
+                            last.get('transaction_date')
+                            or last.get('trade_date')
+                            or last.get('date')
+                            or last.get('traded_at')
+                        )
+                    if self._key.endswith('_symbol'):
+                        return _trade_symbol(last) or None
+                    return round(_trade_value(last), 2)
                 else:
                     # last_trade_date, last_trade_symbol, last_trade_type, last_trade_value
                     if not trades_list:
