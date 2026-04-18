@@ -126,9 +126,14 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 |--------|-------------|
 | Number of Holdings | Total count of holdings |
 | Largest Holding (Symbol / Value / Percent) | Your biggest position |
+| Smallest Holding (Symbol / Value) | Your smallest position |
 | Top Gain (Symbol / Amount / Percent) | Best performing holding |
 | Worst Gain (Symbol / Amount / Percent) | Worst performing holding |
 | Positive / Negative Holdings Count | How many holdings are green vs red |
+| Positive / Negative Holdings Percent | Share of holdings that are green vs red |
+| Average / Median Holding Value | Central tendency of holding sizes |
+| Total Holdings Value / Gain | Aggregate value and gain across holdings |
+| Top 3 / Top 5 Holdings Percent | Concentration of portfolio in largest holdings |
 | Unconfirmed Transactions | Trades awaiting confirmation |
 
 ### Cash Accounts
@@ -136,24 +141,48 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 |--------|-------------|
 | Cash Balance | Balance per cash account (including Xero) |
 
-### Income
+### Income / Dividends
 | Sensor | Description |
 |--------|-------------|
-| Total Dividend Income | Total dividends received |
+| Total Dividend Income | Total dividends received (accrual basis) |
 | Number of Dividends | Count of dividend payments |
+| Average / Largest Dividend Amount | Central tendency / record dividend |
+| Largest Dividend Symbol | Holding that paid the largest single dividend |
 | Last Dividend Date | Date of most recent dividend |
+| Dividends Last 30 Days / YTD / Last 12 Months / Previous Year | Period-bucketed dividend totals |
+| Dividends Received (Cash) | Actual dividends paid into cash accounts |
+| Dividend Yield Percent (current / TTM) | Yield on portfolio value |
+| Upcoming Dividends Count | Payouts with future ex-dividend dates |
+| Next Dividend (Date / Amount / Symbol) | Soonest upcoming dividend |
+| DRP Reinvestment Count | Dividends reinvested via DRP |
+| Total Gross Dividend Income | Pre-tax dividend total |
+| Total Resident / Non-Resident Withholding Tax | Withholding tax aggregates |
+| Total Tax Credits | Imputation / franking credits |
+| Total Franked / Unfranked Amount | Franked vs unfranked split |
+| Total Foreign Source Income | Income classified as foreign-source |
+| Total Capital Gains Distributions | Capital gains distributed via dividends |
 
 ### Diversity
 | Sensor | Description |
 |--------|-------------|
-| Top Market 1/2/3 (Name / Percent / Value) | Your three largest market exposures |
+| Top Market 1–5 (Name / Percent / Value) | Your five largest market exposures |
+| Diversity Group Count | Number of distinct market groups |
+| Top 3 / Top 5 Markets Percent | Concentration of portfolio in largest markets |
 
 ### Trades
 | Sensor | Description |
 |--------|-------------|
-| Last Trade Date / Symbol / Type / Value | Details of your most recent trade |
-| Trades Last 30 Days | Number of trades in the last month |
-| Total Trades | All-time trade count |
+| Last Trade (Date / Symbol / Type / Value) | Details of your most recent trade |
+| Last Buy (Date / Symbol / Value) | Details of your most recent buy trade |
+| Last Sell (Date / Symbol / Value) | Details of your most recent sell trade |
+| Total Trades / Buy Count / Sell Count | All-time trade counts |
+| Trades Last 7 Days / 30 Days / YTD | Period-bucketed trade counts |
+| Total Buy Value / Sell Value / Net Trade Flow | Aggregate trade values |
+| Average Trade / Buy / Sell Value | Central tendency of trade sizes |
+| Largest Trade (Symbol / Value) | Your biggest single trade |
+| Total Brokerage | Sum of broker fees across all trades |
+| Most Traded Symbol | Symbol with the highest trade count |
+| Average Trades Per Month | Trading frequency since portfolio inception |
 
 ### Contributions
 | Sensor | Description |
@@ -161,7 +190,20 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Total Contributions | Total cash deposited |
 | Total Withdrawals | Total cash withdrawn |
 | Net Contributions | Deposits minus withdrawals |
+| Contribution / Withdrawal Count | Number of cash movements |
+| Average Contribution Amount | Central tendency of deposit sizes |
 | Last Contribution Date / Amount | Most recent cash movement |
+| Net Investment Gain / Percent | Portfolio value minus net contributions |
+
+### Diagnostics
+| Sensor | Description |
+|--------|-------------|
+| Last Successful Update | Timestamp of the last successful poll |
+| Update Interval (s) | Current coordinator polling interval |
+| Optional Endpoints On Cooldown | Count of endpoints temporarily skipped due to rate limits |
+| Portfolio Inception Date / Country / Owner / Access Level | Portfolio metadata |
+| Portfolio Age (days) | Days since portfolio inception |
+| Performance Calculation Method | How returns are calculated |
 
 ---
 
