@@ -6,7 +6,10 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_call_later
 from SharesightAPI.SharesightAPI import SharesightAPI
 
 from .const import (
@@ -76,7 +79,55 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _async_clear_recorder_repair_issues(hass, entry)
+    # Recorder compiles long-term stats roughly every 5 min and may (re)raise
+    # state_class / unit issues after our initial clear. Re-clear a few times
+    # over the first ~30 min so the user doesn't have to act on transient
+    # repairs caused by upgrading this integration.
+    for delay in (360, 900, 1800):
+        entry.async_on_unload(
+            async_call_later(
+                hass,
+                delay,
+                lambda _now, h=hass, e=entry: _async_clear_recorder_repair_issues(h, e),
+            )
+        )
     return True
+
+
+def _async_clear_recorder_repair_issues(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Auto-dismiss recorder repair issues for entities owned by this entry.
+
+    HA's sensor recorder raises persistent issues like ``state_class_removed_<eid>``
+    and ``units_changed_<eid>`` whenever an entity's reported state_class / unit
+    differs from what was previously recorded in long-term statistics.
+
+    When this integration changed its monetary sensors' state_class
+    (MEASUREMENT -> TOTAL via __post_init__), HA raised one of these issues per
+    affected entity. Going forward the new state_class is recorded normally, so
+    the issues are noise — clear them automatically rather than making the user
+    click through hundreds of repairs.
+    """
+    try:
+        registry = er.async_get(hass)
+    except Exception:  # noqa: BLE001 — never let cleanup break setup
+        return
+
+    entity_ids = [
+        ent.entity_id
+        for ent in er.async_entries_for_config_entry(registry, entry.entry_id)
+    ]
+    for entity_id in entity_ids:
+        for issue_id in (
+            f"state_class_removed_{entity_id}",
+            f"units_changed_{entity_id}",
+        ):
+            try:
+                ir.async_delete_issue(hass, "sensor", issue_id)
+            except Exception:  # noqa: BLE001
+                continue
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
