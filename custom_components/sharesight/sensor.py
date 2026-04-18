@@ -1028,6 +1028,18 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 elif self._key == "negative_holdings_count":
                     holdings_list = holdings_data.get('holdings', [])
                     return sum(1 for h in holdings_list if _get_holding_gain(h) < 0)
+                elif self._key in ("positive_holdings_percent", "negative_holdings_percent"):
+                    holdings_list = holdings_data.get('holdings', [])
+                    if not holdings_list:
+                        return None
+                    total_count = len(holdings_list)
+                    if total_count == 0:
+                        return None
+                    if self._key == "positive_holdings_percent":
+                        matching = sum(1 for h in holdings_list if _get_holding_gain(h) > 0)
+                    else:
+                        matching = sum(1 for h in holdings_list if _get_holding_gain(h) < 0)
+                    return round(matching / total_count * 100, 2)
                 elif self._key == "average_holding_value":
                     holdings_list = holdings_data.get('holdings', [])
                     if not holdings_list:
@@ -1194,15 +1206,50 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                         return round(float(total) / float(portfolio_value) * 100, 2)
                     except (ValueError, TypeError, ZeroDivisionError):
                         return None
-                elif self._key in ("dividends_30d", "dividends_ytd"):
+                elif self._key in (
+                    "dividends_30d",
+                    "dividends_ytd",
+                    "dividends_ttm",
+                    "dividends_prev_year",
+                ):
                     payouts = income_data.get('payouts', [])
                     if not payouts:
                         return 0
                     today = dt_util.now().date()
+                    cutoff_low = None
+                    cutoff_high = None
                     if self._key == "dividends_30d":
-                        cutoff = (today - timedelta(days=30)).isoformat()
-                    else:
-                        cutoff = f"{today.year}-01-01"
+                        cutoff_low = (today - timedelta(days=30)).isoformat()
+                    elif self._key == "dividends_ytd":
+                        cutoff_low = f"{today.year}-01-01"
+                    elif self._key == "dividends_ttm":
+                        cutoff_low = (today - timedelta(days=365)).isoformat()
+                    else:  # dividends_prev_year
+                        cutoff_low = f"{today.year - 1}-01-01"
+                        cutoff_high = f"{today.year}-01-01"
+                    total = 0.0
+                    for p in payouts:
+                        if not isinstance(p, dict):
+                            continue
+                        date = p.get('paid_on') or p.get('date') or p.get('ex_date')
+                        if not date:
+                            continue
+                        d = str(date)[:10]
+                        if cutoff_low and d < cutoff_low:
+                            continue
+                        if cutoff_high and d >= cutoff_high:
+                            continue
+                        try:
+                            total += float(p.get('amount', 0) or 0)
+                        except (ValueError, TypeError):
+                            continue
+                    return round(total, 2)
+                elif self._key == "dividend_yield_ttm_percent":
+                    payouts = income_data.get('payouts', [])
+                    portfolio_value = report_data.get('value')
+                    if not payouts or portfolio_value in (None, 0, 0.0):
+                        return None
+                    cutoff = (dt_util.now().date() - timedelta(days=365)).isoformat()
                     total = 0.0
                     for p in payouts:
                         if not isinstance(p, dict):
@@ -1212,6 +1259,46 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                             continue
                         try:
                             total += float(p.get('amount', 0) or 0)
+                        except (ValueError, TypeError):
+                            continue
+                    try:
+                        return round(total / float(portfolio_value) * 100, 2)
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        return None
+                elif self._key == "upcoming_dividends_count":
+                    payouts = income_data.get('payouts', [])
+                    if not payouts:
+                        return 0
+                    today_iso = dt_util.now().date().isoformat()
+                    count = 0
+                    for p in payouts:
+                        if not isinstance(p, dict):
+                            continue
+                        ex = p.get('goes_ex_on') or p.get('ex_date')
+                        if ex and str(ex)[:10] >= today_iso:
+                            count += 1
+                    return count
+                elif self._key == "dividends_received_cash":
+                    cash_tx_data = self._coordinator.data.get('cash_account_transactions', {})
+                    transactions = []
+                    if isinstance(cash_tx_data, dict):
+                        transactions = cash_tx_data.get('cash_account_transactions', [])
+                    if not transactions:
+                        return 0
+                    total = 0.0
+                    for tx in transactions:
+                        if not isinstance(tx, dict):
+                            continue
+                        tx_type = tx.get('type_name')
+                        if not tx_type:
+                            tx_type_obj = tx.get('cash_account_transaction_type')
+                            if isinstance(tx_type_obj, dict):
+                                tx_type = tx_type_obj.get('name')
+                        tx_type = str(tx_type or "").upper()
+                        if 'DIVIDEND' not in tx_type and 'INTEREST' not in tx_type:
+                            continue
+                        try:
+                            total += float(tx.get('amount') or 0)
                         except (ValueError, TypeError):
                             continue
                     return round(total, 2)
@@ -1456,6 +1543,41 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                     if not counts:
                         return None
                     return max(counts.items(), key=lambda kv: kv[1])[0]
+                elif self._key == "trades_per_month":
+                    if not trades_list:
+                        return None
+                    # Span from portfolio inception (preferred) or earliest trade to today.
+                    inception = (self._coordinator.data.get('portfolio_detail', {}) or {}).get('inception_date')
+                    start_date = None
+                    if inception:
+                        try:
+                            start_date = datetime.strptime(str(inception)[:10], "%Y-%m-%d").date()
+                        except (ValueError, TypeError):
+                            start_date = None
+                    if start_date is None:
+                        earliest = None
+                        for t in trades_list:
+                            td = (
+                                t.get('transaction_date')
+                                or t.get('trade_date')
+                                or t.get('date')
+                                or t.get('traded_at', '')
+                            )
+                            td10 = str(td or "")[:10]
+                            if td10 and (earliest is None or td10 < earliest):
+                                earliest = td10
+                        if earliest:
+                            try:
+                                start_date = datetime.strptime(earliest, "%Y-%m-%d").date()
+                            except (ValueError, TypeError):
+                                start_date = None
+                    if start_date is None:
+                        return None
+                    days = max((dt_util.now().date() - start_date).days, 1)
+                    months = days / 30.4375
+                    if months <= 0:
+                        return None
+                    return round(len(trades_list) / months, 2)
                 elif self._key in (
                     "last_buy_date", "last_buy_symbol", "last_buy_value",
                     "last_sell_date", "last_sell_symbol", "last_sell_value",
