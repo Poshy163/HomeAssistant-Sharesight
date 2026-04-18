@@ -581,7 +581,18 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         else:
             self._native_unit_of_measurement = sensor.native_unit_of_measurement
 
-        base_entity_id = f"{self._name.lower().replace(' ', '_')}_{self._portfolio_id}"
+        # Sanitise to a valid entity_id slug: lowercase, only [a-z0-9_], no
+        # leading/trailing/duplicate underscores. Names like
+        # "Total Non-Resident Withholding Tax" or "Update Interval (s)" would
+        # otherwise produce invalid IDs (rejected by HA from 2027.2.0).
+        slug = "".join(
+            c if c.isalnum() else "_"
+            for c in self._name.lower().replace(" ", "_")
+        )
+        while "__" in slug:
+            slug = slug.replace("__", "_")
+        slug = slug.strip("_")
+        base_entity_id = f"{slug}_{self._portfolio_id}"
         self.entity_id = f"sensor.{base_entity_id}"
 
         if edge:
