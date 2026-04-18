@@ -69,6 +69,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "market_sensors": [],
         "cash_sensors": [],
         "holding_sensors": [],
+        # Snapshot of options used to detect real options changes vs. token
+        # refreshes inside the update listener.
+        "last_options": dict(entry.options),
     }
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
@@ -102,5 +105,23 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options updates — reload the entry so new options take effect."""
+    """Handle entry updates — reload only when user-facing options change.
+
+    Home Assistant fires update listeners for *any* `async_update_entry` call,
+    including the OAuth2 token-refresh that periodically writes a new token
+    into `entry.data`. Reloading on every token refresh tears down all
+    sensors (briefly marking them unavailable) every ~30 minutes. Compare
+    the entry's options snapshot and only reload when it actually changes.
+    """
+    domain_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if domain_data is None:
+        return
+
+    new_options = dict(entry.options)
+    last_options = domain_data.get("last_options")
+    if last_options == new_options:
+        # Token refresh or other non-options data update — nothing to do.
+        return
+
+    domain_data["last_options"] = new_options
     await hass.config_entries.async_reload(entry.entry_id)

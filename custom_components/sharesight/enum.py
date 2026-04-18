@@ -13,6 +13,17 @@ class SharesightSensorDescription(SensorEntityDescription):
     native_value: Callable[[str | int | float], str | int | float] | None = None
     device_group: str | None = "portfolio"
 
+    def __post_init__(self) -> None:
+        # Home Assistant rejects state_class='measurement' for device_class='monetary'.
+        # Sharesight monetary values are point-in-time portfolio snapshots (not cumulative
+        # totals), so the correct state_class is None. Normalise here so individual
+        # description definitions don't have to repeat the rule.
+        if (
+            self.device_class == SensorDeviceClass.MONETARY
+            and self.state_class == SensorStateClass.MEASUREMENT
+        ):
+            object.__setattr__(self, "state_class", None)
+
 
 CASH_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     SharesightSensorDescription(

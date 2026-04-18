@@ -777,10 +777,15 @@ class SharesightCoordinator(DataUpdateCoordinator):
                     "payouts": [],
                 }
 
-            # Build diversity breakdown
+            # Build diversity breakdown.  Sharesight's diversity_v2 endpoint
+            # occasionally returns an empty/partial payload (especially when
+            # a poll coincides with a token refresh), which would otherwise
+            # collapse the breakdown to [] and flap dependent sensors to
+            # "unavailable" for one cycle.  Carry the previous breakdown
+            # forward whenever the freshly built one is empty.
+            breakdown: list[dict[str, Any]] = []
             diversity_v2 = combined_dict.get("diversity_v2", {})
             if isinstance(diversity_v2, dict) and "groups" in diversity_v2:
-                breakdown: list[dict[str, Any]] = []
                 for group_entry in diversity_v2.get("groups", []):
                     if not isinstance(group_entry, dict):
                         continue
@@ -794,12 +799,11 @@ class SharesightCoordinator(DataUpdateCoordinator):
                                 "value": group_payload.get("value"),
                             }
                         )
-                combined_dict["diversity"] = {"breakdown": breakdown}
-            else:
+
+            if not breakdown:
                 sub_totals = report_data.get("sub_totals", [])
                 if sub_totals:
                     total_value = float(report_data.get("value", 1) or 1)
-                    breakdown = []
                     for st in sub_totals:
                         st_value = float(st.get("value", 0) or 0)
                         pct = (st_value / total_value * 100) if total_value else 0
@@ -810,9 +814,23 @@ class SharesightCoordinator(DataUpdateCoordinator):
                                 "value": st_value,
                             }
                         )
-                    combined_dict["diversity"] = {"breakdown": breakdown}
+
+            if not breakdown:
+                previous_diversity = self.data.get("diversity") if self.data else None
+                if (
+                    isinstance(previous_diversity, dict)
+                    and previous_diversity.get("breakdown")
+                ):
+                    _LOGGER.debug(
+                        "Diversity breakdown empty this poll — preserving "
+                        "previous breakdown (%s entries) to avoid sensor flap",
+                        len(previous_diversity["breakdown"]),
+                    )
+                    combined_dict["diversity"] = previous_diversity
                 else:
                     combined_dict["diversity"] = {"breakdown": []}
+            else:
+                combined_dict["diversity"] = {"breakdown": breakdown}
 
             trades_data = combined_dict.get("trades", {})
             if not (
