@@ -1825,7 +1825,14 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         so as long as data has ever been populated, entities stay available.
         This prevents the "entity is unavailable, remove it" prompt caused by
         transient API hiccups during polling.
+
+        Diagnostic sensors under sub_key '_integration' (last successful
+        update, update interval, optional endpoints on cooldown) are *always*
+        available — their whole point is to surface state about the
+        integration itself, including during failures.
         """
+        if self._sub_key == "_integration":
+            return True
         if self._coordinator.data:
             return True
         # Fall back to HA's default: check last_update_success.  This only
