@@ -14,15 +14,26 @@ class SharesightSensorDescription(SensorEntityDescription):
     device_group: str | None = "portfolio"
 
     def __post_init__(self) -> None:
-        # Home Assistant rejects state_class='measurement' for device_class='monetary',
-        # but it does accept 'total'. Coerce here so individual descriptions don't have
-        # to repeat the rule, and so previously-recorded long-term statistics keep a
-        # valid state_class (avoiding "no longer has a state class" repair issues).
+        # Home Assistant rejects state_class='measurement' for device_class='monetary'
+        # and only records min/max/mean long-term statistics for MEASUREMENT sensors
+        # whose device_class is NOT one of {MONETARY, ENERGY, GAS, VOLUME, WATER,
+        # DATE, ENUM, TIMESTAMP} (see HA developer docs > Sensor > Long-term Statistics).
+        #
+        # For sensors that represent a current, fluctuating value (e.g. portfolio value,
+        # holding value, prices) we want MEASUREMENT so HA charts the value over time
+        # with min/max/mean. Coercing them to TOTAL — as we used to — only records the
+        # accumulated *change* between states, which produces a useless LTS graph for
+        # an instantaneous reading. Drop the MONETARY device_class instead; the currency
+        # is still surfaced through native_unit_of_measurement.
+        #
+        # Sensors that genuinely represent a cumulative total (total_contributions,
+        # dividends_30d, total_brokerage, ...) explicitly declare state_class=TOTAL in
+        # their description and keep their MONETARY device_class.
         if (
             self.device_class == SensorDeviceClass.MONETARY
             and self.state_class == SensorStateClass.MEASUREMENT
         ):
-            object.__setattr__(self, "state_class", SensorStateClass.TOTAL)
+            object.__setattr__(self, "device_class", None)
 
 
 CASH_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
