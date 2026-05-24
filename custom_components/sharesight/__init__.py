@@ -98,17 +98,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _async_clear_recorder_repair_issues(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
-    """Auto-dismiss recorder repair issues for entities owned by this entry.
+    """Unblock long-term statistics for entities owned by this entry.
 
     HA's sensor recorder raises persistent issues like ``state_class_removed_<eid>``
     and ``units_changed_<eid>`` whenever an entity's reported state_class / unit
-    differs from what was previously recorded in long-term statistics.
+    differs from what was previously recorded in ``statistics_meta``. While the
+    issue exists, the recorder *silently skips that entity on every LTS compile
+    cycle* — no min/max/mean datapoints are ever written. Dismissing the repair
+    card via ``ir.async_delete_issue`` alone is not enough: the underlying
+    ``statistics_meta`` row stays stale, the recorder re-raises the same issue
+    on the next compile, and LTS remains broken forever.
 
-    When this integration changed its monetary sensors' state_class
-    (MEASUREMENT -> TOTAL via __post_init__), HA raised one of these issues per
-    affected entity. Going forward the new state_class is recorded normally, so
-    the issues are noise — clear them automatically rather than making the user
-    click through hundreds of repairs.
+    This integration has shipped monetary sensors with three different
+    state_class / device_class combinations over its lifetime (MEASUREMENT+
+    MONETARY → TOTAL+MONETARY → MEASUREMENT+None), so almost every existing
+    install has stale ``statistics_meta`` rows for entities like
+    ``sensor.portfolio_value_<portfolio_id>`` blocking LTS.
+
+    Clear the stale recorder statistics for those entities so the recorder
+    treats them as brand-new on the next compile and starts recording LTS
+    again. Then dismiss the repair cards.
     """
     try:
         registry = er.async_get(hass)
@@ -119,6 +128,54 @@ def _async_clear_recorder_repair_issues(
         ent.entity_id
         for ent in er.async_entries_for_config_entry(registry, entry.entry_id)
     ]
+    if not entity_ids:
+        return
+
+    # Detect which of our entities currently have a recorder repair issue
+    # against them. We only wipe stats for those — leaving healthy entities
+    # untouched preserves their historical LTS.
+    stuck_entity_ids: list[str] = []
+    try:
+        issue_registry = ir.async_get(hass)
+    except Exception:  # noqa: BLE001
+        issue_registry = None
+
+    if issue_registry is not None:
+        for entity_id in entity_ids:
+            for issue_id in (
+                f"state_class_removed_{entity_id}",
+                f"units_changed_{entity_id}",
+            ):
+                if issue_registry.async_get_issue("sensor", issue_id) is not None:
+                    stuck_entity_ids.append(entity_id)
+                    break
+    else:
+        # Fall back to clearing all of our entities if we couldn't read the
+        # issue registry — safer than leaving LTS broken indefinitely.
+        stuck_entity_ids = list(entity_ids)
+
+    if stuck_entity_ids:
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.statistics import clear_statistics
+
+            recorder_instance = get_instance(hass)
+            recorder_instance.async_add_executor_job(
+                clear_statistics, recorder_instance, stuck_entity_ids
+            )
+            _LOGGER.info(
+                "Cleared stale recorder statistics for %d Sharesight entit%s "
+                "so long-term statistics can begin recording again: %s",
+                len(stuck_entity_ids),
+                "y" if len(stuck_entity_ids) == 1 else "ies",
+                ", ".join(stuck_entity_ids),
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug(
+                "Could not clear stale recorder statistics (recorder may be "
+                "unavailable): %s", err
+            )
+
     for entity_id in entity_ids:
         for issue_id in (
             f"state_class_removed_{entity_id}",
