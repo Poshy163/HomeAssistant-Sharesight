@@ -115,9 +115,18 @@ def _async_clear_recorder_repair_issues(
     install has stale ``statistics_meta`` rows for entities like
     ``sensor.portfolio_value_<portfolio_id>`` blocking LTS.
 
+    Two complementary checks identify stale entities:
+    1. Issue-registry check — catches entities that already have an active
+       ``state_class_removed_*`` or ``units_changed_*`` repair card.
+    2. Direct ``statistics_meta`` DB check — catches entities whose recorded
+       ``has_mean`` / ``has_sum`` flags don't match the sensor's current
+       state_class (e.g. a sensor that was TOTAL but is now MEASUREMENT).
+       This path works even when repair issues were previously dismissed
+       without clearing the underlying statistics rows.
+
     Clear the stale recorder statistics for those entities so the recorder
     treats them as brand-new on the next compile and starts recording LTS
-    again. Then dismiss the repair cards.
+    again. Then dismiss any open repair cards.
     """
     try:
         registry = er.async_get(hass)
@@ -131,9 +140,7 @@ def _async_clear_recorder_repair_issues(
     if not entity_ids:
         return
 
-    # Detect which of our entities currently have a recorder repair issue
-    # against them. We only wipe stats for those — leaving healthy entities
-    # untouched preserves their historical LTS.
+    # --- Check 1: issue-registry scan ---
     stuck_entity_ids: list[str] = []
     try:
         issue_registry = ir.async_get(hass)
@@ -150,32 +157,83 @@ def _async_clear_recorder_repair_issues(
                     stuck_entity_ids.append(entity_id)
                     break
     else:
-        # Fall back to clearing all of our entities if we couldn't read the
-        # issue registry — safer than leaving LTS broken indefinitely.
         stuck_entity_ids = list(entity_ids)
 
-    if stuck_entity_ids:
-        try:
-            from homeassistant.components.recorder import get_instance
-            from homeassistant.components.recorder.statistics import clear_statistics
+    # --- Check 2: direct statistics_meta comparison ---
+    # Build a map of entity_id -> current state_class (from live entity states).
+    # Sensors that don't have a state yet (e.g. immediately after setup) are
+    # excluded — the delayed retries will pick them up once they have a state.
+    entity_state_classes: dict[str, str] = {}
+    for entity_id in entity_ids:
+        state = hass.states.get(entity_id)
+        if state is not None:
+            sc = state.attributes.get("state_class")
+            if sc:
+                entity_state_classes[entity_id] = sc
 
-            recorder_instance = get_instance(hass)
-            recorder_instance.async_add_executor_job(
-                clear_statistics, recorder_instance, stuck_entity_ids
-            )
-            _LOGGER.info(
-                "Cleared stale recorder statistics for %d Sharesight entit%s "
-                "so long-term statistics can begin recording again: %s",
-                len(stuck_entity_ids),
-                "y" if len(stuck_entity_ids) == 1 else "ies",
-                ", ".join(stuck_entity_ids),
-            )
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug(
-                "Could not clear stale recorder statistics (recorder may be "
-                "unavailable): %s", err
-            )
+    # Get the recorder instance now (must be on the event loop).
+    try:
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.statistics import clear_statistics
 
+        recorder_instance = get_instance(hass)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Recorder unavailable for LTS cleanup: %s", err)
+        recorder_instance = None
+
+    if recorder_instance is not None:
+        # Capture loop-local variables for the executor closure.
+        _stuck = list(stuck_entity_ids)
+        _sc_map = dict(entity_state_classes)
+        _recorder = recorder_instance
+
+        def _db_check_and_clear() -> None:
+            """Run in recorder executor: find DB mismatches, then clear."""
+            try:
+                from homeassistant.components.recorder.db_schema import StatisticsMeta
+                import sqlalchemy as sa  # bundled with HA
+
+                db_mismatched: list[str] = []
+                if _sc_map:
+                    with _recorder.get_session() as session:
+                        rows = session.execute(
+                            sa.select(
+                                StatisticsMeta.statistic_id,
+                                StatisticsMeta.has_mean,
+                                StatisticsMeta.has_sum,
+                            ).where(
+                                StatisticsMeta.statistic_id.in_(list(_sc_map.keys()))
+                            )
+                        ).fetchall()
+
+                        for row in rows:
+                            sc = _sc_map.get(row.statistic_id)
+                            # MEASUREMENT → expects has_mean=True; anything else
+                            # (TOTAL / TOTAL_INCREASING) is a mismatch.
+                            if sc == "measurement" and not row.has_mean:
+                                db_mismatched.append(row.statistic_id)
+                            # TOTAL/TOTAL_INCREASING → expects has_sum=True
+                            elif sc in ("total", "total_increasing") and not row.has_sum:
+                                db_mismatched.append(row.statistic_id)
+
+                all_to_clear = list(set(_stuck) | set(db_mismatched))
+                if all_to_clear:
+                    clear_statistics(_recorder, all_to_clear)
+                    _LOGGER.info(
+                        "Cleared stale recorder statistics for %d Sharesight entit%s "
+                        "so long-term statistics can begin recording again: %s",
+                        len(all_to_clear),
+                        "y" if len(all_to_clear) == 1 else "ies",
+                        ", ".join(all_to_clear),
+                    )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Could not clear stale recorder statistics: %s", err
+                )
+
+        recorder_instance.async_add_executor_job(_db_check_and_clear)
+
+    # Dismiss any open repair cards (regardless of whether we cleared stats).
     for entity_id in entity_ids:
         for issue_id in (
             f"state_class_removed_{entity_id}",
