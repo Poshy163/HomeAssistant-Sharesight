@@ -7,9 +7,22 @@ from homeassistant.components.sensor import (
 from .const import APP_VERSION, DOMAIN
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from homeassistant.util import dt as dt_util
-from .enum import SENSOR_DESCRIPTIONS, MARKET_SENSOR_DESCRIPTIONS, CASH_SENSOR_DESCRIPTIONS, HOLDING_SENSOR_DESCRIPTIONS
+from .enum import (
+    SENSOR_DESCRIPTIONS,
+    MARKET_SENSOR_DESCRIPTIONS,
+    CASH_SENSOR_DESCRIPTIONS,
+    ALL_HOLDING_DESCRIPTIONS,
+    TAX_SENSOR_DESCRIPTIONS,
+    BENCHMARK_SENSOR_DESCRIPTIONS,
+    SECTOR_SENSOR_DESCRIPTIONS,
+    ACCOUNT_SENSOR_DESCRIPTIONS,
+    WATCHLIST_SENSOR_DESCRIPTIONS,
+    FX_SENSOR_DESCRIPTIONS,
+    MARKET_HOURS_SENSOR_DESCRIPTIONS,
+)
+from . import analytics
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import SharesightCoordinator
 
@@ -378,6 +391,123 @@ def _get_cash_accounts_summary(report_data):
     }
 
 
+def _watchlist_metric(items, key):
+    """Compute a watchlist overview metric from the watchlist.json items."""
+    parsed = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        instrument = item.get('instrument') or {}
+        price = item.get('price') or {}
+        code = instrument.get('code') or item.get('code')
+        diff = price.get('diff_percent')
+        try:
+            diff = float(diff) if diff is not None else None
+        except (ValueError, TypeError):
+            diff = None
+        parsed.append({'code': code, 'diff': diff})
+
+    if key == "watchlist_count":
+        return len(parsed)
+
+    with_diff = [p for p in parsed if p['diff'] is not None]
+    if key == "watchlist_up_count":
+        return sum(1 for p in with_diff if p['diff'] > 0)
+    if key == "watchlist_down_count":
+        return sum(1 for p in with_diff if p['diff'] < 0)
+    if key == "watchlist_average_percent":
+        if not with_diff:
+            return None
+        return round(sum(p['diff'] for p in with_diff) / len(with_diff), 2)
+    if not with_diff:
+        return None
+    if key == "watchlist_top_gainer_symbol":
+        return max(with_diff, key=lambda p: p['diff'])['code']
+    if key == "watchlist_top_gainer_percent":
+        return round(max(with_diff, key=lambda p: p['diff'])['diff'], 2)
+    if key == "watchlist_top_loser_symbol":
+        return min(with_diff, key=lambda p: p['diff'])['code']
+    if key == "watchlist_top_loser_percent":
+        return round(min(with_diff, key=lambda p: p['diff'])['diff'], 2)
+    return None
+
+
+def _foreign_currency_codes(data, base_currency):
+    """Foreign currency codes held (for FX rate sensor discovery)."""
+    if not isinstance(data, dict):
+        return []
+    base = str(base_currency or "").upper()
+    return [c for c in analytics.portfolio_currency_codes(data) if c and c != base]
+
+
+def _held_market_codes(data):
+    """Distinct market codes across current holdings (sorted, de-duplicated)."""
+    if not isinstance(data, dict):
+        return []
+    holdings = data.get("holdings", {})
+    holdings_list = holdings.get("holdings", []) if isinstance(holdings, dict) else []
+    codes: set[str] = set()
+    for holding in holdings_list:
+        market = analytics.holding_market(holding)
+        if market:
+            codes.add(str(market))
+    return sorted(codes)
+
+
+def _market_hours_status(market, now):
+    """Compute (is_open, next_open, next_close) for a market from its hours.
+
+    ``market`` is a Sharesight markets[] entry (tz_name + trading_start_time +
+    trading_end_time as HH:MM).  ``now`` is an aware datetime.  Weekends are
+    treated as closed; public holidays and half-days are NOT modelled, so the
+    signal is approximate.  Returns aware datetimes (or None) for the next
+    open/close boundaries.
+    """
+    tz_name = market.get("tz_name")
+    start_raw = market.get("trading_start_time")
+    end_raw = market.get("trading_end_time")
+    if not (tz_name and start_raw and end_raw):
+        return None, None, None
+    tz = dt_util.get_time_zone(tz_name)
+    if tz is None:
+        return None, None, None
+    try:
+        start_h, start_m = (int(x) for x in str(start_raw).split(":")[:2])
+        end_h, end_m = (int(x) for x in str(end_raw).split(":")[:2])
+    except (ValueError, TypeError):
+        return None, None, None
+
+    local_now = now.astimezone(tz)
+    start_t = time(start_h, start_m)
+    end_t = time(end_h, end_m)
+
+    def _is_trading_day(d):
+        return d.weekday() < 5
+
+    is_open = _is_trading_day(local_now) and start_t <= local_now.time() <= end_t
+
+    next_open = None
+    next_close = None
+    for offset in range(0, 9):
+        day = (local_now + timedelta(days=offset)).date()
+        if not _is_trading_day(day):
+            continue
+        open_dt = datetime.combine(day, start_t, tzinfo=tz)
+        close_dt = datetime.combine(day, end_t, tzinfo=tz)
+        if next_open is None and open_dt > local_now:
+            next_open = open_dt
+        if next_close is None and close_dt > local_now:
+            next_close = close_dt
+        if next_open and next_close:
+            break
+
+    return (
+        is_open,
+        next_open.astimezone(dt_util.UTC) if next_open else None,
+        next_close.astimezone(dt_util.UTC) if next_close else None,
+    )
+
+
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
 
@@ -404,6 +534,29 @@ async def async_setup_entry(hass, entry, async_add_entities):
     for sensor in SENSOR_DESCRIPTIONS:
         sensors.append(SharesightSensor(sensor, entry, coordinator,
                                         local_currency, portfolio_id, edge))
+
+    # Capital gains tax sensors: the underlying V2 reports are AU-only, so
+    # only create them for Australian portfolios.
+    portfolio_detail = coordinator.data.get("portfolio_detail", {})
+    if str(portfolio_detail.get("country_code", "")).upper() == "AU":
+        for sensor in TAX_SENSOR_DESCRIPTIONS:
+            sensors.append(SharesightSensor(sensor, entry, coordinator,
+                                            local_currency, portfolio_id, edge))
+
+    # Benchmark sensors: only once the benchmark report has returned data
+    # (requires a benchmark to be configured on the portfolio).  If it shows
+    # up later, update_sensors() below adds them dynamically.
+    benchmark_added: list[str] = data.setdefault("benchmark_sensors", [])
+
+    def _has_benchmark_data(coordinator_data) -> bool:
+        bench = coordinator_data.get("benchmark")
+        return isinstance(bench, dict) and bool(bench.get("instrument"))
+
+    if _has_benchmark_data(coordinator.data):
+        for sensor in BENCHMARK_SENSOR_DESCRIPTIONS:
+            sensors.append(SharesightSensor(sensor, entry, coordinator,
+                                            local_currency, portfolio_id, edge))
+            benchmark_added.append(str(sensor.name))
 
     # Deduplicate sub_totals by group_name (API may return duplicates)
     seen_markets: set[str] = set()
@@ -461,7 +614,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         if not symbol or symbol in seen_holding_symbols:
             continue
         seen_holding_symbols.add(symbol)
-        for holding_sensor in HOLDING_SENSOR_DESCRIPTIONS:
+        for holding_sensor in ALL_HOLDING_DESCRIPTIONS:
             display_name = f"{symbol} {holding_sensor.sub_key.replace('_', ' ')}"
             uid = f"{portfolio_id}_{symbol}_{holding_sensor.sub_key}_{holding_sensor.key}_{APP_VERSION}"
             if uid in seen_unique_ids:
@@ -471,6 +624,39 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                           local_currency, portfolio_id, edge, 0, symbol, display_name)
             sensors.append(new_sensor)
             holding_sensors.append(display_name)
+
+    # Portfolio sector/industry allocation + account + watchlist devices.
+    # These are fixed sensor sets (no per-item fan-out).
+    for sensor in SECTOR_SENSOR_DESCRIPTIONS + ACCOUNT_SENSOR_DESCRIPTIONS + WATCHLIST_SENSOR_DESCRIPTIONS:
+        sensors.append(SharesightSensor(sensor, entry, coordinator,
+                                        local_currency, portfolio_id, edge))
+
+    # Dynamic FX rate sensors — one per foreign currency held.
+    fx_sensors: list[str] = data.setdefault("fx_sensors", [])
+    base_currency = local_currency
+    for code in _foreign_currency_codes(coordinator.data, base_currency):
+        for fx_sensor in FX_SENSOR_DESCRIPTIONS:
+            display_name = f"{code} to {base_currency} rate"
+            uid = f"{portfolio_id}_fx_{code}_{fx_sensor.key}_{APP_VERSION}"
+            if uid in seen_unique_ids:
+                continue
+            seen_unique_ids.add(uid)
+            sensors.append(SharesightSensor(fx_sensor, entry, coordinator,
+                                            local_currency, portfolio_id, edge, 0, code, display_name))
+            fx_sensors.append(display_name)
+
+    # Dynamic market trading-hours sensors — one set per held market.
+    market_hours_sensors: list[str] = data.setdefault("market_hours_sensors", [])
+    for market_code in _held_market_codes(coordinator.data):
+        for mh_sensor in MARKET_HOURS_SENSOR_DESCRIPTIONS:
+            display_name = f"{market_code} {mh_sensor.name}"
+            uid = f"{portfolio_id}_market_hours_{market_code}_{mh_sensor.key}_{APP_VERSION}"
+            if uid in seen_unique_ids:
+                continue
+            seen_unique_ids.add(uid)
+            sensors.append(SharesightSensor(mh_sensor, entry, coordinator,
+                                            local_currency, portfolio_id, edge, 0, market_code, display_name))
+            market_hours_sensors.append(display_name)
 
     async_add_entities(sensors, True)
 
@@ -526,6 +712,16 @@ async def async_setup_entry(hass, entry, async_add_entities):
                     async_add_entities([update_new_sensor], True)
             __update_index_cash += 1
 
+        # Benchmark sensors appear once the user configures a benchmark
+        if _has_benchmark_data(update_coordinator.data) and not benchmark_added:
+            new_benchmark_sensors = []
+            for benchmark_sensor in BENCHMARK_SENSOR_DESCRIPTIONS:
+                new_benchmark_sensors.append(
+                    SharesightSensor(benchmark_sensor, entry, update_coordinator,
+                                     local_currency, portfolio_id, edge))
+                benchmark_added.append(str(benchmark_sensor.name))
+            async_add_entities(new_benchmark_sensors, True)
+
         # Check for new holdings
         update_holdings_data = update_coordinator.data.get("holdings", {})
         update_holdings_list = update_holdings_data.get("holdings", []) if isinstance(update_holdings_data, dict) else []
@@ -533,7 +729,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             __holding_symbol = _get_holding_symbol(update_holding)
             if not __holding_symbol:
                 continue
-            for update_holding_sensor in HOLDING_SENSOR_DESCRIPTIONS:
+            for update_holding_sensor in ALL_HOLDING_DESCRIPTIONS:
                 update_holding_display_name = f"{__holding_symbol} {update_holding_sensor.sub_key.replace('_', ' ')}"
                 if update_holding_display_name not in holding_sensors:
                     update_new_holding_sensor = SharesightSensor(
@@ -542,6 +738,26 @@ async def async_setup_entry(hass, entry, async_add_entities):
                         update_holding_display_name)
                     async_add_entities([update_new_holding_sensor], True)
                     holding_sensors.append(update_holding_display_name)
+
+        # New foreign currencies (FX rate sensors)
+        for __code in _foreign_currency_codes(update_coordinator.data, local_currency):
+            __fx_display = f"{__code} to {local_currency} rate"
+            if __fx_display not in fx_sensors:
+                for fx_sensor in FX_SENSOR_DESCRIPTIONS:
+                    async_add_entities([SharesightSensor(
+                        fx_sensor, entry, update_coordinator, local_currency,
+                        portfolio_id, edge, 0, __code, __fx_display)], True)
+                    fx_sensors.append(__fx_display)
+
+        # New held markets (trading-hours sensors)
+        for __market_code in _held_market_codes(update_coordinator.data):
+            for mh_sensor in MARKET_HOURS_SENSOR_DESCRIPTIONS:
+                __mh_display = f"{__market_code} {mh_sensor.name}"
+                if __mh_display not in market_hours_sensors:
+                    async_add_entities([SharesightSensor(
+                        mh_sensor, entry, update_coordinator, local_currency,
+                        portfolio_id, edge, 0, __market_code, __mh_display)], True)
+                    market_hours_sensors.append(__mh_display)
 
     # Piggy-back on the coordinator's own update cycle rather than running a
     # second time interval.  New markets/holdings appear as soon as the next
@@ -569,6 +785,7 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         self._sub_key = sensor.sub_key
         self._device_group = getattr(sensor, 'device_group', 'portfolio')
         self._local_name = local_name
+        self._currency_code = currency
 
         # Propagate entity_registry_enabled_default from description
         if hasattr(sensor, 'entity_registry_enabled_default') and not sensor.entity_registry_enabled_default:
@@ -662,6 +879,41 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 "identifier": f"{self._portfolio_id}_ytd",
                 "model": f"{base_model} - YTD Performance",
             },
+            "tax": {
+                "name": f"Sharesight{edge_name}Tax (CGT)",
+                "identifier": f"{self._portfolio_id}_tax",
+                "model": f"{base_model} - Capital Gains Tax",
+            },
+            "benchmark": {
+                "name": f"Sharesight{edge_name}Benchmark",
+                "identifier": f"{self._portfolio_id}_benchmark",
+                "model": f"{base_model} - Benchmark",
+            },
+            "sector": {
+                "name": f"Sharesight{edge_name}Sector Allocation",
+                "identifier": f"{self._portfolio_id}_sector",
+                "model": f"{base_model} - Sector Allocation",
+            },
+            "account": {
+                "name": f"Sharesight{edge_name}Account",
+                "identifier": f"{self._portfolio_id}_account",
+                "model": f"{base_model} - Account",
+            },
+            "watchlist": {
+                "name": f"Sharesight{edge_name}Watchlist",
+                "identifier": f"{self._portfolio_id}_watchlist",
+                "model": f"{base_model} - Watchlist",
+            },
+            "fx": {
+                "name": f"Sharesight{edge_name}Exchange Rates",
+                "identifier": f"{self._portfolio_id}_fx",
+                "model": f"{base_model} - Exchange Rates",
+            },
+            "market_hours": {
+                "name": f"Sharesight{edge_name}Market Hours",
+                "identifier": f"{self._portfolio_id}_market_hours",
+                "model": f"{base_model} - Market Hours",
+            },
         }
 
         if self._device_group == "market" and local_name:
@@ -714,6 +966,17 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 else:
                     self._state = None
                 self._unique_id = f"{self._portfolio_id}_holding_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
+            elif self._key in ("holding_fundamental", "holding_income", "holding_trade"):
+                # Per-holding derived sensor — state computed in native_value.
+                self._state = None
+                self._unique_id = f"{self._portfolio_id}_holding_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
+            elif self._device_group in ("fx", "market_hours"):
+                # Dynamic per-currency / per-market sensor.
+                self._state = None
+                self._unique_id = f"{self._portfolio_id}_{self._device_group}_{local_name}_{self._key}_{APP_VERSION}"
+            elif self._sub_key in ("sector_allocation", "industry_allocation", "my_user", "watchlist"):
+                self._state = None
+                self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
             elif self._sub_key == "report" and self._key != "sub_totals" and self._key != "cash_accounts":
                 self._state = self._coordinator.data[self._sub_key][self._key]
                 self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
@@ -1277,17 +1540,31 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                     except (ValueError, TypeError, ZeroDivisionError):
                         return None
                 elif self._key == "upcoming_dividends_count":
-                    payouts = income_data.get('payouts', [])
+                    # Historic payouts (inception→today) plus the dedicated
+                    # forward window (today→+1y) the coordinator fetches.
+                    payouts = (income_data.get('payouts', []) or []) + (
+                        income_data.get('upcoming_payouts', []) or []
+                    )
                     if not payouts:
                         return 0
                     today_iso = dt_util.now().date().isoformat()
+                    seen: set[tuple] = set()
                     count = 0
                     for p in payouts:
                         if not isinstance(p, dict):
                             continue
-                        ex = p.get('goes_ex_on') or p.get('ex_date')
-                        if ex and str(ex)[:10] >= today_iso:
-                            count += 1
+                        ex = (
+                            p.get('goes_ex_on')
+                            or p.get('ex_date')
+                            or p.get('paid_on')
+                        )
+                        if not ex or str(ex)[:10] < today_iso:
+                            continue
+                        dedupe_key = (p.get('id'), str(ex)[:10], p.get('amount'))
+                        if dedupe_key in seen:
+                            continue
+                        seen.add(dedupe_key)
+                        count += 1
                     return count
                 elif self._key == "dividends_received_cash":
                     cash_tx_data = self._coordinator.data.get('cash_account_transactions', {})
@@ -1314,7 +1591,9 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                             continue
                     return round(total, 2)
                 elif self._key in ("next_dividend_date", "next_dividend_amount", "next_dividend_symbol"):
-                    payouts = income_data.get('payouts', [])
+                    payouts = (income_data.get('payouts', []) or []) + (
+                        income_data.get('upcoming_payouts', []) or []
+                    )
                     if not payouts:
                         return None
                     today_iso = dt_util.now().date().isoformat()
@@ -1746,6 +2025,145 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                         return round(float(amt), 2) if amt is not None else None
                     except (ValueError, TypeError):
                         return None
+                return None
+            # Per-holding fundamentals (joined from user_instruments)
+            elif self._key == "holding_fundamental":
+                lookup = self._coordinator.data.get('instrument_lookup', {})
+                holdings_list = self._coordinator.data.get('holdings', {}).get('holdings', [])
+                holding = _find_holding_by_symbol(holdings_list, self._local_name)
+                if holding is None:
+                    return None
+                instrument = analytics.lookup_instrument(lookup, holding) or {}
+                field = "current_price_updated_at" if self._sub_key == "price_updated_at" else self._sub_key
+                return instrument.get(field)
+            # Per-holding dividend income (grouped from payouts)
+            elif self._key == "holding_income":
+                income_map = self._coordinator.data.get('holding_income', {})
+                entry = income_map.get(self._local_name)
+                if not isinstance(entry, dict):
+                    return None
+                field = "count" if self._sub_key == "dividend_count" else self._sub_key
+                return entry.get(field)
+            # Per-holding trade activity (grouped from trades)
+            elif self._key == "holding_trade":
+                trades_map = self._coordinator.data.get('holding_trades', {})
+                entry = trades_map.get(self._local_name)
+                if not isinstance(entry, dict):
+                    return None
+                trade_field_map = {
+                    "last_trade_date": "last_date",
+                    "trade_count": "count",
+                    "brokerage_paid": "brokerage",
+                    "vwap_buy_price": "vwap_buy_price",
+                    "net_shares": "net_shares",
+                }
+                return entry.get(trade_field_map.get(self._sub_key, self._sub_key))
+            # Portfolio sector / industry allocation
+            elif self._sub_key in ("sector_allocation", "industry_allocation"):
+                alloc = self._coordinator.data.get(self._sub_key, {})
+                breakdown = alloc.get('breakdown', []) if isinstance(alloc, dict) else []
+                prefix = "sector" if self._sub_key == "sector_allocation" else "industry"
+                if self._key == f"{prefix}_count":
+                    return len(breakdown)
+                if self._key in ("top_3_sectors_percent", "top_5_sectors_percent"):
+                    n = 3 if "3" in self._key else 5
+                    return round(sum(float(b.get('percentage', 0) or 0) for b in breakdown[:n]), 2)
+                # Ranked entries: <prefix>_<rank>_<name|percent|value>
+                for rank in range(1, 6):
+                    for attr, out in (("name", "group_name"), ("percent", "percentage"), ("value", "value")):
+                        if self._key == f"{prefix}_{rank}_{attr}":
+                            if len(breakdown) >= rank:
+                                return breakdown[rank - 1].get(out)
+                            return None
+                return None
+            # Account / subscription (my_user.json)
+            elif self._sub_key == "my_user":
+                my_user = self._coordinator.data.get('my_user', {})
+                if not isinstance(my_user, dict):
+                    return None
+                user = my_user.get('user') if isinstance(my_user.get('user'), dict) else my_user
+                if self._key == "subscription_status":
+                    if user.get('is_expired'):
+                        return "Expired"
+                    if user.get('is_cancelled'):
+                        return "Cancelled"
+                    return "Active"
+                return user.get(self._key)
+            # Watchlist overview
+            elif self._sub_key == "watchlist":
+                watchlist_data = self._coordinator.data.get('watchlist', {})
+                items = watchlist_data.get('watchlist', []) if isinstance(watchlist_data, dict) else []
+                return _watchlist_metric(items, self._key)
+            # FX rate (foreign currency -> base currency)
+            elif self._device_group == "fx":
+                fx_data = self._coordinator.data.get('exchange_rates', {})
+                rates = fx_data.get('exchange_rates', {}) if isinstance(fx_data, dict) else {}
+                # local_name is the foreign code; pair is FOREIGN/BASE
+                pair = f"{self._local_name}/{str(self._currency_code).upper()}"
+                entry = rates.get(pair) if isinstance(rates, dict) else None
+                if isinstance(entry, dict):
+                    return entry.get('rate')
+                return None
+            # Market trading hours
+            elif self._device_group == "market_hours":
+                markets_data = self._coordinator.data.get('markets', {})
+                markets = markets_data.get('markets', []) if isinstance(markets_data, dict) else []
+                market = next(
+                    (m for m in markets if isinstance(m, dict) and str(m.get('code')) == str(self._local_name)),
+                    None,
+                )
+                if market is None:
+                    return None
+                is_open, next_open, next_close = _market_hours_status(market, dt_util.now())
+                if self._key == "market_status":
+                    if is_open is None:
+                        return None
+                    return "Open" if is_open else "Closed"
+                if self._key == "market_next_open":
+                    return next_open
+                if self._key == "market_next_close":
+                    return next_close
+                return None
+            # Capital gains tax reports (AU portfolios)
+            elif self._sub_key in ("capital_gains", "unrealised_cgt"):
+                tax_data = self._coordinator.data.get(self._sub_key, {})
+                if not isinstance(tax_data, dict) or 'error' in tax_data:
+                    return None
+                val = tax_data.get(self._key)
+                return val if isinstance(val, (int, float, str)) else None
+            elif self._sub_key == "benchmark":
+                bench = self._coordinator.data.get('benchmark', {})
+                if not isinstance(bench, dict):
+                    return None
+                instrument = bench.get('instrument') or {}
+                if self._key == "benchmark_name":
+                    return instrument.get('name')
+                if self._key == "benchmark_code":
+                    code = instrument.get('code')
+                    market = instrument.get('market_code')
+                    if code and market:
+                        return f"{code}.{market}"
+                    return code
+                if self._key == "benchmark_total_gain_percent":
+                    return bench.get('total_gain_percent')
+                if self._key == "benchmark_capital_gain_percent":
+                    # The API names this one field 'percentage', not 'percent'
+                    return bench.get('capital_gain_percentage')
+                if self._key == "benchmark_payout_gain_percent":
+                    return bench.get('payout_gain_percent')
+                if self._key == "benchmark_currency_gain_percent":
+                    return bench.get('currency_gain_percent')
+                if self._key == "benchmark_excess_return_percent":
+                    # Both percentages are since-inception (the benchmark call
+                    # uses the portfolio inception date as start_date), so a
+                    # simple difference is meaningful.
+                    report_data = self._coordinator.data.get('report', {})
+                    try:
+                        portfolio_pct = float(report_data.get('total_gain_percent'))
+                        benchmark_pct = float(bench.get('total_gain_percent'))
+                    except (TypeError, ValueError):
+                        return None
+                    return round(portfolio_pct - benchmark_pct, 2)
                 return None
             # Integration diagnostics
             elif self._sub_key == "_integration":

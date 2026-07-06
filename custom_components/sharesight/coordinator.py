@@ -10,6 +10,7 @@ from typing import Any
 
 import aiohttp
 
+from . import analytics
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
@@ -303,6 +304,27 @@ class SharesightCoordinator(DataUpdateCoordinator):
             )
             raise
 
+    async def async_get_value_history(self) -> Any:
+        """Fetch the inception-to-today portfolio value series.
+
+        Used by the long-term statistics backfill.  Reuses the coordinator's
+        token refresh + concurrency/timeout controls.  Returns the raw API
+        response (or an ``{"error": ...}`` dict on failure) — the caller must
+        tolerate a gated/absent endpoint.
+        """
+        token = await self._refresh_token_with_retries()
+        params: dict[str, Any] | None = None
+        inception = self._portfolio_detail.get("inception_date")
+        if inception:
+            params = {"start_date": inception}
+        endpoint = [
+            "v3",
+            f"portfolios/{self.portfolio_id}/portfolio_value_data.json",
+            params,
+            False,
+        ]
+        return await self._call_endpoint(endpoint, token)
+
     # ------------------------------------------------------------------
     # Optional endpoint cooldown bookkeeping
     # ------------------------------------------------------------------
@@ -475,12 +497,86 @@ class SharesightCoordinator(DataUpdateCoordinator):
         optional_endpoint_list: list[list[Any]] = [
             ["v3", f"portfolios/{self.portfolio_id}/holdings", None, "holdings"],
             ["v2", f"portfolios/{self.portfolio_id}/payouts", None, "payouts"],
+            # Announced-but-not-yet-paid dividends.  The default payouts call
+            # only covers inception→today, so future payouts never show up in
+            # it; this second window feeds the next-dividend sensors and the
+            # dividend calendar.
+            [
+                "v2",
+                f"portfolios/{self.portfolio_id}/payouts",
+                {
+                    "start_date": f"{today}",
+                    "end_date": f"{today + timedelta(days=365)}",
+                },
+                "upcoming_payouts",
+            ],
             ["v2", f"portfolios/{self.portfolio_id}/diversity", None, "diversity_v2"],
             ["v2", f"portfolios/{self.portfolio_id}/trades", None, "trades"],
             ["v2", "cash_accounts", None, "cash_accounts_v2"],
             ["v3", f"portfolios/{self.portfolio_id}/user_setting", None, "user_setting"],
             ["v2", "user_instruments", None, "user_instruments"],
+            # Benchmark performance (only returns data when the user has set a
+            # benchmark on the portfolio; otherwise the optional-endpoint
+            # backoff quietly parks it).  start_date is required — use the
+            # portfolio inception date so the percentages line up with the
+            # since-inception V3 performance report.
+            [
+                "v3",
+                f"portfolios/{self.portfolio_id}/benchmark",
+                {
+                    "start_date": self._portfolio_detail.get("inception_date")
+                    or self.start_of_year,
+                    "end_date": f"{today}",
+                },
+                False,
+            ],
+            # Account/subscription info (near-static; one light V2 request).
+            ["v2", "my_user.json", None, "my_user"],
+            # Watchlist summary + market trading-hours metadata.  Both are V3
+            # "mobile"/"internal"-scoped endpoints; if a standard API token
+            # can't reach them they simply park in the backoff tier.
+            ["v3", "watchlist.json", None, "watchlist"],
+            ["v3", "markets", None, "markets"],
         ]
+
+        # Live FX rates — only worth requesting for multi-currency portfolios.
+        # Codes are derived from the previous poll's holdings/instruments (the
+        # current poll's holdings aren't built yet), so this comes online on
+        # the second poll.  exchange_rates is a V3 "internal" endpoint and may
+        # not be reachable by all tokens; it parks via backoff if so.
+        fx_codes = analytics.portfolio_currency_codes(self.data)
+        if len(fx_codes) >= 2:
+            optional_endpoint_list.append(
+                [
+                    "v3",
+                    "exchange_rates",
+                    {"codes": ",".join(fx_codes), "date": f"{today}"},
+                    "exchange_rates",
+                ]
+            )
+
+        # Capital gains tax reports are only available for Australian
+        # portfolios (the API rejects them otherwise).
+        if str(self._portfolio_detail.get("country_code", "")).upper() == "AU":
+            optional_endpoint_list.extend(
+                [
+                    [
+                        "v2",
+                        f"portfolios/{self.portfolio_id}/capital_gains",
+                        {
+                            "start_date": self.start_financial_year,
+                            "end_date": self.end_financial_year,
+                        },
+                        "capital_gains",
+                    ],
+                    [
+                        "v2",
+                        f"portfolios/{self.portfolio_id}/unrealised_cgt",
+                        {"balance_date": f"{today}"},
+                        "unrealised_cgt",
+                    ],
+                ]
+            )
 
         try:
             _LOGGER.debug(
@@ -588,10 +684,13 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 )
 
             # --- Optional endpoints (with per-endpoint cooldown) ----------
+            # Cooldowns are keyed on path + extension because the same path
+            # can be polled twice with different params (e.g. past vs
+            # upcoming payouts) and must back off independently.
             active_optional = [
                 endpoint
                 for endpoint in optional_endpoint_list
-                if not self._endpoint_on_cooldown(endpoint[1])
+                if not self._endpoint_on_cooldown(f"{endpoint[1]}#{endpoint[3]}")
             ]
             _LOGGER.debug(
                 "Calling %s optional endpoints in parallel (%s on cooldown)",
@@ -606,6 +705,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
             for endpoint, result in zip(active_optional, optional_results):
                 endpoint_path = endpoint[1]
                 extension = endpoint[3]
+                cooldown_key = f"{endpoint_path}#{extension}"
 
                 if isinstance(result, Exception):
                     _LOGGER.info(
@@ -613,7 +713,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
                         endpoint_path,
                         result,
                     )
-                    self._note_optional_failure(endpoint_path)
+                    self._note_optional_failure(cooldown_key)
                     continue
 
                 response = result
@@ -623,7 +723,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
                         endpoint_path,
                         type(response).__name__,
                     )
-                    self._note_optional_failure(endpoint_path)
+                    self._note_optional_failure(cooldown_key)
                     continue
                 if "error" in response:
                     if self._is_lockout(response):
@@ -635,10 +735,10 @@ class SharesightCoordinator(DataUpdateCoordinator):
                         endpoint_path,
                         response.get("error"),
                     )
-                    self._note_optional_failure(endpoint_path)
+                    self._note_optional_failure(cooldown_key)
                     continue
 
-                self._note_optional_success(endpoint_path)
+                self._note_optional_success(cooldown_key)
                 if extension:
                     response = {extension: response}
                 combined_dict = merge_dicts(combined_dict, response)
@@ -777,6 +877,15 @@ class SharesightCoordinator(DataUpdateCoordinator):
                     "payouts": [],
                 }
 
+            # Announced-but-unpaid dividends from the forward payouts window.
+            upcoming_data = combined_dict.get("upcoming_payouts", {})
+            upcoming_list: list[dict[str, Any]] = []
+            if isinstance(upcoming_data, dict):
+                upcoming_list = upcoming_data.get("payouts", []) or []
+            combined_dict["income_report"]["upcoming_payouts"] = [
+                p for p in upcoming_list if isinstance(p, dict)
+            ]
+
             # Build diversity breakdown.  Sharesight's diversity_v2 endpoint
             # occasionally returns an empty/partial payload (especially when
             # a poll coincides with a token refresh), which would otherwise
@@ -839,6 +948,36 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 and "error" not in trades_data
             ):
                 combined_dict["trades"] = {"trades": []}
+
+            # --- Derived analytics (no extra API calls) ------------------
+            # These mine data already fetched this poll into per-holding and
+            # portfolio-level maps that many sensors consume.  Failures here
+            # must never sink the whole poll, so guard defensively.
+            try:
+                holdings_list = combined_dict.get("holdings", {}).get("holdings", [])
+
+                instrument_lookup = analytics.build_instrument_lookup(
+                    combined_dict.get("user_instruments", {})
+                )
+                combined_dict["instrument_lookup"] = instrument_lookup
+
+                combined_dict["holding_income"] = analytics.build_holding_income(
+                    combined_dict.get("income_report", {}).get("payouts", []),
+                    holdings_list,
+                    today,
+                )
+                combined_dict["holding_trades"] = analytics.build_holding_trades(
+                    combined_dict.get("trades", {}).get("trades", []),
+                    holdings_list,
+                )
+                combined_dict["sector_allocation"] = analytics.build_sector_allocation(
+                    holdings_list, instrument_lookup, axis="sector"
+                )
+                combined_dict["industry_allocation"] = analytics.build_sector_allocation(
+                    holdings_list, instrument_lookup, axis="industry"
+                )
+            except (ValueError, TypeError, KeyError, AttributeError) as analytics_err:
+                _LOGGER.debug("Derived analytics failed: %s", analytics_err)
 
             # Refresh the financial year bounds if the portfolio list has it.
             portfolios_list = combined_dict.get("portfolios", [])

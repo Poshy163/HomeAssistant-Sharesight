@@ -4,9 +4,10 @@
   "codeowners": ["@Poshy163"],
   "config_flow": true,
   "dependencies": ["application_credentials"],
+  "after_dependencies": ["recorder"],
   "documentation": "https://github.com/Poshy163/HomeAssistant-Sharesight",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Poshy163/HomeAssistant-Sharesight/issues",
   "requirements": ["SharesightAPI==1.2.1"],
-  "version": "1.4.0"
+  "version": "1.7.2"
 }

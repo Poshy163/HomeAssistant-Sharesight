@@ -12,12 +12,15 @@ SCAN_INTERVAL = DEFAULT_SCAN_INTERVAL
 MIN_SCAN_INTERVAL_SECONDS = 60
 MAX_SCAN_INTERVAL_SECONDS = 60 * 60
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.CALENDAR, Platform.BINARY_SENSOR]
 DOMAIN = "sharesight"
 
 CONF_PORTFOLIO_ID = "portfolio_id"
 CONF_USE_EDGE = "use_edge_url"
 CONF_SCAN_INTERVAL = "scan_interval"
+# Backfill the portfolio-value long-term statistics from inception on startup.
+CONF_ENABLE_LTS_BACKFILL = "enable_lts_backfill"
+DEFAULT_ENABLE_LTS_BACKFILL = True
 
 APP_VERSION = "v2"
 

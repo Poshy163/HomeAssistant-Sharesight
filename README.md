@@ -11,6 +11,14 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 - Per-market devices — each exchange (ASX, NYSE, LSE, etc.) gets its own HA device
 - Cash account tracking — including Xero-linked accounts
 - Auto-discovery of new markets and cash accounts (checked every 10 minutes)
+- Dividend calendar — received and announced dividends as a native HA calendar entity
+- Capital gains tax (CGT) sensors for Australian portfolios — realised FY + unrealised positions
+- Benchmark comparison — track your excess return against the benchmark configured in Sharesight
+- Per-holding fundamentals (P/E, EPS, NTA, sector, industry), dividend income, yield-on-cost and average buy price
+- Sector & industry allocation breakdown — a diversification lens beyond markets
+- Account device — plan tier, member-since, and a subscription-lapse alert (binary sensor)
+- Watchlist, live FX rates and market trading-hours sensors (where your Sharesight API access exposes them)
+- Long-term statistics backfill — imports your full portfolio value history so HA charts show years, not just days since install (opt-out in options)
 - Supports both standard and Edge (developer) API accounts
 - Multiple portfolio support — add the integration once per portfolio
 
@@ -161,6 +169,64 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Total Franked / Unfranked Amount | Franked vs unfranked split |
 | Total Foreign Source Income | Income classified as foreign-source |
 | Total Capital Gains Distributions | Capital gains distributed via dividends |
+| **Dividend Calendar** (calendar entity) | All received + announced dividends as all-day calendar events — use it in calendar cards or calendar-trigger automations |
+
+### Tax (CGT) — Australian portfolios only
+| Sensor | Description |
+|--------|-------------|
+| CGT Taxable Gain FY | Realised capital gains tax position for the current financial year |
+| CGT Short / Long Term Gains FY | Realised gains split by holding period (long-term gains are concession-eligible) |
+| CGT Losses FY | Realised losses available to offset |
+| CGT Concession Amount FY | CGT discount applied to long-term gains |
+| CGT Discounted / Non-Discounted Distributions FY | Capital gain distributions from funds/trusts |
+| Unrealised CGT Taxable Gain | "If I sold everything today" tax exposure |
+| Unrealised CGT Short / Long Term Gains / Losses | Unrealised gains split by holding period |
+| Unrealised CGT Concession Amount | CGT discount that would apply today |
+
+### Benchmark (requires a benchmark set on the portfolio in Sharesight)
+| Sensor | Description |
+|--------|-------------|
+| Benchmark Name / Code | The configured benchmark instrument |
+| Benchmark Total / Capital / Dividend / Currency Gain Percent | Benchmark performance since portfolio inception |
+| Portfolio Excess Return vs Benchmark | Your total return minus the benchmark's (positive = beating it) |
+
+### Sector & Industry Allocation
+| Sensor | Description |
+|--------|-------------|
+| Top Sector 1–5 (Name / Percent / Value) | Your largest sector exposures (value-weighted) |
+| Sector Count / Top 3 / Top 5 Sectors Percent | Sector diversification and concentration |
+| Top Industry 1–2 (Name / Percent) / Industry Count | Finer industry breakdown |
+
+### Account (from `my_user.json`)
+| Sensor | Description |
+|--------|-------------|
+| Sharesight Plan / Plan Code | Your subscription tier (explains why plan-gated data may be absent) |
+| Sharesight Member Since / Account Name | Profile info |
+| Sharesight Subscription Status | Active / Expired / Cancelled |
+| Subscription Problem (binary sensor) | **Turns on if your subscription lapses** — data silently goes stale otherwise; alert on this |
+
+### Per-Holding extras (added to each holding device)
+| Sensor | Description |
+|--------|-------------|
+| PE Ratio / EPS / NTA | Fundamentals from Sharesight's instrument feed (null for many ETFs/funds) |
+| Sector / Industry / Instrument Type | Classification metadata |
+| Price Updated | When Sharesight last refreshed this instrument's price |
+| Dividends TTM / Yield on Cost / Franking Credits TTM | Trailing-12-month income per holding |
+| Last Dividend Amount / Date / Dividend Count | Per-holding dividend history |
+| Average Buy Price / Brokerage Paid / Net Shares Traded | Volume-weighted cost and trade activity |
+| Last Trade Date / Trade Count | Per-holding trade activity |
+
+### Watchlist / FX / Market Hours (availability depends on your Sharesight API access)
+| Sensor | Description |
+|--------|-------------|
+| Watchlist Count / Up Today / Down Today / Average Change | Overview of instruments you watch but don't hold |
+| Watchlist Top Gainer / Top Loser (+ percent) | Biggest daily movers on your watchlist |
+| `<CUR>` to `<BASE>` rate | Live FX rate per foreign currency you hold (multi-currency portfolios) |
+| `<MARKET>` status / next open / next close | Trading-hours state per market you hold in |
+
+> These last three groups rely on Sharesight's mobile/internal API surface. If
+> your API token can't reach them they simply never appear (the integration
+> parks the endpoint) — everything else keeps working.
 
 ### Diversity
 | Sensor | Description |

@@ -38,7 +38,11 @@
                 "title": "Sharesight options",
                 "description": "Configure how frequently Home Assistant polls the Sharesight API for this portfolio. Must be between 60 and 3600 seconds.",
                 "data": {
-                    "scan_interval": "Poll interval (seconds)"
+                    "scan_interval": "Poll interval (seconds)",
+                    "enable_lts_backfill": "Backfill portfolio value history into long-term statistics"
+                },
+                "data_description": {
+                    "enable_lts_backfill": "On startup, import the full inception-to-today daily portfolio value series into the Portfolio value sensor's statistics. Requires the value-data endpoint to be available for your API access."
                 }
             }
         }

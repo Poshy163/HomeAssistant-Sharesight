@@ -14,9 +14,11 @@ from SharesightAPI.SharesightAPI import SharesightAPI
 
 from .const import (
     API_URL_BASE,
+    CONF_ENABLE_LTS_BACKFILL,
     CONF_PORTFOLIO_ID,
     CONF_SCAN_INTERVAL,
     CONF_USE_EDGE,
+    DEFAULT_ENABLE_LTS_BACKFILL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EDGE_API_URL_BASE,
@@ -192,6 +194,9 @@ class SharesightOptionsFlow(OptionsFlow):
                 int(DEFAULT_SCAN_INTERVAL.total_seconds()),
             )
         )
+        current_backfill = self.config_entry.options.get(
+            CONF_ENABLE_LTS_BACKFILL, DEFAULT_ENABLE_LTS_BACKFILL
+        )
 
         schema = vol.Schema(
             {
@@ -205,6 +210,10 @@ class SharesightOptionsFlow(OptionsFlow):
                         max=MAX_SCAN_INTERVAL_SECONDS,
                     ),
                 ),
+                vol.Required(
+                    CONF_ENABLE_LTS_BACKFILL,
+                    default=current_backfill,
+                ): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

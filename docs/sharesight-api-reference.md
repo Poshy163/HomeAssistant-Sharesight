@@ -98,18 +98,36 @@ From [coordinator.py](../custom_components/sharesight/coordinator.py):
 | V3 | `GET portfolios/{id}/holdings` | Holdings list |
 | V3 | `GET portfolios/{id}/user_setting` | User settings |
 | V2 | `GET portfolios/{id}/performance` | Period reports (1d / 1w / 1m / YTD / FY) via `start_date`+`end_date` |
-| V2 | `GET portfolios/{id}/payouts` | Income/dividends |
+| V2 | `GET portfolios/{id}/payouts` | Income/dividends (historic, inception→today) |
+| V2 | `GET portfolios/{id}/payouts` (today→+1y) | Announced/upcoming dividends → next-dividend sensors + dividend calendar |
 | V2 | `GET portfolios/{id}/diversity` | Diversity breakdown |
 | V2 | `GET portfolios/{id}/trades` | Trades |
+| V2 | `GET portfolios/{id}/capital_gains` | AU only: realised CGT for current FY ("tax" device) |
+| V2 | `GET portfolios/{id}/unrealised_cgt` | AU only: unrealised CGT as of today ("tax" device) |
+| V3 | `GET portfolios/{id}/benchmark` | Benchmark performance + excess return ("benchmark" device; needs a benchmark configured) |
 | V2 | `GET cash_accounts` | Cash accounts |
 | V2 | `GET cash_accounts/{id}/cash_account_transactions` | Per-account cash transactions |
-| V2 | `GET user_instruments` | User's instruments |
+| V2 | `GET user_instruments` | Per-holding fundamentals (P/E, EPS, NTA, sector, industry, price freshness) + sector/industry allocation device |
+| V2 | `GET my_user.json` | Account device: plan tier, member-since, subscription-problem binary sensor |
+| V3 | `GET watchlist.json` | Watchlist overview device (count, up/down today, top mover/loser) — mobile-scoped, parks if unreachable |
+| V3 | `GET markets` | Market-hours device: open/closed + next open/close per held market — internal-scoped, parks if unreachable |
+| V3 | `GET exchange_rates` | Live FX rate sensors (per foreign currency held) — internal-scoped, multi-currency only, parks if unreachable |
+
+> **Zero-cost derivations:** the per-holding dividend income / yield-on-cost /
+> franking / last-dividend sensors and the per-holding trade activity / VWAP
+> average buy price / brokerage / last-trade sensors are computed in-memory
+> from the already-fetched `payouts` and `trades` lists — no extra requests.
+> See [analytics.py](../custom_components/sharesight/analytics.py).
+
+| V3 | `GET portfolios/{id}/portfolio_value_data.json` | One-shot at startup: backfills the inception→today daily value series into the Portfolio value sensor's long-term statistics (opt-out via options). Mobile-scoped — skips silently if unreachable. See [statistics_import.py](../custom_components/sharesight/statistics_import.py). |
 
 **Not yet used but potentially useful** (read-only, low cost): V2
 `GET my_user.json`, V2 `GET currencies.json`, V3 `GET .../value` (30-day
 portfolio value series — lighter than a full performance report), V3
 `GET .../totals` (inception-to-date totals), V3 `GET .../overview` (holdings +
-cash, "performance minus calculations" — cheaper than `performance`).
+cash, "performance minus calculations" — cheaper than `performance`), V3
+`GET exchange_rates`, V3 `GET instruments/{id}/sharechecker` (per-instrument
+fundamentals — one request per holding, so budget carefully).
 
 ---
 

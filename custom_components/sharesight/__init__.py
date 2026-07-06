@@ -9,8 +9,10 @@ from SharesightAPI.SharesightAPI import SharesightAPI
 
 from .const import (
     API_URL_BASE,
+    CONF_ENABLE_LTS_BACKFILL,
     CONF_PORTFOLIO_ID,
     CONF_USE_EDGE,
+    DEFAULT_ENABLE_LTS_BACKFILL,
     DOMAIN,
     EDGE_API_URL_BASE,
     EDGE_TOKEN_URL,
@@ -18,6 +20,7 @@ from .const import (
     TOKEN_URL,
 )
 from .coordinator import SharesightCoordinator
+from .statistics_import import async_backfill_value_statistics
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -65,6 +68,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Backfill the portfolio-value long-term statistics from inception once at
+    # startup (opt-out via options).  Runs in the background so it never blocks
+    # setup, and is idempotent so re-running on restart is safe.
+    if entry.options.get(CONF_ENABLE_LTS_BACKFILL, DEFAULT_ENABLE_LTS_BACKFILL):
+        portfolios = (local_coordinator.data or {}).get("portfolios", [])
+        currency = "USD"
+        if portfolios and isinstance(portfolios[0], dict):
+            currency = portfolios[0].get("currency_code", "USD")
+        entry.async_create_background_task(
+            hass,
+            async_backfill_value_statistics(
+                hass, local_coordinator, portfolio_id, currency
+            ),
+            "sharesight_lts_backfill",
+        )
+
     return True
 
 
