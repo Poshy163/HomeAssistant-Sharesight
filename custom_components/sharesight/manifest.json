@@ -6,8 +6,9 @@
   "dependencies": ["application_credentials"],
   "after_dependencies": ["recorder"],
   "documentation": "https://github.com/Poshy163/HomeAssistant-Sharesight",
+  "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Poshy163/HomeAssistant-Sharesight/issues",
   "requirements": ["SharesightAPI==1.3.0"],
-  "version": "1.7.3"
+  "version": "1.8.0"
 }

@@ -681,6 +681,16 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     SharesightSensorDescription(key="next_dividend_amount", sub_key="income_report", extension_key=None, name="Next Dividend Amount", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
     SharesightSensorDescription(key="next_dividend_symbol", sub_key="income_report", extension_key=None, name="Next Dividend Symbol", icon="mdi:calendar-arrow-right", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="income"),
 
+    # ===== Forward income forecast sensors (Feature 6) =====
+    # Keys map onto the forecast fields the coordinator merges into
+    # income_report (analytics.build_income_forecast).  Zero extra API cost.
+    SharesightSensorDescription(key="forward_annual_income", sub_key="income_report", extension_key=None, name="Forward Annual Income", icon="mdi:cash-clock", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(key="forward_yield_percent", sub_key="income_report", extension_key=None, name="Forward Dividend Yield", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(key="income_30d", sub_key="income_report", extension_key=None, name="Income Next 30 Days", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(key="income_90d", sub_key="income_report", extension_key=None, name="Income Next 90 Days", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(key="days_to_next", sub_key="income_report", extension_key=None, name="Days Until Next Dividend", icon="mdi:calendar-clock", native_unit_of_measurement="d", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
+    SharesightSensorDescription(key="announced_income", sub_key="income_report", extension_key=None, name="Announced Income Unpaid", icon="mdi:cash-check", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+
     # ===== Portfolio Metadata sensors =====
     SharesightSensorDescription(key="inception_date", sub_key="portfolio_detail", extension_key=None, name="Portfolio Inception Date", icon="mdi:calendar-start", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
     SharesightSensorDescription(key="country_code", sub_key="portfolio_detail", extension_key=None, name="Portfolio Country", icon="mdi:flag", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
@@ -761,6 +771,31 @@ BENCHMARK_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     SharesightSensorDescription(key="benchmark_payout_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Dividend Gain Percent", icon="mdi:hand-coin", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
     SharesightSensorDescription(key="benchmark_currency_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Currency Gain Percent", icon="mdi:currency-usd", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
     SharesightSensorDescription(key="benchmark_excess_return_percent", sub_key="benchmark", extension_key=None, name="Portfolio Excess Return vs Benchmark", icon="mdi:scale-balance", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
+]
+
+# Portfolio analytics — concentration / quality / composition metrics derived
+# from the holdings × user_instruments join (device_group="analytics",
+# sub_key="portfolio_analytics").  Keys map onto
+# analytics.build_portfolio_analytics.  Zero extra API cost.
+ANALYTICS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
+    SharesightSensorDescription(key="hhi", sub_key="portfolio_analytics", extension_key=None, name="Concentration (HHI)", icon="mdi:chart-donut-variant", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=4, device_group="analytics"),
+    SharesightSensorDescription(key="effective_holdings", sub_key="portfolio_analytics", extension_key=None, name="Effective Number of Holdings", icon="mdi:format-list-numbered", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(key="weighted_yield", sub_key="portfolio_analytics", extension_key=None, name="Weighted Dividend Yield", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(key="weighted_pe", sub_key="portfolio_analytics", extension_key=None, name="Weighted P/E", icon="mdi:chart-line", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(key="fx_exposure_percent", sub_key="portfolio_analytics", extension_key=None, name="Foreign Currency Exposure", icon="mdi:earth", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(key="cash_drag_percent", sub_key="portfolio_analytics", extension_key=None, name="Cash Drag", icon="mdi:cash-100", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(key="stale_price_count", sub_key="portfolio_analytics", extension_key=None, name="Stale Price Count", icon="mdi:clock-alert-outline", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="analytics"),
+]
+
+# All-time portfolio totals INCLUDING fully-sold positions (device_group=
+# "totals", sub_key="totals").  Read from the raw v3 /totals payload the
+# coordinator stores under coordinator.data["totals"].  Gated on key-presence
+# in sensor.py so scope-gated tokens get no phantom entities.
+TOTALS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
+    SharesightSensorDescription(key="value", sub_key="totals", extension_key=None, name="All-Time Value (incl. sold)", icon="mdi:cash-multiple", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="totals"),
+    SharesightSensorDescription(key="total_return", sub_key="totals", extension_key=None, name="All-Time Return (incl. sold)", icon="mdi:cash-plus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="totals"),
+    SharesightSensorDescription(key="total_return_percent", sub_key="totals", extension_key=None, name="All-Time Return Percent (incl. sold)", icon="mdi:sack-percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="totals"),
+    SharesightSensorDescription(key="percentage_annualised", sub_key="totals", extension_key=None, name="Return Is Annualised", icon="mdi:calendar-sync", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="totals"),
 ]
 
 # Per-holding fundamentals — joined from the already-fetched user_instruments

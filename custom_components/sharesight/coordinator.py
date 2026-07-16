@@ -5,7 +5,7 @@ import asyncio
 import itertools
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import aiohttp
@@ -27,6 +27,7 @@ from .const import (
     OPTIONAL_ENDPOINT_MAX_BACKOFF,
     SHARESIGHT_HEAVY_CONCURRENCY,
     SHARESIGHT_LOCKOUT_COOLDOWN,
+    SLOW_PERIOD_REFRESH_EVERY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -93,6 +94,11 @@ class SharesightCoordinator(DataUpdateCoordinator):
     # ~31 minutes.
     _TOKEN_REFRESH_MARGIN: float = 300.0
 
+    # Cap on activity events emitted per type per poll, so the first poll
+    # after a long outage (which sees a large backlog of "new" records) can
+    # never produce an unbounded event payload.
+    _ACTIVITY_EVENT_CAP: int = 20
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -135,6 +141,30 @@ class SharesightCoordinator(DataUpdateCoordinator):
         self.start_financial_year: str = ""
         self.end_financial_year: str = ""
         self._portfolio_detail: dict[str, Any] = {}
+
+        # Tiered polling (Feature 4).  Incremented once per successful poll;
+        # the slow performance windows only re-fetch every
+        # SLOW_PERIOD_REFRESH_EVERY polls.  _slow_window_fy_bounds records the
+        # financial-year bounds used the last time they were fetched so a FY
+        # rollover forces an immediate refresh.
+        self._poll_count: int = 0
+        self._slow_window_fy_bounds: tuple[str, str] | None = None
+
+        # Activity diff (Feature 2).  "Seen" keys per record type so only
+        # genuinely new records fire events; seeded silently on the first
+        # successful poll via the _activity_seeded guard.
+        self._seen_trade_ids: set[Any] = set()
+        self._seen_payout_ids: set[Any] = set()
+        self._seen_upcoming_ids: set[Any] = set()
+        self._seen_cash_tx_ids: set[Any] = set()
+        self._seen_holding_symbols: set[str] = set()
+        self._seen_daily_close_date: str | None = None
+        self._activity_seeded: bool = False
+        # Monotonic id stamped on every staged activity_events batch so the
+        # event entity can distinguish a freshly-diffed poll from a
+        # keep-last-good cached return (which replays the same self.data and
+        # would otherwise re-fire the batch on every degraded cycle).
+        self._activity_seq: int = 0
 
     # ------------------------------------------------------------------
     # OAuth token handling
@@ -325,6 +355,41 @@ class SharesightCoordinator(DataUpdateCoordinator):
         ]
         return await self._call_endpoint(endpoint, token)
 
+    async def async_generate_performance_report(
+        self,
+        start_date: str,
+        end_date: str,
+        grouping: str | None = None,
+        consolidated: bool | None = None,
+        include_sales: bool | None = None,
+    ) -> Any:
+        """Generate an on-demand performance report for an arbitrary window.
+
+        Modelled on ``async_get_value_history``: refresh the token then call
+        the V3 performance endpoint directly, bypassing the poll cadence.
+        Returns the raw API response (including an ``{"error": ...}`` dict on
+        an API-level failure) — the caller must tolerate a gated/absent
+        endpoint and never assume success.
+        """
+        token = await self._refresh_token_with_retries()
+        params: dict[str, Any] = {
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        if grouping:
+            params["grouping"] = grouping
+        if consolidated is not None:
+            params["consolidated"] = "true" if consolidated else "false"
+        if include_sales is not None:
+            params["include_sales"] = "true" if include_sales else "false"
+        endpoint = [
+            "v3",
+            f"portfolios/{self.portfolio_id}/performance",
+            params,
+            False,
+        ]
+        return await self._call_endpoint(endpoint, token)
+
     # ------------------------------------------------------------------
     # Optional endpoint cooldown bookkeeping
     # ------------------------------------------------------------------
@@ -369,6 +434,236 @@ class SharesightCoordinator(DataUpdateCoordinator):
 
     def _note_cash_tx_success(self, account_id: int) -> None:
         self._cash_tx_account_cooldowns.pop(account_id, None)
+
+    # ------------------------------------------------------------------
+    # Activity diff (Feature 2)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _activity_key(record: dict[str, Any], *fallback_fields: str) -> Any:
+        """Stable key for an activity record: the record id when present,
+        else a synthetic tuple over the given fields."""
+        record_id = record.get("id")
+        if record_id is not None:
+            return f"id:{record_id}"
+        return tuple(str(record.get(field)) for field in fallback_fields)
+
+    def _build_activity_events(
+        self, combined_dict: dict[str, Any], today: date
+    ) -> None:
+        """Diff this poll's records against the last poll and stage HA events.
+
+        Maintains per-record-type "seen" sets so only genuinely new
+        trades/payouts/holdings/cash transactions fire.  The first successful
+        poll seeds the baselines silently (no fire); every later poll writes
+        ``combined_dict["activity_events"]`` as ``{event_type: [compact attr
+        dicts]}`` for the event platform to emit.  Each list is capped so a
+        large first-poll backlog can never balloon the event payload.
+        """
+        holdings_list = (combined_dict.get("holdings") or {}).get("holdings") or []
+        income_report = combined_dict.get("income_report") or {}
+        payouts = income_report.get("payouts") or []
+        upcoming = income_report.get("upcoming_payouts") or []
+        trades = (combined_dict.get("trades") or {}).get("trades") or []
+        cash_txns = (
+            combined_dict.get("cash_account_transactions") or {}
+        ).get("cash_account_transactions") or []
+
+        # holding_id -> symbol so payout/trade compact dicts can show a symbol
+        # even when the record only carries a holding_id.
+        id_to_symbol: dict[str, str] = {}
+        symbol_to_value: dict[str, Any] = {}
+        current_symbols: set[str] = set()
+        for holding in holdings_list:
+            if not isinstance(holding, dict):
+                continue
+            symbol = analytics.holding_symbol(holding)
+            if not symbol:
+                continue
+            current_symbols.add(symbol)
+            symbol_to_value[symbol] = holding.get("value")
+            holding_id = holding.get("id")
+            if holding_id is not None:
+                id_to_symbol[str(holding_id)] = symbol
+
+        def _payout_symbol(record: dict[str, Any]) -> str | None:
+            symbol = record.get("symbol")
+            if symbol:
+                return symbol
+            holding_id = record.get("holding_id")
+            if holding_id is not None:
+                return id_to_symbol.get(str(holding_id))
+            return None
+
+        # The one-day report's date drives the daily_close signal; fall back
+        # to today when the report doesn't expose a usable date field.
+        one_day = combined_dict.get("one-day") or {}
+        daily_close_date = None
+        if isinstance(one_day, dict):
+            daily_close_date = (
+                one_day.get("end_date")
+                or one_day.get("date")
+                or one_day.get("as_at")
+            )
+        daily_close_date = (
+            str(daily_close_date)[:10] if daily_close_date else today.isoformat()
+        )
+
+        # Seed silently on the first successful poll — no events fire.
+        if not self._activity_seeded:
+            for trade in trades:
+                if isinstance(trade, dict):
+                    self._seen_trade_ids.add(
+                        self._activity_key(trade, "symbol", "transaction_date", "quantity")
+                    )
+            for payout in payouts:
+                if isinstance(payout, dict):
+                    self._seen_payout_ids.add(
+                        self._activity_key(payout, "symbol", "paid_on", "amount")
+                    )
+            for payout in upcoming:
+                if isinstance(payout, dict):
+                    self._seen_upcoming_ids.add(
+                        self._activity_key(payout, "symbol", "ex_date", "amount")
+                    )
+            for txn in cash_txns:
+                if isinstance(txn, dict):
+                    self._seen_cash_tx_ids.add(
+                        self._activity_key(txn, "date_time", "amount", "description")
+                    )
+            self._seen_holding_symbols = set(current_symbols)
+            self._seen_daily_close_date = daily_close_date
+            self._activity_seeded = True
+            return
+
+        cap = self._ACTIVITY_EVENT_CAP
+        events: dict[str, list[dict[str, Any]]] = {}
+
+        new_trades: list[dict[str, Any]] = []
+        for trade in trades:
+            if not isinstance(trade, dict):
+                continue
+            key = self._activity_key(trade, "symbol", "transaction_date", "quantity")
+            if key in self._seen_trade_ids:
+                continue
+            self._seen_trade_ids.add(key)
+            new_trades.append(
+                {
+                    "symbol": _payout_symbol(trade),
+                    "market": trade.get("market"),
+                    "type": trade.get("transaction_type"),
+                    "quantity": trade.get("quantity"),
+                    "price": trade.get("price"),
+                    "value": trade.get("value"),
+                    "date": trade.get("transaction_date") or trade.get("date"),
+                }
+            )
+        if new_trades:
+            events["trade_confirmed"] = new_trades[:cap]
+
+        new_payouts: list[dict[str, Any]] = []
+        for payout in payouts:
+            if not isinstance(payout, dict):
+                continue
+            key = self._activity_key(payout, "symbol", "paid_on", "amount")
+            if key in self._seen_payout_ids:
+                continue
+            self._seen_payout_ids.add(key)
+            new_payouts.append(
+                {
+                    "symbol": _payout_symbol(payout),
+                    "amount": payout.get("amount"),
+                    "date": payout.get("paid_on") or payout.get("date"),
+                    "franking_credits": payout.get("franking_credits"),
+                }
+            )
+        if new_payouts:
+            events["dividend_paid"] = new_payouts[:cap]
+
+        new_upcoming: list[dict[str, Any]] = []
+        for payout in upcoming:
+            if not isinstance(payout, dict):
+                continue
+            key = self._activity_key(payout, "symbol", "ex_date", "amount")
+            if key in self._seen_upcoming_ids:
+                continue
+            self._seen_upcoming_ids.add(key)
+            new_upcoming.append(
+                {
+                    "symbol": _payout_symbol(payout),
+                    "amount": payout.get("amount") or payout.get("gross_amount"),
+                    "ex_date": payout.get("ex_date"),
+                    "pay_date": payout.get("pay_date") or payout.get("paid_on"),
+                    "date": payout.get("ex_date")
+                    or payout.get("pay_date")
+                    or payout.get("paid_on"),
+                }
+            )
+        if new_upcoming:
+            events["dividend_announced"] = new_upcoming[:cap]
+
+        new_cash: list[dict[str, Any]] = []
+        for txn in cash_txns:
+            if not isinstance(txn, dict):
+                continue
+            key = self._activity_key(txn, "date_time", "amount", "description")
+            if key in self._seen_cash_tx_ids:
+                continue
+            self._seen_cash_tx_ids.add(key)
+            new_cash.append(
+                {
+                    "amount": txn.get("amount"),
+                    "date": txn.get("date_time") or txn.get("date"),
+                    "description": txn.get("description"),
+                    "type": txn.get("trade_type") or txn.get("type"),
+                }
+            )
+        if new_cash:
+            events["cash_transaction"] = new_cash[:cap]
+
+        # holding_opened / holding_closed — only diff against a non-empty
+        # snapshot so a transient empty holdings payload can't fire spurious
+        # "closed" events for the entire portfolio.
+        if current_symbols:
+            opened = current_symbols - self._seen_holding_symbols
+            closed = self._seen_holding_symbols - current_symbols
+            if opened:
+                events["holding_opened"] = [
+                    {"symbol": symbol, "value": symbol_to_value.get(symbol)}
+                    for symbol in sorted(opened)
+                ][:cap]
+            if closed:
+                events["holding_closed"] = [
+                    {"symbol": symbol} for symbol in sorted(closed)
+                ][:cap]
+            self._seen_holding_symbols = set(current_symbols)
+
+        # daily_close — fires when the one-day report's date advances.
+        if (
+            daily_close_date
+            and self._seen_daily_close_date
+            and daily_close_date != self._seen_daily_close_date
+        ):
+            events["daily_close"] = [
+                {
+                    "date": daily_close_date,
+                    "value": one_day.get("value") if isinstance(one_day, dict) else None,
+                    "change": one_day.get("value_change")
+                    if isinstance(one_day, dict)
+                    else None,
+                    "change_percent": one_day.get("total_gain_percent")
+                    if isinstance(one_day, dict)
+                    else None,
+                }
+            ]
+        self._seen_daily_close_date = daily_close_date
+
+        # Stamp a fresh sequence id for this diff.  Cached "keep last good"
+        # returns reuse an old combined_dict (and its seq), so the event
+        # entity can skip re-firing a batch it has already emitted.
+        self._activity_seq += 1
+        combined_dict["activity_events"] = events
+        combined_dict["activity_events_seq"] = self._activity_seq
 
     # ------------------------------------------------------------------
     # Main update loop
@@ -451,6 +746,7 @@ class SharesightCoordinator(DataUpdateCoordinator):
             "report_combined": "true",
         }
 
+        # Fast windows + the V3 combined report refresh on every poll.
         endpoint_list: list[list[Any]] = [
             [
                 "v2",
@@ -464,6 +760,22 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 {"start_date": self.start_of_week, "end_date": self.end_of_week},
                 "one-week",
             ],
+            ["v3", "portfolios", None, False],
+            [
+                "v3",
+                f"portfolios/{self.portfolio_id}/performance",
+                performance_params,
+                False,
+            ],
+        ]
+
+        # Feature 4 — tiered polling.  The financial-year / one-month / YTD
+        # windows move slowly, so only re-fetch them every
+        # SLOW_PERIOD_REFRESH_EVERY polls (≈hourly at the 5-min default), on a
+        # cold start (their key is absent from self.data), or when the
+        # financial-year bounds roll over.  Skipped windows are carried
+        # forward from self.data below so their period sensors never flap.
+        slow_windows: list[list[Any]] = [
             [
                 "v2",
                 f"portfolios/{self.portfolio_id}/performance",
@@ -485,14 +797,16 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 {"start_date": self.start_of_year, "end_date": f"{today}"},
                 "ytd",
             ],
-            ["v3", "portfolios", None, False],
-            [
-                "v3",
-                f"portfolios/{self.portfolio_id}/performance",
-                performance_params,
-                False,
-            ],
         ]
+        current_fy_bounds = (self.start_financial_year, self.end_financial_year)
+        refresh_slow_windows = (
+            self._poll_count % SLOW_PERIOD_REFRESH_EVERY == 0
+            or self._slow_window_fy_bounds != current_fy_bounds
+            or any(endpoint[3] not in self.data for endpoint in slow_windows)
+        )
+        if refresh_slow_windows:
+            endpoint_list.extend(slow_windows)
+            self._slow_window_fy_bounds = current_fy_bounds
 
         optional_endpoint_list: list[list[Any]] = [
             ["v3", f"portfolios/{self.portfolio_id}/holdings", None, "holdings"],
@@ -537,6 +851,17 @@ class SharesightCoordinator(DataUpdateCoordinator):
             # can't reach them they simply park in the backoff tier.
             ["v3", "watchlist.json", None, "watchlist"],
             ["v3", "markets", None, "markets"],
+            # All-time totals INCLUDING fully-sold positions.  The V3
+            # performance report omits include_sales, so realised gains from
+            # exited holdings are missing there; this restores true lifetime
+            # P&L.  Light endpoint (path matches no heavy marker); parks via
+            # backoff for tokens whose scope can't reach it.
+            [
+                "v3",
+                f"portfolios/{self.portfolio_id}/totals",
+                {"include_sales": "true", "consolidated": "false"},
+                "totals",
+            ],
         ]
 
         # Live FX rates — only worth requesting for multi-currency portfolios.
@@ -682,6 +1007,13 @@ class SharesightCoordinator(DataUpdateCoordinator):
                     len(required_failures),
                     failure_preview,
                 )
+
+            # Carry forward slow-cadence performance windows that were skipped
+            # this poll (Feature 4) or failed to fetch, using the proven
+            # diversity carry-forward idiom so period sensors never flap.
+            for slow_key in ("financial-year", "one-month", "ytd"):
+                if slow_key not in combined_dict and slow_key in self.data:
+                    combined_dict[slow_key] = self.data[slow_key]
 
             # --- Optional endpoints (with per-endpoint cooldown) ----------
             # Cooldowns are keyed on path + extension because the same path
@@ -949,6 +1281,15 @@ class SharesightCoordinator(DataUpdateCoordinator):
             ):
                 combined_dict["trades"] = {"trades": []}
 
+            # --- Activity events (Feature 2, no extra API calls) ---------
+            # Diff this poll's records against the previous poll and stage HA
+            # events for the event platform to emit.  A diff error must never
+            # sink the poll, so guard it defensively.
+            try:
+                self._build_activity_events(combined_dict, today)
+            except (ValueError, TypeError, KeyError, AttributeError) as activity_err:
+                _LOGGER.debug("Activity event diff failed: %s", activity_err)
+
             # --- Derived analytics (no extra API calls) ------------------
             # These mine data already fetched this poll into per-holding and
             # portfolio-level maps that many sensors consume.  Failures here
@@ -976,6 +1317,23 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 combined_dict["industry_allocation"] = analytics.build_sector_allocation(
                     holdings_list, instrument_lookup, axis="industry"
                 )
+                combined_dict["portfolio_analytics"] = analytics.build_portfolio_analytics(
+                    holdings_list,
+                    instrument_lookup,
+                    combined_dict.get("report", {}),
+                    today,
+                )
+                # Merge the forward-income forecast into income_report without
+                # clobbering the payouts/totals already assembled above.
+                forecast = analytics.build_income_forecast(
+                    combined_dict.get("income_report", {}).get("upcoming_payouts", []),
+                    combined_dict.get("holding_income", {}),
+                    combined_dict.get("report", {}).get("value"),
+                    today,
+                )
+                income_report = combined_dict.setdefault("income_report", {})
+                for forecast_key, forecast_value in forecast.items():
+                    income_report.setdefault(forecast_key, forecast_value)
             except (ValueError, TypeError, KeyError, AttributeError) as analytics_err:
                 _LOGGER.debug("Derived analytics failed: %s", analytics_err)
 
@@ -988,6 +1346,9 @@ class SharesightCoordinator(DataUpdateCoordinator):
                     self.end_financial_year = eofy_date
                     self.start_financial_year = sofy_date
 
+            # Count only genuinely successful polls so the slow-window cadence
+            # (Feature 4) advances once per fetch, never on kept-last-good paths.
+            self._poll_count += 1
             self.data = combined_dict
             return self.data
 

@@ -6,7 +6,7 @@ from homeassistant.components.sensor import (
 )
 from .const import APP_VERSION, DOMAIN
 import logging
-import time
+from time import monotonic
 from datetime import datetime, time, timedelta
 from homeassistant.util import dt as dt_util
 from .enum import (
@@ -21,12 +21,19 @@ from .enum import (
     WATCHLIST_SENSOR_DESCRIPTIONS,
     FX_SENSOR_DESCRIPTIONS,
     MARKET_HOURS_SENSOR_DESCRIPTIONS,
+    ANALYTICS_SENSOR_DESCRIPTIONS,
+    TOTALS_SENSOR_DESCRIPTIONS,
 )
 from . import analytics
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import SharesightCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
+
+# Entities are updated from the DataUpdateCoordinator (no per-entity I/O), so
+# no parallel-update limit is needed. Declaring this satisfies the HA quality
+# scale's parallel-updates rule.
+PARALLEL_UPDATES = 0
 
 
 def _get_holding_value(h):
@@ -558,6 +565,22 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                             local_currency, portfolio_id, edge))
             benchmark_added.append(str(sensor.name))
 
+    # Portfolio Totals sensors: only once the v3 /totals endpoint has returned
+    # data.  It parks via the optional-endpoint backoff for scope-gated tokens,
+    # so gating on key-presence (like benchmark) avoids phantom entities.  If it
+    # comes online later, update_sensors() below adds them dynamically.
+    totals_added: list[str] = data.setdefault("totals_sensors", [])
+
+    def _has_totals_data(coordinator_data) -> bool:
+        totals = coordinator_data.get("totals")
+        return isinstance(totals, dict) and bool(totals)
+
+    if _has_totals_data(coordinator.data):
+        for sensor in TOTALS_SENSOR_DESCRIPTIONS:
+            sensors.append(SharesightSensor(sensor, entry, coordinator,
+                                            local_currency, portfolio_id, edge))
+            totals_added.append(str(sensor.name))
+
     # Deduplicate sub_totals by group_name (API may return duplicates)
     seen_markets: set[str] = set()
     __index_market = 0
@@ -625,9 +648,15 @@ async def async_setup_entry(hass, entry, async_add_entities):
             sensors.append(new_sensor)
             holding_sensors.append(display_name)
 
-    # Portfolio sector/industry allocation + account + watchlist devices.
-    # These are fixed sensor sets (no per-item fan-out).
-    for sensor in SECTOR_SENSOR_DESCRIPTIONS + ACCOUNT_SENSOR_DESCRIPTIONS + WATCHLIST_SENSOR_DESCRIPTIONS:
+    # Portfolio sector/industry allocation + account + watchlist + analytics
+    # devices.  These are fixed sensor sets (no per-item fan-out).  Analytics
+    # is derived every poll at zero API cost, so it is always created.
+    for sensor in (
+        SECTOR_SENSOR_DESCRIPTIONS
+        + ACCOUNT_SENSOR_DESCRIPTIONS
+        + WATCHLIST_SENSOR_DESCRIPTIONS
+        + ANALYTICS_SENSOR_DESCRIPTIONS
+    ):
         sensors.append(SharesightSensor(sensor, entry, coordinator,
                                         local_currency, portfolio_id, edge))
 
@@ -721,6 +750,16 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                      local_currency, portfolio_id, edge))
                 benchmark_added.append(str(benchmark_sensor.name))
             async_add_entities(new_benchmark_sensors, True)
+
+        # Portfolio Totals sensors appear once the /totals endpoint comes online
+        if _has_totals_data(update_coordinator.data) and not totals_added:
+            new_totals_sensors = []
+            for totals_sensor in TOTALS_SENSOR_DESCRIPTIONS:
+                new_totals_sensors.append(
+                    SharesightSensor(totals_sensor, entry, update_coordinator,
+                                     local_currency, portfolio_id, edge))
+                totals_added.append(str(totals_sensor.name))
+            async_add_entities(new_totals_sensors, True)
 
         # Check for new holdings
         update_holdings_data = update_coordinator.data.get("holdings", {})
@@ -913,6 +952,16 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 "name": f"Sharesight{edge_name}Market Hours",
                 "identifier": f"{self._portfolio_id}_market_hours",
                 "model": f"{base_model} - Market Hours",
+            },
+            "analytics": {
+                "name": f"Sharesight{edge_name}Analytics",
+                "identifier": f"{self._portfolio_id}_analytics",
+                "model": f"{base_model} - Analytics",
+            },
+            "totals": {
+                "name": f"Sharesight{edge_name}Portfolio Totals",
+                "identifier": f"{self._portfolio_id}_totals",
+                "model": f"{base_model} - Portfolio Totals",
             },
         }
 
@@ -1622,6 +1671,17 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                         or next_payout.get('company_name', '')
                         or None
                     )
+                elif self._key in (
+                    "forward_annual_income",
+                    "forward_yield_percent",
+                    "income_30d",
+                    "income_90d",
+                    "days_to_next",
+                    "announced_income",
+                ):
+                    # Forward income forecast keys merged into income_report by
+                    # the coordinator's derived-analytics block (Feature 6).
+                    return income_data.get(self._key)
             # Diversity sensors
             elif self._sub_key == "diversity":
                 diversity_data = self._coordinator.data.get('diversity', {})
@@ -2165,6 +2225,31 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                         return None
                     return round(portfolio_pct - benchmark_pct, 2)
                 return None
+            # Portfolio analytics (concentration / quality / composition)
+            elif self._sub_key == "portfolio_analytics":
+                analytics_data = self._coordinator.data.get('portfolio_analytics', {})
+                if not isinstance(analytics_data, dict):
+                    return None
+                return analytics_data.get(self._key)
+            # All-time totals incl. sold positions (raw v3 /totals payload)
+            elif self._sub_key == "totals":
+                totals_data = self._coordinator.data.get('totals', {})
+                if not isinstance(totals_data, dict):
+                    return None
+                # Tolerate both {"portfolio": {...}} and a flat payload.
+                portfolio = totals_data.get('portfolio')
+                source = portfolio if isinstance(portfolio, dict) else totals_data
+                if self._key == "percentage_annualised":
+                    # The API example spells this correctly; the doc field
+                    # table misspells it as "percentage_annulaised" — accept both.
+                    flag = source.get('percentage_annualised')
+                    if flag is None:
+                        flag = source.get('percentage_annulaised')
+                    if flag is None:
+                        return None
+                    return "Yes" if flag else "No"
+                val = source.get(self._key)
+                return val if isinstance(val, (int, float)) else None
             # Integration diagnostics
             elif self._sub_key == "_integration":
                 if self._key == "last_update_timestamp":
@@ -2183,7 +2268,7 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 if self._key == "optional_endpoints_on_cooldown":
                     cooldown = getattr(self._coordinator, '_optional_endpoint_cooldowns', None)
                     cash_cooldown = getattr(self._coordinator, '_cash_tx_account_cooldowns', None)
-                    now = time.monotonic()
+                    now = monotonic()
                     active = 0
                     if isinstance(cooldown, dict):
                         for info in cooldown.values():
@@ -2200,6 +2285,183 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
 
         except Exception as e:  # noqa: BLE001
             _LOGGER.debug("Error accessing data for key '%s': %s: %s", self._key, type(e).__name__, e)
+            return None
+
+    @property
+    def extra_state_attributes(self):
+        """Rich attributes on a handful of anchor sensors only (Feature 1).
+
+        Dispatches on (self._sub_key, self._key) exactly like native_value.
+        Only the anchor sensors enumerated here expose attributes; every other
+        sensor stays attribute-free to protect the recorder.  Lists are capped
+        at 25 and the whole build is wrapped defensively so an attribute error
+        can never break the entity.
+        """
+        try:
+            data = self._coordinator.data or {}
+
+            # Portfolio value — holdings ranking, movers, cash and day change.
+            if self._sub_key == "report" and self._key == "value":
+                report_data = data.get("report", {}) if isinstance(data.get("report"), dict) else {}
+                holdings_data = data.get("holdings", {})
+                holdings_list = holdings_data.get("holdings", []) if isinstance(holdings_data, dict) else []
+                portfolio_value = float(report_data.get("value", 0) or 0)
+                ranked = sorted(holdings_list, key=_get_holding_value, reverse=True)[:25]
+                holdings_attr = []
+                for h in ranked:
+                    value = _get_holding_value(h)
+                    holdings_attr.append({
+                        "symbol": _get_holding_symbol(h),
+                        "value": round(value, 2),
+                        "percent": round(value / portfolio_value * 100, 2) if portfolio_value else None,
+                        "gain": round(_get_holding_gain(h), 2),
+                        "gain_percent": _get_holding_gain_percent(h),
+                    })
+                by_gain = sorted(holdings_list, key=_get_holding_gain, reverse=True)
+                top_gainers = [
+                    {"symbol": _get_holding_symbol(h), "gain": round(_get_holding_gain(h), 2),
+                     "gain_percent": _get_holding_gain_percent(h)}
+                    for h in by_gain[:5]
+                ]
+                top_losers = [
+                    {"symbol": _get_holding_symbol(h), "gain": round(_get_holding_gain(h), 2),
+                     "gain_percent": _get_holding_gain_percent(h)}
+                    for h in reversed(by_gain[-5:])
+                ]
+                cash_summary = _get_cash_accounts_summary(report_data)
+                total_cash = cash_summary.get("total_cash_value", 0) or 0
+                capital_gain = report_data.get("capital_gain")
+                cost_base = None
+                if capital_gain is not None:
+                    try:
+                        cost_base = round(portfolio_value - float(capital_gain), 2)
+                    except (ValueError, TypeError):
+                        cost_base = None
+                one_day = data.get("one-day", {}) if isinstance(data.get("one-day"), dict) else {}
+                return {
+                    "holdings": holdings_attr,
+                    "top_gainers": top_gainers,
+                    "top_losers": top_losers,
+                    "cash_accounts": cash_summary.get("cash_accounts_count"),
+                    "equity_value": round(portfolio_value - float(total_cash), 2),
+                    "total_cash_value": cash_summary.get("total_cash_value"),
+                    "cost_base": cost_base,
+                    "day_change_amount": one_day.get("total_gain"),
+                    "day_change_percent": one_day.get("total_gain_percent"),
+                    "as_of": report_data.get("end_date") or report_data.get("as_at"),
+                }
+
+            # Number of Holdings — the ranked holdings list.
+            if self._sub_key == "holdings" and self._key == "holding_count":
+                holdings_data = data.get("holdings", {})
+                holdings_list = holdings_data.get("holdings", []) if isinstance(holdings_data, dict) else []
+                portfolio_value = float(holdings_data.get("value", 0) or 0)
+                ranked = sorted(holdings_list, key=_get_holding_value, reverse=True)[:25]
+                return {
+                    "holdings": [
+                        {
+                            "symbol": _get_holding_symbol(h),
+                            "value": round(_get_holding_value(h), 2),
+                            "percent": round(_get_holding_value(h) / portfolio_value * 100, 2) if portfolio_value else None,
+                            "gain": round(_get_holding_gain(h), 2),
+                        }
+                        for h in ranked
+                    ]
+                }
+
+            # Next Dividend Amount — the next payout's detail plus upcoming list.
+            if self._sub_key == "income_report" and self._key == "next_dividend_amount":
+                income_data = data.get("income_report", {}) if isinstance(data.get("income_report"), dict) else {}
+                payouts = (income_data.get("payouts", []) or []) + (income_data.get("upcoming_payouts", []) or [])
+                today_iso = dt_util.now().date().isoformat()
+                upcoming = []
+                for p in payouts:
+                    if not isinstance(p, dict):
+                        continue
+                    ex = p.get("goes_ex_on") or p.get("ex_date") or p.get("paid_on")
+                    if ex and str(ex)[:10] >= today_iso:
+                        upcoming.append((str(ex)[:10], p))
+                if not upcoming:
+                    return None
+                upcoming.sort(key=lambda x: x[0])
+                _, nxt = upcoming[0]
+                return {
+                    "ex_date": nxt.get("goes_ex_on") or nxt.get("ex_date"),
+                    "pay_date": nxt.get("pay_date") or nxt.get("paid_on"),
+                    "franking_credits": nxt.get("franking_credits"),
+                    "gross_amount": nxt.get("gross_amount") or nxt.get("amount"),
+                    "state": nxt.get("state") or nxt.get("status"),
+                    "company": (
+                        nxt.get("company_name")
+                        or nxt.get("symbol")
+                        or nxt.get("instrument_code")
+                    ),
+                    "all_upcoming": [
+                        {
+                            "symbol": p.get("symbol") or p.get("instrument_code"),
+                            "ex_date": ex,
+                            "amount": p.get("amount") or p.get("gross_amount"),
+                        }
+                        for ex, p in upcoming[:25]
+                    ],
+                }
+
+            # Diversity top-1 — the full market breakdown.
+            if self._sub_key == "diversity" and self._key == "market_1_name":
+                breakdown = (data.get("diversity", {}) or {}).get("breakdown", [])
+                ordered = sorted(
+                    breakdown,
+                    key=lambda x: float(x.get("percentage", 0) or 0),
+                    reverse=True,
+                )[:25]
+                return {
+                    "breakdown": [
+                        {"name": b.get("group_name"), "percent": b.get("percentage"), "value": b.get("value")}
+                        for b in ordered
+                    ]
+                }
+
+            # Sector / industry top-1 — the full allocation breakdown.
+            if self._sub_key in ("sector_allocation", "industry_allocation") and self._key in (
+                "sector_1_name",
+                "industry_1_name",
+            ):
+                breakdown = (data.get(self._sub_key, {}) or {}).get("breakdown", [])
+                return {
+                    "breakdown": [
+                        {"name": b.get("group_name"), "percent": b.get("percentage"), "value": b.get("value")}
+                        for b in breakdown[:25]
+                    ]
+                }
+
+            # Last Trade — the most recent trade's detail.
+            if self._sub_key == "trades" and self._key == "last_trade_value":
+                trades_data = data.get("trades", {})
+                trades_list = trades_data.get("trades", []) if isinstance(trades_data, dict) else []
+                if not trades_list:
+                    return None
+                last = sorted(
+                    trades_list,
+                    key=lambda t: (
+                        t.get("transaction_date")
+                        or t.get("trade_date")
+                        or t.get("date")
+                        or t.get("traded_at", "")
+                    ),
+                    reverse=True,
+                )[0]
+                return {
+                    "quantity": last.get("quantity"),
+                    "price": last.get("price"),
+                    "brokerage": last.get("brokerage") or last.get("fee") or last.get("commission"),
+                    "market": last.get("market") or (last.get("instrument", {}) or {}).get("market_code"),
+                    "value": last.get("value") or last.get("cost_base") or last.get("amount"),
+                    "type": last.get("transaction_type") or last.get("trade_type") or last.get("type"),
+                }
+
+            return None
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.debug("Error building attributes for '%s': %s: %s", self._key, type(e).__name__, e)
             return None
 
     @property

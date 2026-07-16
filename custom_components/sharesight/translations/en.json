@@ -1,18 +1,25 @@
 {
     "application_credentials": {
-        "description": "To use the Sharesight integration, create an API application at the [Sharesight Developer Portal](https://portfolio.sharesight.com/users/api_token). Set the **Redirect URI** in your Sharesight app to your Home Assistant redirect URL (e.g. `https://my.home-assistant.io/redirect/oauth`), then enter the **Client ID** and **Client Secret** below."
+        "description": "To use the Sharesight integration, create an API application at the [Sharesight Developer Portal](https://portfolio.sharesight.com/users/api_token). Set the **Redirect URI** in your Sharesight app to your Home Assistant redirect URL (e.g. `https://my.home-assistant.io/redirect/oauth`), then enter the **Client ID** and **Client Secret** below.\n\nStandard and developer accounts have separate application registries — a standard Client ID is not valid on the developer sandbox. If you use both, add a credential for each and name them so you can tell them apart."
     },
     "config": {
         "step": {
+            "pick_account_type": {
+                "title": "Select Sharesight account type",
+                "description": "Choose the type of Sharesight account you are connecting. Standard is correct for almost everyone. Developer accounts use Sharesight's sandbox and require separate credentials issued by Sharesight.",
+                "data": {
+                    "account_type": "Account type"
+                }
+            },
             "pick_implementation": {
-                "title": "Select Sharesight credentials"
+                "title": "Select Sharesight credentials",
+                "description": "Pick the application credential matching the account type you selected. A standard credential will not work on the developer sandbox, and vice versa."
             },
             "portfolio": {
                 "title": "Select Portfolio",
                 "description": "Select the Sharesight portfolio you want to monitor.",
                 "data": {
-                    "portfolio_id": "Portfolio",
-                    "use_edge_url": "Use Edge API (Developer accounts only)"
+                    "portfolio_id": "Portfolio"
                 }
             },
             "reauth_confirm": {
@@ -45,6 +52,105 @@
                     "enable_lts_backfill": "On startup, import the full inception-to-today daily portfolio value series into the Portfolio value sensor's statistics. Requires the value-data endpoint to be available for your API access."
                 }
             }
+        }
+    },
+    "services": {
+        "get_portfolio_summary": {
+            "name": "Get portfolio summary",
+            "description": "Return a headline summary for a Sharesight portfolio (value, period gains, top/worst movers, cash and trailing dividend income). Reads only data already held by the integration, so it makes no extra API request.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Config entry",
+                    "description": "The Sharesight config entry to query. Optional when only one portfolio is configured."
+                },
+                "device_id": {
+                    "name": "Device",
+                    "description": "A Sharesight portfolio device to query instead of a config entry."
+                }
+            }
+        },
+        "get_holdings": {
+            "name": "Get holdings",
+            "description": "Return the portfolio's holdings as a sortable, limitable list. Reads only data already held by the integration, so it makes no extra API request.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Config entry",
+                    "description": "The Sharesight config entry to query. Optional when only one portfolio is configured."
+                },
+                "device_id": {
+                    "name": "Device",
+                    "description": "A Sharesight portfolio device to query instead of a config entry."
+                },
+                "sort_by": {
+                    "name": "Sort by",
+                    "description": "Field to sort the holdings by."
+                },
+                "limit": {
+                    "name": "Limit",
+                    "description": "Maximum number of holdings to return."
+                }
+            }
+        },
+        "get_income": {
+            "name": "Get income",
+            "description": "Return trailing-twelve-month, calendar-year-to-date, and forward dividend income for the portfolio, plus announced upcoming payouts. Reads only data already held by the integration, so it makes no extra API request.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Config entry",
+                    "description": "The Sharesight config entry to query. Optional when only one portfolio is configured."
+                },
+                "device_id": {
+                    "name": "Device",
+                    "description": "A Sharesight portfolio device to query instead of a config entry."
+                }
+            }
+        },
+        "generate_performance_report": {
+            "name": "Generate performance report",
+            "description": "Fetch an on-demand Sharesight performance report for an arbitrary date range and grouping. This makes a single API request each time it is called.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Config entry",
+                    "description": "The Sharesight config entry to query. Optional when only one portfolio is configured."
+                },
+                "device_id": {
+                    "name": "Device",
+                    "description": "A Sharesight portfolio device to query instead of a config entry."
+                },
+                "start_date": {
+                    "name": "Start date",
+                    "description": "Report start date (YYYY-MM-DD)."
+                },
+                "end_date": {
+                    "name": "End date",
+                    "description": "Report end date (YYYY-MM-DD)."
+                },
+                "grouping": {
+                    "name": "Grouping",
+                    "description": "Optional grouping axis passed through to the Sharesight report (e.g. market, industry_classification, investment_type)."
+                },
+                "consolidated": {
+                    "name": "Consolidated",
+                    "description": "Consolidate holdings across sub-portfolios."
+                },
+                "include_sales": {
+                    "name": "Include sales",
+                    "description": "Include realised gains from fully-sold positions."
+                }
+            }
+        }
+    },
+    "device_automation": {
+        "trigger_type": {
+            "dividend_announced": "Dividend announced",
+            "dividend_paid": "Dividend paid",
+            "trade_confirmed": "Trade confirmed",
+            "holding_opened": "Holding opened",
+            "holding_closed": "Holding closed",
+            "cash_transaction": "Cash transaction",
+            "daily_close": "Daily close (end-of-day rollover)",
+            "portfolio_value": "Portfolio value",
+            "daily_change": "Daily change amount"
         }
     }
 }

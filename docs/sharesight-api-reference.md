@@ -6,8 +6,9 @@
 > <https://api.sharesight.com/api/3/doc/index.html>
 > (also mirrored at `portfolio.sharesight.com`).
 > Endpoint lists below were extracted from the live apiDoc data files
-> (`/api/2/doc/api_data.json`, `/api/3/doc/api_data.json`) on 2026-07-01 and
-> re-verified complete against a fresh scrape on 2026-07-02
+> (`/api/2/doc/api_data.json`, `/api/3/doc/api_data.json`) on 2026-07-01,
+> re-verified complete against a fresh scrape on 2026-07-02, and re-verified
+> complete again against a fresh scrape on 2026-07-16
 > (52 unique V2 + 103 unique V3 endpoints — all present below).
 >
 > Docs are rendered client-side, so the human-readable `index.html` pages
@@ -76,6 +77,10 @@ returned based on the user's plan. When capped, these response headers are set:
 
 ### How the integration defends against the above
 - 360/min budget → default **5-minute** poll interval (`DEFAULT_SCAN_INTERVAL`).
+- Tiered polling → the slow financial-year / year-to-date / one-month
+  performance windows are only fetched every 12th poll
+  (`SLOW_PERIOD_REFRESH_EVERY`, ≈ hourly at the default interval); the day/week
+  windows and the combined V3 report still refresh every poll.
 - 3-concurrent heavy cap → `SHARESIGHT_HEAVY_CONCURRENCY = 3` semaphore around
   any path containing `/performance`, `/diversity`, `/valuation`.
 - General burst cap → separate semaphore of 8 concurrent requests.
@@ -112,6 +117,8 @@ From [coordinator.py](../custom_components/sharesight/coordinator.py):
 | V3 | `GET watchlist.json` | Watchlist overview device (count, up/down today, top mover/loser) — mobile-scoped, parks if unreachable |
 | V3 | `GET markets` | Market-hours device: open/closed + next open/close per held market — internal-scoped, parks if unreachable |
 | V3 | `GET exchange_rates` | Live FX rate sensors (per foreign currency held) — internal-scoped, multi-currency only, parks if unreachable |
+| V3 | `GET portfolios/{id}/totals` | All-time portfolio performance **including fully-sold positions** (`include_sales=true`) — restores lifetime P&L the main performance report omits ("totals" device). Light endpoint; parks via backoff if the token's scope can't reach it |
+| V3 | `GET portfolios/{id}/portfolio_value_data.json` | One-shot at startup: backfills the inception→today daily value series into the Portfolio value sensor's long-term statistics (opt-out via options). Mobile-scoped — skips silently if unreachable. See [statistics_import.py](../custom_components/sharesight/statistics_import.py). |
 
 > **Zero-cost derivations:** the per-holding dividend income / yield-on-cost /
 > franking / last-dividend sensors and the per-holding trade activity / VWAP
@@ -119,15 +126,12 @@ From [coordinator.py](../custom_components/sharesight/coordinator.py):
 > from the already-fetched `payouts` and `trades` lists — no extra requests.
 > See [analytics.py](../custom_components/sharesight/analytics.py).
 
-| V3 | `GET portfolios/{id}/portfolio_value_data.json` | One-shot at startup: backfills the inception→today daily value series into the Portfolio value sensor's long-term statistics (opt-out via options). Mobile-scoped — skips silently if unreachable. See [statistics_import.py](../custom_components/sharesight/statistics_import.py). |
-
 **Not yet used but potentially useful** (read-only, low cost): V2
-`GET my_user.json`, V2 `GET currencies.json`, V3 `GET .../value` (30-day
-portfolio value series — lighter than a full performance report), V3
-`GET .../totals` (inception-to-date totals), V3 `GET .../overview` (holdings +
-cash, "performance minus calculations" — cheaper than `performance`), V3
-`GET exchange_rates`, V3 `GET instruments/{id}/sharechecker` (per-instrument
-fundamentals — one request per holding, so budget carefully).
+`GET currencies.json`, V3 `GET .../value` (30-day portfolio value series —
+lighter than a full performance report), V3 `GET .../overview` (holdings + cash,
+"performance minus calculations" — cheaper than `performance`), V3
+`GET instruments/{id}/sharechecker` (per-instrument fundamentals — one
+request per holding, so budget carefully).
 
 ---
 
@@ -210,10 +214,10 @@ Full path = `https://api.sharesight.com/api/v2` + path shown.
 ### Memberships / documents / user / SSO
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/memberships.json` | List memberships |
-| POST | `/memberships.json` | Create membership |
-| PUT | `/memberships/:id.json` | Update membership |
-| DELETE | `/memberships/:id.json` | Delete membership |
+| GET | `/memberships.json` | List memberships (requires paid plan) |
+| POST | `/memberships.json` | Create membership (requires paid plan) |
+| PUT | `/memberships/:id.json` | Update membership (requires paid plan) |
+| DELETE | `/memberships/:id.json` | Delete membership (requires paid plan) |
 | GET | `/documents/:id.json` | Show document |
 | GET | `/my_user.json` | Current user info |
 | GET | `/single_sign_on.json` | Request single sign-on (rate-limit exempt) |
@@ -252,7 +256,7 @@ Full path = `https://api.sharesight.com/api/v3` + path shown.
 |--------|------|-------------|
 | GET | `/holdings` | List holdings |
 | GET | `/holdings/{id}` | Get holding (opt: avg price, cost base, values over time) |
-| PUT | `/holdings/{id}` | Update holding |
+| PUT | `/holdings/{id}` | Update holding (DRP toggle only) |
 | DELETE | `/holdings/{id}` | Delete holding |
 | GET | `/holdings/{holding_id}/trades.json` | List holding trades |
 | GET | `/holdings/{id}/rejected_trades.json` | List rejected trades |
@@ -354,7 +358,7 @@ Full path = `https://api.sharesight.com/api/v3` + path shown.
 | GET/POST/DELETE | `/coupon_code` | Show / apply / delete coupon code |
 | POST | `/feedback.json` | Give feedback |
 | GET | `/mobile_app.json` | Get mobile app update |
-| POST | `/oauth/revoke` | Remove API access (revoke token) |
+| POST | `/oauth/revoke` | Remove API access (revokes **all** access + refresh tokens for the user; `/oauth2/revoke` revokes a single token) |
 
 ---
 

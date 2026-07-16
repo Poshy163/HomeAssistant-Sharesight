@@ -1,41 +1,96 @@
 """The Sharesight integration."""
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from SharesightAPI.SharesightAPI import SharesightAPI
 
+from .application_credentials import account_type_context
 from .const import (
+    ACCOUNT_DEVELOPER,
+    ACCOUNT_STANDARD,
     API_URL_BASE,
+    CONF_ACCOUNT_TYPE,
     CONF_ENABLE_LTS_BACKFILL,
     CONF_PORTFOLIO_ID,
     CONF_USE_EDGE,
+    DEFAULT_ACCOUNT_TYPE,
     DEFAULT_ENABLE_LTS_BACKFILL,
     DOMAIN,
-    EDGE_API_URL_BASE,
-    EDGE_TOKEN_URL,
     PLATFORMS,
     TOKEN_URL,
 )
 from .coordinator import SharesightCoordinator
+from .services import async_setup_services, async_unload_services
 from .statistics_import import async_backfill_value_statistics
+
+_LOGGER = logging.getLogger(__name__)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entries.
+
+    v2 -> v3: the boolean ``use_edge_url`` becomes ``account_type``.  The old
+    flag only ever switched the API host — never the OAuth endpoints — so an
+    entry with it set to True was authenticating as a standard account
+    regardless and could never actually reach the developer deployment.
+    Mapping such an entry to ACCOUNT_DEVELOPER would therefore be wrong: its
+    token came from the standard host.  They are migrated to standard, which is
+    what they were really using, and the user can add a fresh developer entry
+    with a developer credential.
+    """
+    if entry.version >= 3:
+        return True
+
+    data = dict(entry.data)
+    was_edge = data.pop(CONF_USE_EDGE, False)
+    data[CONF_ACCOUNT_TYPE] = ACCOUNT_STANDARD
+
+    if was_edge:
+        _LOGGER.warning(
+            "Sharesight entry '%s' had the old edge flag set. That flag never "
+            "switched the OAuth endpoints, so the entry was authenticating as a "
+            "standard account and could not have worked against the developer "
+            "sandbox. It has been migrated to a standard account. For sandbox "
+            "access, add a developer application credential and set up a new "
+            "entry",
+            entry.title,
+        )
+
+    hass.config_entries.async_update_entry(entry, data=data, version=3)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Sharesight from a config entry."""
-    implementation = await config_entry_oauth2_flow.async_get_config_entry_implementation(
-        hass, entry
-    )
+    account_type = entry.data.get(CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE)
+
+    # Implementations are rebuilt on every async_get_implementations() call
+    # rather than cached, so the account type has to be republished here or the
+    # platform would hand back standard endpoints for a developer entry.  The
+    # URLs are frozen into the implementation at construction, so
+    # OAuth2Session's later token refreshes work fine outside the context.
+    with account_type_context(account_type):
+        try:
+            implementation = (
+                await config_entry_oauth2_flow.async_get_config_entry_implementation(
+                    hass, entry
+                )
+            )
+        except ValueError as err:
+            raise ConfigEntryNotReady(
+                f"Sharesight {account_type} account credential is unavailable"
+            ) from err
+
     oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
     await oauth_session.async_ensure_token_valid()
 
     portfolio_id = entry.data[CONF_PORTFOLIO_ID]
-    use_edge = entry.data.get(CONF_USE_EDGE, False)
-
-    api_url = EDGE_API_URL_BASE if use_edge else API_URL_BASE
-    token_url = EDGE_TOKEN_URL if use_edge else TOKEN_URL
 
     api_session = async_get_clientsession(hass)
 
@@ -44,8 +99,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client_secret="",
         authorization_code="",
         redirect_uri="",
-        token_url=token_url,
-        api_url_base=api_url,
+        token_url=TOKEN_URL[account_type],
+        api_url_base=API_URL_BASE[account_type],
         use_token_file=False,
         session=api_session,
     )
@@ -58,7 +113,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "coordinator": local_coordinator,
         "portfolio_id": portfolio_id,
-        "edge": use_edge,
+        # Kept as a bool: the entity platforms only use it for naming and the
+        # configuration_url host prefix.
+        "edge": account_type == ACCOUNT_DEVELOPER,
         "sharesight_client": client,
         "market_sensors": [],
         "cash_sensors": [],
@@ -68,6 +125,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Register the domain-global response services once; the helper is
+    # idempotent (guards on has_service) so setting up further entries is safe.
+    async_setup_services(hass)
 
     # Backfill the portfolio-value long-term statistics from inception once at
     # startup (opt-out via options).  Runs in the background so it never blocks
@@ -96,6 +157,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if unsub:
             unsub()
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        # Tear the shared services down only once the last portfolio is gone.
+        if not hass.data.get(DOMAIN):
+            async_unload_services(hass)
     return unload_ok
 
 

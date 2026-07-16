@@ -20,6 +20,8 @@ from .coordinator import SharesightCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
+PARALLEL_UPDATES = 0
+
 
 def _payout_date(payout: dict) -> date | None:
     """Best-effort payment date for a payout entry."""

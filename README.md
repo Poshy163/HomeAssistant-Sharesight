@@ -10,7 +10,7 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 - Automatic portfolio discovery — select your portfolio from a dropdown during setup
 - Per-market devices — each exchange (ASX, NYSE, LSE, etc.) gets its own HA device
 - Cash account tracking — including Xero-linked accounts
-- Auto-discovery of new markets and cash accounts (checked every 10 minutes)
+- Auto-discovery of new markets and cash accounts — picked up automatically on the next poll cycle (every 5 minutes by default)
 - Dividend calendar — received and announced dividends as a native HA calendar entity
 - Capital gains tax (CGT) sensors for Australian portfolios — realised FY + unrealised positions
 - Benchmark comparison — track your excess return against the benchmark configured in Sharesight
@@ -19,6 +19,10 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 - Account device — plan tier, member-since, and a subscription-lapse alert (binary sensor)
 - Watchlist, live FX rates and market trading-hours sensors (where your Sharesight API access exposes them)
 - Long-term statistics backfill — imports your full portfolio value history so HA charts show years, not just days since install (opt-out in options)
+- Response services — pull a portfolio summary, holdings, or income into scripts/templates, or generate an on-demand performance report for any date range
+- Activity events & device triggers — automate on new trades, dividends, holdings opened/closed, cash transactions and the daily-close rollover
+- Portfolio analytics — concentration (HHI), effective number of holdings, weighted yield/PE, foreign-currency exposure, cash drag and stale-price count
+- All-time totals & forward income — lifetime value/return including sold positions, plus projected forward dividend income and yield
 - Supports both standard and Edge (developer) API accounts
 - Multiple portfolio support — add the integration once per portfolio
 
@@ -26,7 +30,9 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 
 ## Prerequisites
 
-Before installing, you need to create an API application on Sharesight:
+Before installing, you need to create an API application on Sharesight. **Note:** Sharesight API access is only available on paid plans (Standard, Premium or Business) and may need to be enabled for your account — if you can't create an API application or authorization fails, email `api@sharesight.com` to request access.
+
+Once API access is enabled, create the application:
 
 1. Log in to your Sharesight account at [portfolio.sharesight.com](https://portfolio.sharesight.com)
 2. Navigate to **[API Settings](https://portfolio.sharesight.com/users/api_token)** (also accessible via your profile menu)
@@ -82,7 +88,9 @@ After installation and restart:
 
 ## Sensors
 
-All sensors are organized into separate HA devices by category. Data refreshes every **30 seconds**.
+All sensors are organized into separate HA devices by category. Data refreshes every **5 minutes** by default; you can change the poll interval (60–3600 seconds) in the integration's **Options**.
+
+> **Tiered polling:** the headline value plus the day and week windows refresh on **every** poll, but the slower financial-year, year-to-date and one-month performance windows only re-fetch roughly **hourly** (every 12th poll) — so those period sensors update less often by design, keeping well inside the API rate limit. See [Polling, performance & the recorder](#polling-performance--the-recorder).
 
 ### Portfolio
 | Sensor | Description |
@@ -169,6 +177,11 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Total Franked / Unfranked Amount | Franked vs unfranked split |
 | Total Foreign Source Income | Income classified as foreign-source |
 | Total Capital Gains Distributions | Capital gains distributed via dividends |
+| Forward Annual Income | Projected next-12-month dividend income (announced payouts + trailing run-rate) |
+| Forward Dividend Yield | Forward annual income as a percent of portfolio value |
+| Income Next 30 / 90 Days | Dividends due within the next 30 / 90 days |
+| Days Until Next Dividend | Days to the soonest upcoming ex-dividend / pay date |
+| Announced Income Unpaid | Declared-but-not-yet-paid dividend total |
 | **Dividend Calendar** (calendar entity) | All received + announced dividends as all-day calendar events — use it in calendar cards or calendar-trigger automations |
 
 ### Tax (CGT) — Australian portfolios only
@@ -197,6 +210,27 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Sector Count / Top 3 / Top 5 Sectors Percent | Sector diversification and concentration |
 | Top Industry 1–2 (Name / Percent) / Industry Count | Finer industry breakdown |
 
+### Analytics (concentration & quality — zero extra API cost)
+| Sensor | Description |
+|--------|-------------|
+| Concentration (HHI) | Herfindahl-Hirschman index of holding weights (higher = more concentrated) |
+| Effective Number of Holdings | 1 / HHI — how many equally-weighted holdings your concentration is equivalent to |
+| Weighted Dividend Yield | Value-weighted trailing dividend yield across holdings |
+| Weighted P/E | Value-weighted price/earnings ratio (holdings that report a P/E) |
+| Foreign Currency Exposure | Share of portfolio value held in non-base currencies |
+| Cash Drag | Cash as a percent of total portfolio value |
+| Stale Price Count | Holdings whose Sharesight price hasn't refreshed recently |
+
+### Portfolio Totals (all-time, including sold positions)
+| Sensor | Description |
+|--------|-------------|
+| All-Time Value (incl. sold) | Lifetime portfolio value from the V3 `totals` endpoint |
+| All-Time Return (incl. sold) | Lifetime return including realised gains from exited holdings |
+| All-Time Return Percent (incl. sold) | Lifetime return as a percentage |
+| Return Is Annualised | Whether Sharesight annualised the above percentage (diagnostic) |
+
+> The main performance report omits fully-sold positions, so this device restores true lifetime P&L. It appears only once the V3 `totals` endpoint returns data for your token.
+
 ### Account (from `my_user.json`)
 | Sensor | Description |
 |--------|-------------|
@@ -204,6 +238,18 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Sharesight Member Since / Account Name | Profile info |
 | Sharesight Subscription Status | Active / Expired / Cancelled |
 | Subscription Problem (binary sensor) | **Turns on if your subscription lapses** — data silently goes stale otherwise; alert on this |
+
+### Status Flags (binary sensors)
+Derived from already-fetched data, so they add no API cost and give you something concrete to automate against.
+
+| Binary sensor | On when | Device |
+|--------------|---------|--------|
+| Any Market Open | Any market you hold in is currently within trading hours (weekends closed; holidays not modelled) | Market Hours |
+| Has Unconfirmed Transactions | The portfolio has trades awaiting confirmation | Portfolio |
+| Dividend Imminent | A held instrument goes ex-dividend within the next 3 days | Income |
+| API Degraded | The Sharesight API is in a rate-limit / lockout cooldown (diagnostic — stays available during failures) | Portfolio |
+
+> The **Subscription Problem** flag (on the Account device, above) is the other binary sensor — alert on it so you notice if data silently goes stale.
 
 ### Per-Holding extras (added to each holding device)
 | Sensor | Description |
@@ -273,11 +319,177 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 
 ---
 
+## Services
+
+The integration registers four **response services** — they return data rather than change state. Call them with `response_variable` in a script/automation, or tick **Return response** in **Developer Tools → Actions**. Each targets a portfolio via `config_entry_id` or `device_id`; both are optional when only one portfolio is configured.
+
+### `sharesight.get_portfolio_summary`
+
+Headline value, period gains, top/worst movers, cash and trailing dividend income — read from already-held data (no extra API call).
+
+```yaml
+action: sharesight.get_portfolio_summary
+data:
+  config_entry_id: 1a2b3c4d5e6f7a8b9c0d   # optional with one portfolio
+response_variable: summary
+```
+
+Response:
+
+```yaml
+value: 152340.55
+day: { gain: 421.30, percent: 0.28 }
+week: { gain: -180.10, percent: -0.12 }
+month: { gain: 2110.00, percent: 1.4 }
+ytd: { gain: 9800.00, percent: 6.9 }
+fy: { gain: 12040.00, percent: 8.6 }
+holding_count: 23
+total_cash: 5120.00
+top_mover: { symbol: CBA.ASX, amount: 210.5, percent: 1.9 }
+worst_mover: { symbol: BHP.ASX, amount: -95.0, percent: -0.8 }
+dividends_ttm: 4380.22
+currency: AUD
+```
+
+### `sharesight.get_holdings`
+
+The portfolio's holdings as a sortable, limitable list (no extra API call).
+
+```yaml
+action: sharesight.get_holdings
+data:
+  sort_by: capital_gain      # value | capital_gain | capital_gain_percent | symbol (default value)
+  limit: 5                   # optional
+response_variable: holdings
+```
+
+Response:
+
+```yaml
+holdings:
+  - symbol: CBA.ASX
+    market: ASX
+    value: 18240.0
+    quantity: 120
+    capital_gain: 2100.0
+    capital_gain_percent: 13.0
+    currency: AUD
+count: 5
+```
+
+### `sharesight.get_income`
+
+Trailing-twelve-month, calendar-year-to-date and next-30-day dividend income, plus announced upcoming payouts (no extra API call).
+
+```yaml
+action: sharesight.get_income
+response_variable: income
+```
+
+Response:
+
+```yaml
+ttm: 4380.22
+ytd: 2110.00
+next_30d: 305.40
+upcoming:
+  - symbol: VAS.ASX
+    amount: 142.10
+    ex_date: "2026-07-25"
+    pay_date: "2026-08-14"
+```
+
+### `sharesight.generate_performance_report`
+
+The only service that hits the API — one request per call. Fetches an on-demand performance report for an arbitrary date range and grouping.
+
+```yaml
+action: sharesight.generate_performance_report
+data:
+  start_date: "2024-07-01"
+  end_date: "2025-06-30"
+  grouping: market          # optional (market / industry_classification / investment_type / ...)
+  consolidated: false       # optional
+  include_sales: true       # optional
+response_variable: report
+```
+
+Response: the raw Sharesight performance report — `value`, `capital_gain(_percent)`, `payout_gain(_percent)`, `currency_gain(_percent)`, `total_gain(_percent)`, `start_date` / `end_date`, plus grouped `holdings` / `sub_totals`. On an API failure the response is `{ error: "..." }` rather than raising.
+
+---
+
+## Activity events & device triggers
+
+Each portfolio gets an **activity event entity** — `event.sharesight_activity_<portfolio_id>` ("Sharesight Activity", on the Portfolio device). Every poll the coordinator diffs the new data against the previous poll (zero extra API cost) and fires an event when something changes. Event types:
+
+`dividend_announced`, `dividend_paid`, `trade_confirmed`, `holding_opened`, `holding_closed`, `cash_transaction`, `daily_close`
+
+The fired `event_type`, the triggering record's fields, and the full same-poll batch (under `items`) are all carried on the event's attributes.
+
+Example automation (state trigger on the event entity):
+
+```yaml
+automation:
+  - alias: Notify on confirmed trade
+    triggers:
+      - trigger: state
+        entity_id: event.sharesight_activity_123456
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.to_state.attributes.event_type == 'trade_confirmed' }}"
+    actions:
+      - action: notify.mobile_app_phone
+        data:
+          message: "{{ trigger.to_state.attributes.symbol }} trade confirmed"
+```
+
+**Device triggers** — the Portfolio device also advertises triggers you can pick straight from the UI (**Settings → Automations → Add → Device → your Sharesight portfolio**):
+
+| Trigger | Fires when |
+|---------|-----------|
+| Dividend announced / Dividend paid | A dividend is announced or paid |
+| Trade confirmed | A trade is confirmed |
+| Holding opened / Holding closed | A position is opened or fully closed |
+| Cash transaction | A cash-account transaction appears |
+| Daily close (end-of-day rollover) | The daily performance window rolls over |
+| Portfolio value | Portfolio value crosses an above/below threshold you set |
+| Daily change amount | Today's change crosses an above/below threshold you set |
+
+The last two delegate to Home Assistant's numeric-state trigger against the Portfolio Value / Daily Change Amount sensors, so you get the standard above/below fields. Event and numeric triggers only appear when their backing entity exists.
+
+---
+
+## Buttons
+
+Two buttons per portfolio:
+
+| Button | Device | Action |
+|--------|--------|--------|
+| Refresh | Portfolio | Forces an immediate (debounced) coordinator poll |
+| Rebuild Value History | Account | Re-runs the inception-to-today long-term-statistics backfill on demand (e.g. after the value-data endpoint becomes reachable) — idempotent, safe to press repeatedly |
+
+Entity IDs: `button.sharesight_refresh_<portfolio_id>` and `button.sharesight_rebuild_value_history_<portfolio_id>`.
+
+---
+
+## Polling, performance & the recorder
+
+- **Tiered polling.** The headline value and the day/week windows refresh on **every** poll; the slower financial-year, year-to-date and one-month performance windows only re-fetch **every 12th poll** (≈ hourly at the 5-minute default), on a cold start, or when the financial-year bounds roll over. Skipped windows are carried forward so their sensors never flap. This keeps the integration comfortably inside Sharesight's 360-requests/minute budget.
+- **Recorder exclude (optional).** The activity event entity carries the whole same-poll batch under its `items` attribute, and a few anchor sensors (e.g. Portfolio Value) expose capped rich-list attributes (top holdings / movers, ≤ 25 items) that are handy in templates but verbose in history. If you want to keep the recorder database lean, exclude the entities whose attribute history you don't need — the event entity is safe to drop entirely as it has no meaningful numeric history:
+  ```yaml
+  recorder:
+    exclude:
+      entities:
+        - event.sharesight_activity_123456
+  ```
+
+---
+
 ## Troubleshooting
 
 - **Sensors showing "Unknown"** — Some sensors (Trades, Contributions, Income details) depend on optional API endpoints that may not be available on all Sharesight plans. These will show as `unknown` if the API returns an error.
 - **"OAuth authentication failed"** — Double-check your Redirect URI matches exactly what's configured in your Sharesight API application. The most common issue is a trailing slash mismatch.
-- **Missing markets or cash accounts** — New markets and cash accounts are auto-discovered every 10 minutes. If you've just added a new holding on a new exchange, give it a couple of refresh cycles.
+- **Missing markets or cash accounts** — New markets and cash accounts are auto-discovered on the next poll cycle (every 5 minutes by default, or whatever you set in Options). If you've just added a new holding on a new exchange, give it a refresh cycle or two.
 - **Debug logging** — To see detailed API response data, enable debug logging for the integration:
   ```yaml
   logger:
