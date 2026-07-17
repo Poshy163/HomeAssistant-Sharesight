@@ -1,0 +1,1026 @@
+{
+  "entity": {
+    "sensor": {
+      "active_grouping": {
+        "default": "mdi:view-grid-outline"
+      },
+      "all_time_return_incl_sold": {
+        "default": "mdi:cash-plus"
+      },
+      "all_time_return_percent_incl_sold": {
+        "default": "mdi:sack-percent"
+      },
+      "all_time_value_incl_sold": {
+        "default": "mdi:cash-multiple"
+      },
+      "announced_income_unpaid": {
+        "default": "mdi:cash-check"
+      },
+      "annualised_return_percent": {
+        "default": "mdi:percent"
+      },
+      "average_buy_value": {
+        "default": "mdi:calculator"
+      },
+      "average_contribution_amount": {
+        "default": "mdi:calculator-variant"
+      },
+      "average_dividend_amount": {
+        "default": "mdi:calculator-variant"
+      },
+      "average_holding_value": {
+        "default": "mdi:calculator"
+      },
+      "average_sell_value": {
+        "default": "mdi:calculator"
+      },
+      "average_trade_value": {
+        "default": "mdi:calculator"
+      },
+      "average_trades_per_month": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "benchmark_capital_gain_percent": {
+        "default": "mdi:chart-line"
+      },
+      "benchmark_code": {
+        "default": "mdi:identifier"
+      },
+      "benchmark_currency_gain_percent": {
+        "default": "mdi:currency-usd"
+      },
+      "benchmark_dividend_gain_percent": {
+        "default": "mdi:hand-coin"
+      },
+      "benchmark_name": {
+        "default": "mdi:speedometer"
+      },
+      "benchmark_total_gain_percent": {
+        "default": "mdi:speedometer"
+      },
+      "capital_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "capital_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "cash_accounts_count": {
+        "default": "mdi:bank"
+      },
+      "cash_allocation_percent": {
+        "default": "mdi:cash-100"
+      },
+      "cash_balance": {
+        "default": "mdi:cash"
+      },
+      "cash_drag": {
+        "default": "mdi:cash-100"
+      },
+      "cash_transactions_count": {
+        "default": "mdi:bank-transfer"
+      },
+      "cgt_concession_amount_fy": {
+        "default": "mdi:cash-refund"
+      },
+      "cgt_discounted_distributions_fy": {
+        "default": "mdi:sack-percent"
+      },
+      "cgt_long_term_gains_fy": {
+        "default": "mdi:clock-outline"
+      },
+      "cgt_losses_fy": {
+        "default": "mdi:cash-minus"
+      },
+      "cgt_non_discounted_distributions_fy": {
+        "default": "mdi:sack"
+      },
+      "cgt_short_term_gains_fy": {
+        "default": "mdi:clock-fast"
+      },
+      "cgt_taxable_gain_fy": {
+        "default": "mdi:bank"
+      },
+      "concentration_hhi": {
+        "default": "mdi:chart-donut-variant"
+      },
+      "contribution_count": {
+        "default": "mdi:counter"
+      },
+      "cost_basis": {
+        "default": "mdi:cash-register"
+      },
+      "currency_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "currency_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "daily_capital_gain": {
+        "default": "mdi:chart-line-variant"
+      },
+      "daily_capital_gain_percent": {
+        "default": "mdi:chart-line-variant"
+      },
+      "daily_change_amount": {
+        "default": "mdi:chart-line-variant"
+      },
+      "daily_change_percent": {
+        "default": "mdi:chart-line-variant"
+      },
+      "daily_currency_gain": {
+        "default": "mdi:currency-usd"
+      },
+      "daily_currency_gain_percent": {
+        "default": "mdi:currency-usd"
+      },
+      "daily_dividend_gain": {
+        "default": "mdi:hand-coin"
+      },
+      "daily_dividend_gain_percent": {
+        "default": "mdi:hand-coin"
+      },
+      "daily_end_value": {
+        "default": "mdi:flag-variant"
+      },
+      "daily_start_value": {
+        "default": "mdi:flag-checkered"
+      },
+      "days_until_next_dividend": {
+        "default": "mdi:calendar-clock"
+      },
+      "diversity_group_count": {
+        "default": "mdi:chart-pie"
+      },
+      "dividend_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "dividend_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "dividend_yield_percent": {
+        "default": "mdi:percent"
+      },
+      "dividend_yield_ttm_percent": {
+        "default": "mdi:percent"
+      },
+      "dividends_last_12_months": {
+        "default": "mdi:hand-coin"
+      },
+      "dividends_last_30_days": {
+        "default": "mdi:hand-coin"
+      },
+      "dividends_previous_year": {
+        "default": "mdi:calendar-blank"
+      },
+      "dividends_received_cash": {
+        "default": "mdi:cash-fast"
+      },
+      "dividends_ytd": {
+        "default": "mdi:calendar-today"
+      },
+      "drp_reinvestment_count": {
+        "default": "mdi:autorenew"
+      },
+      "effective_number_of_holdings": {
+        "default": "mdi:format-list-numbered"
+      },
+      "endpoints_on_cooldown": {
+        "default": "mdi:pause-circle-outline"
+      },
+      "equity_allocation_percent": {
+        "default": "mdi:chart-pie"
+      },
+      "equity_value": {
+        "default": "mdi:chart-areaspline"
+      },
+      "financial_year_annualised_return_percent": {
+        "default": "mdi:percent"
+      },
+      "financial_year_capital_gain": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "financial_year_capital_gain_percent": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "financial_year_change_amount": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "financial_year_change_percent": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "financial_year_currency_gain": {
+        "default": "mdi:currency-usd"
+      },
+      "financial_year_currency_gain_percent": {
+        "default": "mdi:currency-usd"
+      },
+      "financial_year_dividend_gain": {
+        "default": "mdi:hand-coin"
+      },
+      "financial_year_dividend_gain_percent": {
+        "default": "mdi:hand-coin"
+      },
+      "financial_year_end": {
+        "default": "mdi:calendar-end"
+      },
+      "financial_year_end_value": {
+        "default": "mdi:flag-variant"
+      },
+      "financial_year_start_value": {
+        "default": "mdi:flag-checkered"
+      },
+      "foreign_currency_exposure": {
+        "default": "mdi:earth"
+      },
+      "forward_annual_income": {
+        "default": "mdi:cash-clock"
+      },
+      "forward_dividend_yield": {
+        "default": "mdi:percent"
+      },
+      "fx_rate": {
+        "default": "mdi:currency-usd"
+      },
+      "holding_annualised_return_percent": {
+        "default": "mdi:percent"
+      },
+      "holding_brokerage_paid": {
+        "default": "mdi:cash-minus"
+      },
+      "holding_capital_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "holding_capital_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "holding_cost_base": {
+        "default": "mdi:cash-register"
+      },
+      "holding_currency_gain": {
+        "default": "mdi:currency-usd"
+      },
+      "holding_currency_gain_percent": {
+        "default": "mdi:currency-usd"
+      },
+      "holding_dividend_count": {
+        "default": "mdi:counter"
+      },
+      "holding_eps": {
+        "default": "mdi:cash"
+      },
+      "holding_franking_ttm": {
+        "default": "mdi:cash-check"
+      },
+      "holding_industry": {
+        "default": "mdi:factory"
+      },
+      "holding_instrument_price": {
+        "default": "mdi:tag-outline"
+      },
+      "holding_instrument_type": {
+        "default": "mdi:tag-outline"
+      },
+      "holding_last_dividend_amount": {
+        "default": "mdi:cash"
+      },
+      "holding_last_dividend_date": {
+        "default": "mdi:calendar-check"
+      },
+      "holding_last_trade_date": {
+        "default": "mdi:calendar-clock"
+      },
+      "holding_net_shares": {
+        "default": "mdi:swap-vertical"
+      },
+      "holding_nta": {
+        "default": "mdi:bank"
+      },
+      "holding_payout_gain": {
+        "default": "mdi:hand-coin"
+      },
+      "holding_payout_gain_percent": {
+        "default": "mdi:hand-coin"
+      },
+      "holding_pe_ratio": {
+        "default": "mdi:chart-line"
+      },
+      "holding_price_updated_at": {
+        "default": "mdi:clock-check-outline"
+      },
+      "holding_quantity": {
+        "default": "mdi:counter"
+      },
+      "holding_sector": {
+        "default": "mdi:shape"
+      },
+      "holding_total_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "holding_total_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "holding_trade_count": {
+        "default": "mdi:counter"
+      },
+      "holding_ttm_income": {
+        "default": "mdi:hand-coin"
+      },
+      "holding_value": {
+        "default": "mdi:cash"
+      },
+      "holding_vwap_buy_price": {
+        "default": "mdi:cart-arrow-down"
+      },
+      "holding_yield_on_cost": {
+        "default": "mdi:percent"
+      },
+      "income_next_30_days": {
+        "default": "mdi:hand-coin"
+      },
+      "income_next_90_days": {
+        "default": "mdi:hand-coin"
+      },
+      "industry_count": {
+        "default": "mdi:factory"
+      },
+      "label_percent": {
+        "default": "mdi:tag-text-outline"
+      },
+      "label_value": {
+        "default": "mdi:tag"
+      },
+      "largest_dividend_amount": {
+        "default": "mdi:star"
+      },
+      "largest_dividend_symbol": {
+        "default": "mdi:star"
+      },
+      "largest_holding_percent": {
+        "default": "mdi:crown"
+      },
+      "largest_holding_symbol": {
+        "default": "mdi:crown"
+      },
+      "largest_holding_value": {
+        "default": "mdi:crown"
+      },
+      "largest_market_name": {
+        "default": "mdi:earth"
+      },
+      "largest_market_percent": {
+        "default": "mdi:earth"
+      },
+      "largest_market_value": {
+        "default": "mdi:earth"
+      },
+      "largest_trade_symbol": {
+        "default": "mdi:trophy"
+      },
+      "largest_trade_value": {
+        "default": "mdi:trophy"
+      },
+      "last_buy_date": {
+        "default": "mdi:cart-arrow-down"
+      },
+      "last_buy_symbol": {
+        "default": "mdi:cart-arrow-down"
+      },
+      "last_buy_value": {
+        "default": "mdi:cart-arrow-down"
+      },
+      "last_cash_transaction_amount": {
+        "default": "mdi:bank-transfer"
+      },
+      "last_cash_transaction_date": {
+        "default": "mdi:calendar-clock"
+      },
+      "last_contribution_amount": {
+        "default": "mdi:cash-fast"
+      },
+      "last_contribution_date": {
+        "default": "mdi:calendar-clock"
+      },
+      "last_dividend_date": {
+        "default": "mdi:calendar-check"
+      },
+      "last_sell_date": {
+        "default": "mdi:cart-arrow-up"
+      },
+      "last_sell_symbol": {
+        "default": "mdi:cart-arrow-up"
+      },
+      "last_sell_value": {
+        "default": "mdi:cart-arrow-up"
+      },
+      "last_successful_update": {
+        "default": "mdi:update"
+      },
+      "last_trade_date": {
+        "default": "mdi:calendar-clock"
+      },
+      "last_trade_symbol": {
+        "default": "mdi:swap-horizontal"
+      },
+      "last_trade_type": {
+        "default": "mdi:swap-horizontal-bold"
+      },
+      "last_trade_value": {
+        "default": "mdi:cash-fast"
+      },
+      "latest_news": {
+        "default": "mdi:newspaper-variant-outline"
+      },
+      "market_annualised_return_percent": {
+        "default": "mdi:percent"
+      },
+      "market_capital_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "market_capital_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "market_cost_base": {
+        "default": "mdi:cash-register"
+      },
+      "market_count": {
+        "default": "mdi:format-list-numbered"
+      },
+      "market_currency_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "market_currency_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "market_holding_count": {
+        "default": "mdi:format-list-numbered"
+      },
+      "market_hours_next_close": {
+        "default": "mdi:clock-end"
+      },
+      "market_hours_next_open": {
+        "default": "mdi:clock-start"
+      },
+      "market_hours_status": {
+        "default": "mdi:store-clock"
+      },
+      "market_payout_gain": {
+        "default": "mdi:hand-coin"
+      },
+      "market_payout_gain_percent": {
+        "default": "mdi:hand-coin"
+      },
+      "market_total_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "market_total_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "market_value": {
+        "default": "mdi:finance"
+      },
+      "median_holding_value": {
+        "default": "mdi:chart-bell-curve-cumulative"
+      },
+      "monthly_annualised_return_percent": {
+        "default": "mdi:percent"
+      },
+      "monthly_capital_gain": {
+        "default": "mdi:calendar-month"
+      },
+      "monthly_capital_gain_percent": {
+        "default": "mdi:calendar-month"
+      },
+      "monthly_change_amount": {
+        "default": "mdi:calendar-month"
+      },
+      "monthly_change_percent": {
+        "default": "mdi:calendar-month"
+      },
+      "monthly_currency_gain": {
+        "default": "mdi:currency-usd"
+      },
+      "monthly_currency_gain_percent": {
+        "default": "mdi:currency-usd"
+      },
+      "monthly_dividend_gain": {
+        "default": "mdi:hand-coin"
+      },
+      "monthly_dividend_gain_percent": {
+        "default": "mdi:hand-coin"
+      },
+      "monthly_end_value": {
+        "default": "mdi:flag-variant"
+      },
+      "monthly_start_value": {
+        "default": "mdi:flag-checkered"
+      },
+      "most_traded_symbol": {
+        "default": "mdi:fire"
+      },
+      "negative_holdings_count": {
+        "default": "mdi:trending-down"
+      },
+      "negative_holdings_percent": {
+        "default": "mdi:trending-down"
+      },
+      "net_contributions": {
+        "default": "mdi:cash-sync"
+      },
+      "net_investment_gain": {
+        "default": "mdi:chart-line"
+      },
+      "net_investment_gain_percent": {
+        "default": "mdi:chart-line"
+      },
+      "net_trade_flow": {
+        "default": "mdi:swap-vertical"
+      },
+      "next_dividend_amount": {
+        "default": "mdi:hand-coin"
+      },
+      "next_dividend_date": {
+        "default": "mdi:calendar-arrow-right"
+      },
+      "next_dividend_symbol": {
+        "default": "mdi:calendar-arrow-right"
+      },
+      "number_of_dividends": {
+        "default": "mdi:hand-coin"
+      },
+      "number_of_holdings": {
+        "default": "mdi:chart-box-multiple"
+      },
+      "performance_calculation_method": {
+        "default": "mdi:calculator-variant-outline"
+      },
+      "portfolio_access_level": {
+        "default": "mdi:shield-account"
+      },
+      "portfolio_age_days": {
+        "default": "mdi:timer-sand"
+      },
+      "portfolio_country": {
+        "default": "mdi:flag"
+      },
+      "portfolio_excess_return_vs_benchmark": {
+        "default": "mdi:scale-balance"
+      },
+      "portfolio_id": {
+        "default": "mdi:identifier"
+      },
+      "portfolio_inception_date": {
+        "default": "mdi:calendar-start"
+      },
+      "portfolio_name": {
+        "default": "mdi:briefcase"
+      },
+      "portfolio_owner": {
+        "default": "mdi:account"
+      },
+      "portfolio_start_value": {
+        "default": "mdi:flag-checkered"
+      },
+      "portfolio_timezone": {
+        "default": "mdi:map-clock-outline"
+      },
+      "portfolio_value": {
+        "default": "mdi:cash"
+      },
+      "positive_holdings_count": {
+        "default": "mdi:trending-up"
+      },
+      "positive_holdings_percent": {
+        "default": "mdi:trending-up"
+      },
+      "primary_currency": {
+        "default": "mdi:cash"
+      },
+      "report_combined": {
+        "default": "mdi:call-merge"
+      },
+      "report_currency": {
+        "default": "mdi:cash"
+      },
+      "report_grouping": {
+        "default": "mdi:view-list-outline"
+      },
+      "report_includes_sold_shares": {
+        "default": "mdi:identifier"
+      },
+      "return_is_annualised": {
+        "default": "mdi:calendar-sync"
+      },
+      "sector_count": {
+        "default": "mdi:shape-plus"
+      },
+      "sharesight_account_name": {
+        "default": "mdi:account"
+      },
+      "sharesight_member_since": {
+        "default": "mdi:calendar-account"
+      },
+      "sharesight_plan": {
+        "default": "mdi:card-account-details"
+      },
+      "sharesight_plan_code": {
+        "default": "mdi:identifier"
+      },
+      "sharesight_subscription_status": {
+        "default": "mdi:shield-account"
+      },
+      "smallest_holding_symbol": {
+        "default": "mdi:arrow-down-thin"
+      },
+      "smallest_holding_value": {
+        "default": "mdi:arrow-down-thin"
+      },
+      "stale_price_count": {
+        "default": "mdi:clock-alert-outline"
+      },
+      "top_3_holdings_percent": {
+        "default": "mdi:chart-donut"
+      },
+      "top_3_markets_percent": {
+        "default": "mdi:chart-donut"
+      },
+      "top_3_sectors_percent": {
+        "default": "mdi:chart-donut"
+      },
+      "top_5_holdings_percent": {
+        "default": "mdi:chart-donut"
+      },
+      "top_5_markets_percent": {
+        "default": "mdi:chart-donut"
+      },
+      "top_5_sectors_percent": {
+        "default": "mdi:chart-donut"
+      },
+      "top_gain_amount": {
+        "default": "mdi:trending-up"
+      },
+      "top_gain_percent": {
+        "default": "mdi:trending-up"
+      },
+      "top_gain_symbol": {
+        "default": "mdi:trending-up"
+      },
+      "top_industry_1_name": {
+        "default": "mdi:factory"
+      },
+      "top_industry_1_percent": {
+        "default": "mdi:factory"
+      },
+      "top_industry_2_name": {
+        "default": "mdi:factory"
+      },
+      "top_industry_2_percent": {
+        "default": "mdi:factory"
+      },
+      "top_market_1_name": {
+        "default": "mdi:earth"
+      },
+      "top_market_1_percent": {
+        "default": "mdi:earth"
+      },
+      "top_market_1_value": {
+        "default": "mdi:earth"
+      },
+      "top_market_2_name": {
+        "default": "mdi:earth"
+      },
+      "top_market_2_percent": {
+        "default": "mdi:earth"
+      },
+      "top_market_2_value": {
+        "default": "mdi:earth"
+      },
+      "top_market_3_name": {
+        "default": "mdi:earth"
+      },
+      "top_market_3_percent": {
+        "default": "mdi:earth"
+      },
+      "top_market_3_value": {
+        "default": "mdi:earth"
+      },
+      "top_market_4_name": {
+        "default": "mdi:earth"
+      },
+      "top_market_4_percent": {
+        "default": "mdi:earth"
+      },
+      "top_market_4_value": {
+        "default": "mdi:earth"
+      },
+      "top_market_5_name": {
+        "default": "mdi:earth"
+      },
+      "top_market_5_percent": {
+        "default": "mdi:earth"
+      },
+      "top_market_5_value": {
+        "default": "mdi:earth"
+      },
+      "top_sector_1_name": {
+        "default": "mdi:shape"
+      },
+      "top_sector_1_percent": {
+        "default": "mdi:shape"
+      },
+      "top_sector_1_value": {
+        "default": "mdi:shape"
+      },
+      "top_sector_2_name": {
+        "default": "mdi:shape"
+      },
+      "top_sector_2_percent": {
+        "default": "mdi:shape"
+      },
+      "top_sector_2_value": {
+        "default": "mdi:shape"
+      },
+      "top_sector_3_name": {
+        "default": "mdi:shape"
+      },
+      "top_sector_3_percent": {
+        "default": "mdi:shape"
+      },
+      "top_sector_3_value": {
+        "default": "mdi:shape"
+      },
+      "top_sector_4_name": {
+        "default": "mdi:shape"
+      },
+      "top_sector_4_percent": {
+        "default": "mdi:shape"
+      },
+      "top_sector_4_value": {
+        "default": "mdi:shape"
+      },
+      "top_sector_5_name": {
+        "default": "mdi:shape"
+      },
+      "top_sector_5_percent": {
+        "default": "mdi:shape"
+      },
+      "top_sector_5_value": {
+        "default": "mdi:shape"
+      },
+      "total_brokerage": {
+        "default": "mdi:cash-minus"
+      },
+      "total_buy_trades": {
+        "default": "mdi:cart-arrow-down"
+      },
+      "total_buy_value": {
+        "default": "mdi:cart-arrow-down"
+      },
+      "total_capital_gains_distributions": {
+        "default": "mdi:chart-line"
+      },
+      "total_cash_value": {
+        "default": "mdi:cash-multiple"
+      },
+      "total_contributions": {
+        "default": "mdi:cash-plus"
+      },
+      "total_dividend_income": {
+        "default": "mdi:hand-coin"
+      },
+      "total_foreign_source_income": {
+        "default": "mdi:earth"
+      },
+      "total_franked_amount": {
+        "default": "mdi:cash-check"
+      },
+      "total_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "total_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "total_gross_dividend_income": {
+        "default": "mdi:cash-multiple"
+      },
+      "total_holdings_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "total_holdings_value": {
+        "default": "mdi:chart-areaspline"
+      },
+      "total_non_resident_withholding_tax": {
+        "default": "mdi:bank-minus"
+      },
+      "total_resident_withholding_tax": {
+        "default": "mdi:bank-minus"
+      },
+      "total_sell_trades": {
+        "default": "mdi:cart-arrow-up"
+      },
+      "total_sell_value": {
+        "default": "mdi:cart-arrow-up"
+      },
+      "total_tax_credits": {
+        "default": "mdi:bank-plus"
+      },
+      "total_trades": {
+        "default": "mdi:counter"
+      },
+      "total_unfranked_amount": {
+        "default": "mdi:cash-remove"
+      },
+      "total_withdrawals": {
+        "default": "mdi:cash-minus"
+      },
+      "trades_last_30_days": {
+        "default": "mdi:counter"
+      },
+      "trades_last_7_days": {
+        "default": "mdi:counter"
+      },
+      "trades_ytd": {
+        "default": "mdi:counter"
+      },
+      "unconfirmed_transactions": {
+        "default": "mdi:alert-circle-outline"
+      },
+      "unrealised_cgt_concession_amount": {
+        "default": "mdi:cash-refund"
+      },
+      "unrealised_cgt_long_term_gains": {
+        "default": "mdi:clock-outline"
+      },
+      "unrealised_cgt_losses": {
+        "default": "mdi:cash-minus"
+      },
+      "unrealised_cgt_short_term_gains": {
+        "default": "mdi:clock-fast"
+      },
+      "unrealised_cgt_taxable_gain": {
+        "default": "mdi:bank-outline"
+      },
+      "unrealised_gain": {
+        "default": "mdi:trending-up"
+      },
+      "unrealised_gain_percent": {
+        "default": "mdi:percent"
+      },
+      "upcoming_dividends_count": {
+        "default": "mdi:calendar-arrow-right"
+      },
+      "update_interval_s": {
+        "default": "mdi:timer-cog"
+      },
+      "user_id": {
+        "default": "mdi:identifier"
+      },
+      "value_change_30d": {
+        "default": "mdi:chart-line-variant"
+      },
+      "value_change_7d": {
+        "default": "mdi:chart-line-variant"
+      },
+      "watchlist_average_change_percent": {
+        "default": "mdi:percent"
+      },
+      "watchlist_count": {
+        "default": "mdi:eye"
+      },
+      "watchlist_down_today": {
+        "default": "mdi:trending-down"
+      },
+      "watchlist_instrument_day_change_percent": {
+        "default": "mdi:percent"
+      },
+      "watchlist_instrument_price": {
+        "default": "mdi:cash"
+      },
+      "watchlist_top_gainer": {
+        "default": "mdi:trending-up"
+      },
+      "watchlist_top_gainer_percent": {
+        "default": "mdi:trending-up"
+      },
+      "watchlist_top_loser": {
+        "default": "mdi:trending-down"
+      },
+      "watchlist_top_loser_percent": {
+        "default": "mdi:trending-down"
+      },
+      "watchlist_up_today": {
+        "default": "mdi:trending-up"
+      },
+      "weekly_capital_gain": {
+        "default": "mdi:chart-line-variant"
+      },
+      "weekly_capital_gain_percent": {
+        "default": "mdi:chart-line-variant"
+      },
+      "weekly_change_amount": {
+        "default": "mdi:chart-line-variant"
+      },
+      "weekly_change_percent": {
+        "default": "mdi:chart-line-variant"
+      },
+      "weekly_currency_gain": {
+        "default": "mdi:currency-usd"
+      },
+      "weekly_currency_gain_percent": {
+        "default": "mdi:currency-usd"
+      },
+      "weekly_dividend_gain": {
+        "default": "mdi:hand-coin"
+      },
+      "weekly_dividend_gain_percent": {
+        "default": "mdi:hand-coin"
+      },
+      "weekly_end_value": {
+        "default": "mdi:flag-variant"
+      },
+      "weekly_start_value": {
+        "default": "mdi:flag-checkered"
+      },
+      "weighted_dividend_yield": {
+        "default": "mdi:percent"
+      },
+      "weighted_p_e": {
+        "default": "mdi:chart-line"
+      },
+      "withdrawal_count": {
+        "default": "mdi:counter"
+      },
+      "worst_gain_amount": {
+        "default": "mdi:trending-down"
+      },
+      "worst_gain_percent": {
+        "default": "mdi:trending-down"
+      },
+      "worst_gain_symbol": {
+        "default": "mdi:trending-down"
+      },
+      "ytd_annualised_return_percent": {
+        "default": "mdi:percent"
+      },
+      "ytd_capital_gain": {
+        "default": "mdi:calendar-today"
+      },
+      "ytd_capital_gain_percent": {
+        "default": "mdi:calendar-today"
+      },
+      "ytd_change_amount": {
+        "default": "mdi:calendar-today"
+      },
+      "ytd_change_percent": {
+        "default": "mdi:calendar-today"
+      },
+      "ytd_currency_gain": {
+        "default": "mdi:currency-usd"
+      },
+      "ytd_currency_gain_percent": {
+        "default": "mdi:currency-usd"
+      },
+      "ytd_dividend_gain": {
+        "default": "mdi:hand-coin"
+      },
+      "ytd_dividend_gain_percent": {
+        "default": "mdi:hand-coin"
+      },
+      "ytd_end_value": {
+        "default": "mdi:flag-variant"
+      },
+      "ytd_start_value": {
+        "default": "mdi:flag-checkered"
+      }
+    },
+    "binary_sensor": {
+      "any_market_open": {
+        "default": "mdi:store-clock"
+      },
+      "api_degraded": {
+        "default": "mdi:cloud-alert"
+      },
+      "dividend_imminent": {
+        "default": "mdi:calendar-alert"
+      },
+      "has_unconfirmed_transactions": {
+        "default": "mdi:alert-circle-outline"
+      },
+      "subscription_problem": {
+        "default": "mdi:shield-alert"
+      }
+    },
+    "button": {
+      "rebuild_value_history": {
+        "default": "mdi:database-refresh"
+      },
+      "refresh": {
+        "default": "mdi:refresh"
+      }
+    },
+    "event": {
+      "activity": {
+        "default": "mdi:bell-ring"
+      }
+    }
+  }
+}

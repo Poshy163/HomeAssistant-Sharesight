@@ -12,13 +12,12 @@ import logging
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import APP_VERSION, DOMAIN
+from .const import APP_VERSION
 from .coordinator import SharesightCoordinator
 from .data import SharesightConfigEntry
+from .entity import SharesightBaseEntity
 from .statistics_import import async_backfill_value_statistics
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -43,27 +42,17 @@ async def async_setup_entry(
     )
 
 
-class SharesightRefreshButton(CoordinatorEntity, ButtonEntity):
+class SharesightRefreshButton(SharesightBaseEntity, ButtonEntity):
     """Force an immediate coordinator refresh."""
 
-    _attr_icon = "mdi:refresh"
+    _attr_translation_key = "refresh"
 
     def __init__(self, coordinator, portfolio_id, edge):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}Refresh"
+        super().__init__(coordinator, portfolio_id, edge)
         self._attr_unique_id = f"{portfolio_id}_refresh_{APP_VERSION}"
         self.entity_id = f"button.sharesight_refresh_{portfolio_id}"
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_portfolio")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Portfolio",
-            name=f"Sharesight{edge_name}Portfolio {portfolio_id}",
+        self._attr_device_info = self._service_device_info(
+            "portfolio", f"Portfolio {portfolio_id}", "Portfolio"
         )
 
     async def async_press(self) -> None:
@@ -71,29 +60,19 @@ class SharesightRefreshButton(CoordinatorEntity, ButtonEntity):
         await self.coordinator.async_request_refresh()
 
 
-class SharesightRebuildValueHistoryButton(CoordinatorEntity, ButtonEntity):
+class SharesightRebuildValueHistoryButton(SharesightBaseEntity, ButtonEntity):
     """Re-run the portfolio-value long-term-statistics backfill."""
 
-    _attr_icon = "mdi:database-refresh"
+    _attr_translation_key = "rebuild_value_history"
 
     def __init__(self, coordinator, portfolio_id, edge):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}Rebuild Value History"
+        super().__init__(coordinator, portfolio_id, edge)
         self._attr_unique_id = f"{portfolio_id}_rebuild_lts_{APP_VERSION}"
         self.entity_id = f"button.sharesight_rebuild_value_history_{portfolio_id}"
         # Attach to the Account device (same identifiers as the account
         # sensors / subscription binary sensor).
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_account")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Account",
-            name=f"Sharesight{edge_name}Account",
+        self._attr_device_info = self._service_device_info(
+            "account", "Account", "Account"
         )
 
     async def async_press(self) -> None:

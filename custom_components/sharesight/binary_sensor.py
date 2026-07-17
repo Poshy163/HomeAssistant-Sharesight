@@ -17,15 +17,14 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import analytics
-from .const import APP_VERSION, DOMAIN
+from .const import APP_VERSION
 from .coordinator import SharesightCoordinator
 from .data import SharesightConfigEntry
+from .entity import SharesightBaseEntity
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -78,28 +77,18 @@ async def async_setup_entry(
     )
 
 
-class SharesightSubscriptionBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class SharesightSubscriptionBinarySensor(SharesightBaseEntity, BinarySensorEntity):
     """On when the Sharesight subscription is expired or cancelled."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
-    _attr_icon = "mdi:shield-alert"
+    _attr_translation_key = "subscription_problem"
 
     def __init__(self, coordinator, portfolio_id, edge):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}Subscription Problem"
+        super().__init__(coordinator, portfolio_id, edge)
         self._attr_unique_id = f"{portfolio_id}_subscription_problem_{APP_VERSION}"
         self.entity_id = f"binary_sensor.sharesight_subscription_problem_{portfolio_id}"
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_account")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Account",
-            name=f"Sharesight{edge_name}Account",
+        self._attr_device_info = self._service_device_info(
+            "account", "Account", "Account"
         )
 
     def _user(self) -> dict | None:
@@ -123,7 +112,7 @@ class SharesightSubscriptionBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return self._user() is not None
 
 
-class SharesightAnyMarketOpen(CoordinatorEntity, BinarySensorEntity):
+class SharesightAnyMarketOpen(SharesightBaseEntity, BinarySensorEntity):
     """On when any market the portfolio holds is currently open.
 
     Only markets the portfolio actually holds are considered (a global
@@ -132,28 +121,18 @@ class SharesightAnyMarketOpen(CoordinatorEntity, BinarySensorEntity):
     unknown (available=False) rather than off.
     """
 
-    _attr_icon = "mdi:store-clock"
+    _attr_translation_key = "any_market_open"
 
     def __init__(self, coordinator, portfolio_id, edge):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
+        super().__init__(coordinator, portfolio_id, edge)
         # tz_name -> resolved tzinfo (or None), populated off the event loop via
         # async_get_time_zone so the synchronous is_on/available reads never
         # trigger a blocking zoneinfo load on the loop.
         self._tz_cache: dict[str, object | None] = {}
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}Any Market Open"
         self._attr_unique_id = f"{portfolio_id}_any_market_open_{APP_VERSION}"
         self.entity_id = f"binary_sensor.sharesight_any_market_open_{portfolio_id}"
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_market_hours")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Market Hours",
-            name=f"Sharesight{edge_name}Market Hours",
+        self._attr_device_info = self._service_device_info(
+            "market_hours", "Market Hours", "Market Hours"
         )
 
     def _markets(self) -> list:
@@ -226,28 +205,18 @@ class SharesightAnyMarketOpen(CoordinatorEntity, BinarySensorEntity):
         return self._status() is not None
 
 
-class SharesightUnconfirmedTransactions(CoordinatorEntity, BinarySensorEntity):
+class SharesightUnconfirmedTransactions(SharesightBaseEntity, BinarySensorEntity):
     """On when the portfolio has unconfirmed transactions awaiting review."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
-    _attr_icon = "mdi:alert-circle-outline"
+    _attr_translation_key = "has_unconfirmed_transactions"
 
     def __init__(self, coordinator, portfolio_id, edge):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}Has Unconfirmed Transactions"
+        super().__init__(coordinator, portfolio_id, edge)
         self._attr_unique_id = f"{portfolio_id}_unconfirmed_transactions_problem_{APP_VERSION}"
         self.entity_id = f"binary_sensor.sharesight_unconfirmed_transactions_{portfolio_id}"
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_portfolio")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Portfolio",
-            name=f"Sharesight{edge_name}Portfolio {portfolio_id}",
+        self._attr_device_info = self._service_device_info(
+            "portfolio", f"Portfolio {portfolio_id}", "Portfolio"
         )
 
     def _count(self) -> int:
@@ -276,30 +245,20 @@ class SharesightUnconfirmedTransactions(CoordinatorEntity, BinarySensorEntity):
         return bool(self.coordinator.data)
 
 
-class SharesightDividendImminent(CoordinatorEntity, BinarySensorEntity):
+class SharesightDividendImminent(SharesightBaseEntity, BinarySensorEntity):
     """On when a held instrument goes ex-dividend within the next few days."""
 
-    _attr_icon = "mdi:calendar-alert"
+    _attr_translation_key = "dividend_imminent"
 
     # Ex-date lead time (days) that counts as "imminent".
     _IMMINENT_DAYS = 3
 
     def __init__(self, coordinator, portfolio_id, edge):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}Dividend Imminent"
+        super().__init__(coordinator, portfolio_id, edge)
         self._attr_unique_id = f"{portfolio_id}_dividend_imminent_{APP_VERSION}"
         self.entity_id = f"binary_sensor.sharesight_dividend_imminent_{portfolio_id}"
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_income")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Income",
-            name=f"Sharesight{edge_name}Income",
+        self._attr_device_info = self._service_device_info(
+            "income", "Income", "Income"
         )
 
     def _income_report(self) -> dict | None:
@@ -330,7 +289,7 @@ class SharesightDividendImminent(CoordinatorEntity, BinarySensorEntity):
         return self._income_report() is not None
 
 
-class SharesightApiDegraded(CoordinatorEntity, BinarySensorEntity):
+class SharesightApiDegraded(SharesightBaseEntity, BinarySensorEntity):
     """On while the Sharesight API is rejecting us (global cooldown/lockout).
 
     Reads the coordinator's ``_lockout_until`` deadline, which is set when the
@@ -340,24 +299,14 @@ class SharesightApiDegraded(CoordinatorEntity, BinarySensorEntity):
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_icon = "mdi:cloud-alert"
+    _attr_translation_key = "api_degraded"
 
     def __init__(self, coordinator, portfolio_id, edge):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}API Degraded"
+        super().__init__(coordinator, portfolio_id, edge)
         self._attr_unique_id = f"{portfolio_id}_api_degraded_{APP_VERSION}"
         self.entity_id = f"binary_sensor.sharesight_api_degraded_{portfolio_id}"
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_portfolio")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Portfolio",
-            name=f"Sharesight{edge_name}Portfolio {portfolio_id}",
+        self._attr_device_info = self._service_device_info(
+            "portfolio", f"Portfolio {portfolio_id}", "Portfolio"
         )
 
     @property

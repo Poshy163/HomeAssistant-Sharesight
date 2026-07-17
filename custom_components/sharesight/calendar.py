@@ -14,14 +14,13 @@ from datetime import date, datetime, timedelta
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import APP_VERSION, DOMAIN
+from .const import APP_VERSION
 from .coordinator import SharesightCoordinator
 from .data import SharesightConfigEntry
+from .entity import SharesightBaseEntity
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -86,30 +85,21 @@ async def async_setup_entry(
     )
 
 
-class SharesightDividendCalendar(CoordinatorEntity, CalendarEntity):
+class SharesightDividendCalendar(SharesightBaseEntity, CalendarEntity):
     """Calendar of received and announced dividends for the portfolio."""
 
     _attr_icon = "mdi:hand-coin"
+    _attr_translation_key = "dividends"
 
     def __init__(self, coordinator, portfolio_id, edge, currency):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
+        super().__init__(coordinator, portfolio_id, edge)
         self._currency = currency
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}Dividends"
         self._attr_unique_id = f"{portfolio_id}_dividend_calendar_{APP_VERSION}"
         self.entity_id = f"calendar.sharesight_dividends_{portfolio_id}"
         # Attach to the existing Income device (same identifiers as the
         # income sensors in sensor.py).
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_income")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Income",
-            name=f"Sharesight{edge_name}Income",
+        self._attr_device_info = self._service_device_info(
+            "income", "Income", "Income"
         )
 
     def _build_events(self) -> list[CalendarEvent]:

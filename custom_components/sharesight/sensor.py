@@ -1,11 +1,10 @@
 from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.components.sensor import (
     SensorEntity
 )
-from .const import APP_VERSION, DOMAIN
+from .const import APP_VERSION
 from .data import SharesightConfigEntry
 import logging
 from time import monotonic
@@ -31,8 +30,8 @@ from .enum import (
     LABEL_SENSOR_DESCRIPTIONS,
 )
 from . import analytics
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import SharesightCoordinator
+from .entity import SharesightBaseEntity
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -947,12 +946,11 @@ async def async_setup_entry(
     entry.async_on_unload(coordinator.async_add_listener(update_sensors))
 
 
-class SharesightSensor(CoordinatorEntity, SensorEntity):
+class SharesightSensor(SharesightBaseEntity, SensorEntity):
     def __init__(self, sensor, entry, coordinator, currency, portfolio_id, edge, index=0, local_name="", display_name=""):
-        super().__init__(coordinator)
+        super().__init__(coordinator, portfolio_id, edge)
         self._state_class = sensor.state_class
         self._coordinator = coordinator
-        self._portfolio_id = portfolio_id
         self._entity_category = sensor.entity_category
         # Use display_name if provided, otherwise use sensor.name
         self._name = display_name if display_name else str(sensor.name)
@@ -967,6 +965,27 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         self._device_group = getattr(sensor, 'device_group', 'portfolio')
         self._local_name = local_name
         self._currency_code = currency
+
+        # Modern HA naming: the display name is the device name plus this
+        # description's translated entity name.  entity_id is still hand-assigned
+        # below (slug of self._name), so switching to translations renames no
+        # existing entity.  Per-item families that share one device with their
+        # siblings (FX rates, market hours, watchlist instruments, labels) carry
+        # the varying item in the name through a per-entity placeholder; the
+        # per-item-device families (market/cash/holding) need none because their
+        # own device already names the item.
+        self._attr_translation_key = sensor.translation_key
+        if self._device_group == "fx":
+            self._attr_translation_placeholders = {
+                "code": local_name,
+                "base": self._currency_code,
+            }
+        elif self._device_group == "market_hours":
+            self._attr_translation_placeholders = {"market": local_name}
+        elif self._sub_key == "watchlist_instrument":
+            self._attr_translation_placeholders = {"code": local_name}
+        elif self._sub_key == "label_allocation":
+            self._attr_translation_placeholders = {"label": local_name}
 
         # Propagate entity_registry_enabled_default from description
         if hasattr(sensor, 'entity_registry_enabled_default') and not sensor.entity_registry_enabled_default:
@@ -993,14 +1012,12 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
         base_entity_id = f"{slug}_{self._portfolio_id}"
         self.entity_id = f"sensor.{base_entity_id}"
 
-        if edge:
-            edge_name = " Edge "
-            edge_url = "edge-"
-        else:
-            edge_name = " "
-            edge_url = ""
-
-        base_config_url = f"https://{edge_url}portfolio.sharesight.com/portfolios/{self._portfolio_id}"
+        # edge_name / base_model mirror the base class's edge infix and are
+        # consumed unchanged by the device_group_config table and the dynamic
+        # market/cash/holding branches below.  The configuration URL now comes
+        # from the base class (self._make_device_info), so the local edge_url /
+        # base_config_url are no longer needed here.
+        edge_name = self._edge_name
         base_model = f"Sharesight{edge_name}API"
 
         # Device group labels and identifiers for separate HA devices
@@ -1130,12 +1147,9 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
             device_name = cfg["name"]
             device_model = cfg["model"]
 
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, device_id)},
-            configuration_url=base_config_url,
-            model=device_model,
-            name=device_name)
+        self._attr_device_info = self._make_device_info(
+            identifier=device_id, name=device_name, model=device_model
+        )
 
         try:
             if self._extension_key == "Extension":
@@ -2717,9 +2731,11 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.debug("Error building attributes for '%s': %s: %s", self._key, type(e).__name__, e)
             return None
 
-    @property
-    def name(self):
-        return self._name
+    # No ``name`` property: the display name now comes from HA's translation
+    # machinery (has_entity_name + the description's translation_key, plus any
+    # per-entity translation_placeholders set in __init__).  ``self._name`` is
+    # still used above solely to derive the hand-assigned entity_id slug, so
+    # entity_ids are unchanged.
 
     @property
     def state_class(self):

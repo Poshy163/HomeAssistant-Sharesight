@@ -29,6 +29,24 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 
 ---
 
+## Upgrading to 2.0
+
+**Version 2.0 modernises how devices and entities are presented in Home Assistant. Your data, history and automations are preserved — only display names and device layout change.**
+
+- **Entity IDs are unchanged.** Every `sensor.…`, `binary_sensor.…`, `button.…`, `event.…` and `calendar.…` entity keeps the exact ID it had on 1.9.x, so dashboards, automations, templates and long-term statistics keep working with no edits. Only the human-readable *friendly names* change.
+- **Names now derive from device + entity.** Entities use Home Assistant's modern naming: the displayed name is the **device name plus the entity name** (e.g. the *Sharesight Portfolio 123* device's value sensor now reads as "Sharesight Portfolio 123 Portfolio value"). This makes names consistent and translatable, and is why friendly names look different after upgrading even though the entity IDs did not move.
+- **Nested device tree.** The per-category devices (Daily Performance, Holdings, Income, each market, each holding, Watchlist, Analytics, …) now nest **under the portfolio hub device** via Home Assistant's *via_device* link. Open the portfolio device and you'll see the whole fleet as a tree instead of ~25 flat, separately-listed devices.
+- **Diagnostics categorisation.** Low-signal metadata sensors (portfolio ID, update interval, access level, price-updated timestamps, "return is annualised", …) are now tagged as **Diagnostic**. They move into the *Diagnostic* section of their device and out of the main sensor list — they remain fully available and recordable.
+- **A few niche entities ship disabled by default.** To cut first-run clutter, a handful of rarely-needed entities are now **disabled by default**. Nothing you already rely on is switched off — this only affects new/niche entities. To enable one: **Settings → Devices & Services → Sharesight → the device → the entity → the gear (Settings) icon → toggle _Enabled_ → Update** (or use the device page's "_+N entities not shown_" link). The entity keeps its stable ID once enabled.
+
+No reconfiguration is required: update, restart Home Assistant, and the devices re-parent and rename themselves on the next load. Because this changes displayed names and device organisation, it ships as a **major** version bump (2.0.0).
+
+### Deleting stale devices
+
+When you sell out of a holding, exit a market, or close a cash account, its per-item device is no longer refreshed. 2.0 lets you **delete such a device from the UI** (its three-dot menu → **Delete**) once it no longer appears in your current portfolio data. The portfolio hub and the fixed report/container devices can't be deleted this way, and a device that is still live (or that can't be confirmed stale because the integration is mid-refresh) is kept — so you can't accidentally remove an active device.
+
+---
+
 ## Prerequisites
 
 Before installing, you need to create an API application on Sharesight. **Note:** Sharesight API access is only available on paid plans (Standard, Premium or Business) and may need to be enabled for your account — if you can't create an API application or authorization fails, email `api@sharesight.com` to request access.

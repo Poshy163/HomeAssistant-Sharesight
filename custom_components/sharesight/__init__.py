@@ -6,7 +6,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.helpers import config_entry_oauth2_flow, device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from SharesightAPI.SharesightAPI import SharesightAPI
@@ -22,6 +22,7 @@ from .const import (
     CONF_USE_EDGE,
     DEFAULT_ACCOUNT_TYPE,
     DEFAULT_ENABLE_LTS_BACKFILL,
+    DOMAIN,
     PLATFORMS,
     TOKEN_URL,
 )
@@ -141,6 +142,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -
     )
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
+
+    # Register the portfolio hub device up front so the nested device tree is
+    # deterministic. Sub-devices nest under it via DeviceInfo.via_device, but HA
+    # resolves via_device only when the referencing device is created and never
+    # backfills a link to a hub registered later. Platforms are set up
+    # concurrently, so a sub-device (Account, Market Hours, ...) can otherwise
+    # register before the sensor platform builds the hub — leaving it unnested
+    # and logging a spurious "non existing via_device" warning. Name/model/URL
+    # mirror the "portfolio" device the sensor/button/event/binary_sensor
+    # platforms build, so async_get_or_create updates that same device rather
+    # than creating a second one.
+    edge = account_type == ACCOUNT_DEVELOPER
+    edge_infix = " Edge " if edge else " "
+    edge_host = "edge-" if edge else ""
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{portfolio_id}_portfolio")},
+        entry_type=dr.DeviceEntryType.SERVICE,
+        name=f"Sharesight{edge_infix}Portfolio {portfolio_id}",
+        model=f"Sharesight{edge_infix}API - Portfolio",
+        configuration_url=(
+            f"https://{edge_host}portfolio.sharesight.com/portfolios/{portfolio_id}"
+        ),
+    )
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Backfill the portfolio-value long-term statistics from inception once at
@@ -192,3 +218,112 @@ async def update_listener(hass: HomeAssistant, entry: SharesightConfigEntry) -> 
 
     runtime_data.last_options = new_options
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+# Fixed device groups: the portfolio hub, the portfolio-wide report devices, and
+# the single container devices that hold the dynamic per-item families. These
+# exist for the life of a configured portfolio, so async_remove_config_entry_device
+# always refuses them — only the per-item market/cash/holding devices are ever
+# prunable. Mirrors sensor.py's device_group_config keys; keep in sync if a new
+# fixed group is added there.
+_STATIC_DEVICE_GROUPS = frozenset(
+    {
+        "portfolio", "daily", "weekly", "financial_year", "holdings", "income",
+        "diversity", "trades", "contributions", "monthly", "ytd", "tax",
+        "benchmark", "sector", "account", "watchlist", "fx", "market_hours",
+        "analytics", "totals", "labels",
+    }
+)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: SharesightConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow the user to delete a stale Sharesight device from the UI.
+
+    Returning True lets Home Assistant remove the device; False refuses it.
+
+    Only the per-item market / cash / holding devices are ever prunable, and
+    only when the item they represent is absent from the CURRENT coordinator
+    data (a holding sold, a market exited, a cash account closed). The portfolio
+    hub and every fixed report/container device (including the single Watchlist,
+    Labels, Exchange Rates and Market Hours devices, whose per-item entities are
+    grouped inside one device) are always refused.
+
+    Conservative by design: this supports *user-initiated* deletion only. The
+    integration never auto-prunes on data absence, because a transient API gap
+    routinely omits items for a poll or two; auto-deleting on that would orphan
+    live devices. When the coordinator has no data (entry unloaded / mid-outage)
+    staleness cannot be proven, so every device is refused — a deliberately safe
+    default the user can retry once data is back.
+    """
+    # Deferred import: reuse sensor.py's exact symbol resolution so a
+    # reconstructed holding identifier matches byte-for-byte, without a
+    # module-load import cycle (sensor imports from this package at import time).
+    from .sensor import _get_holding_symbol
+
+    runtime_data = getattr(config_entry, "runtime_data", None)
+    portfolio_id = config_entry.data.get(CONF_PORTFOLIO_ID)
+    coordinator = runtime_data.coordinator if runtime_data is not None else None
+    data = coordinator.data if coordinator is not None else None
+
+    if portfolio_id is None or not isinstance(data, dict):
+        return False
+
+    prefix = f"{portfolio_id}_"
+
+    report = data.get("report")
+    if not isinstance(report, dict):
+        report = {}
+    live_markets = {
+        market.get("group_name", "Unknown Market")
+        for market in report.get("sub_totals", [])
+        if isinstance(market, dict)
+    }
+    live_cash = {
+        cash.get("name", "Unknown Cash Account")
+        for cash in report.get("cash_accounts", [])
+        if isinstance(cash, dict)
+    }
+    holdings = data.get("holdings")
+    holdings_list = holdings.get("holdings", []) if isinstance(holdings, dict) else []
+    live_holdings = {
+        symbol
+        for holding in holdings_list
+        if isinstance(holding, dict) and (symbol := _get_holding_symbol(holding))
+    }
+
+    # A device may carry several identifiers; refuse if ANY of ours is a fixed or
+    # still-live device. Remove only when every Sharesight identifier on the
+    # device resolves to a stale per-item device.
+    saw_removable = False
+    for domain, identifier in device_entry.identifiers:
+        if domain != DOMAIN:
+            continue
+        if not identifier.startswith(prefix):
+            # Foreign / malformed identifier under our domain — keep it.
+            return False
+        suffix = identifier[len(prefix):]
+
+        # Fixed devices, checked first: "market_hours" would otherwise be
+        # misread as a per-market device named "hours".
+        if suffix in _STATIC_DEVICE_GROUPS:
+            return False
+
+        if suffix.startswith("market_"):
+            stale = suffix[len("market_"):] not in live_markets
+        elif suffix.startswith("cash_"):
+            stale = suffix[len("cash_"):] not in live_cash
+        elif suffix.startswith("holding_"):
+            stale = suffix[len("holding_"):] not in live_holdings
+        else:
+            # Unrecognised per-portfolio device — keep it to be safe.
+            return False
+
+        if not stale:
+            return False
+        saw_removable = True
+
+    return saw_removable

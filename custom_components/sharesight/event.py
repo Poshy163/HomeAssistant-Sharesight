@@ -14,13 +14,12 @@ import logging
 
 from homeassistant.components.event import EventEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import APP_VERSION, DOMAIN
+from .const import APP_VERSION
 from .coordinator import SharesightCoordinator
 from .data import SharesightConfigEntry
+from .entity import SharesightBaseEntity
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -57,34 +56,24 @@ async def async_setup_entry(
     )
 
 
-class SharesightActivityEvent(CoordinatorEntity, EventEntity):
+class SharesightActivityEvent(SharesightBaseEntity, EventEntity):
     """Fires portfolio activity events staged by the coordinator diff."""
 
-    _attr_icon = "mdi:bell-ring"
     _attr_event_types = EVENT_TYPES
+    _attr_translation_key = "activity"
 
     def __init__(self, coordinator, portfolio_id, edge):
-        super().__init__(coordinator)
-        self._portfolio_id = portfolio_id
+        super().__init__(coordinator, portfolio_id, edge)
         # Sequence id of the last activity batch fired, so a keep-last-good
         # cached coordinator return (same self.data, re-notified listeners)
         # does not replay a batch that was already emitted.
         self._last_fired_seq: int | None = None
-        edge_name = " Edge " if edge else " "
-        edge_url = "edge-" if edge else ""
-        self._attr_name = f"Sharesight{edge_name}Activity"
         self._attr_unique_id = f"{portfolio_id}_activity_events_{APP_VERSION}"
         self.entity_id = f"event.sharesight_activity_{portfolio_id}"
         # Attach to the Portfolio device (same identifiers as the portfolio
         # sensors in sensor.py).
-        self._attr_device_info = DeviceInfo(
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, f"{portfolio_id}_portfolio")},
-            configuration_url=(
-                f"https://{edge_url}portfolio.sharesight.com/portfolios/{portfolio_id}"
-            ),
-            model=f"Sharesight{edge_name}API - Portfolio",
-            name=f"Sharesight{edge_name}Portfolio {portfolio_id}",
+        self._attr_device_info = self._service_device_info(
+            "portfolio", f"Portfolio {portfolio_id}", "Portfolio"
         )
 
     @callback

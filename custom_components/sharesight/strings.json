@@ -41,7 +41,7 @@
             "already_in_progress": "A Sharesight configuration is already in progress.",
             "oauth_error": "OAuth authentication failed. Please try again.",
             "oauth_unauthorized": "OAuth authorisation was denied. Please try again.",
-            "missing_credentials": "No application credentials configured. Please add Sharesight credentials first via Settings \u2192 Devices & Services \u2192 Application Credentials.",
+            "missing_credentials": "No application credentials configured. Please add Sharesight credentials first via Settings → Devices & Services → Application Credentials.",
             "reauth_successful": "Re-authentication was successful."
         }
     },
@@ -58,6 +58,1035 @@
                     "scan_interval": "How often Home Assistant polls the Sharesight API for this portfolio. Must be between 60 and 3600 seconds.",
                     "enable_lts_backfill": "On startup, import the full inception-to-today daily portfolio value series into the Portfolio value sensor's statistics. Requires the value-data endpoint to be available for your API access."
                 }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "active_grouping": {
+                "name": "Active Grouping"
+            },
+            "all_time_return_incl_sold": {
+                "name": "All-Time Return (incl. sold)"
+            },
+            "all_time_return_percent_incl_sold": {
+                "name": "All-Time Return Percent (incl. sold)"
+            },
+            "all_time_value_incl_sold": {
+                "name": "All-Time Value (incl. sold)"
+            },
+            "announced_income_unpaid": {
+                "name": "Announced Income Unpaid"
+            },
+            "annualised_return_percent": {
+                "name": "Annualised Return Percent"
+            },
+            "average_buy_value": {
+                "name": "Average Buy Value"
+            },
+            "average_contribution_amount": {
+                "name": "Average Contribution Amount"
+            },
+            "average_dividend_amount": {
+                "name": "Average Dividend Amount"
+            },
+            "average_holding_value": {
+                "name": "Average Holding Value"
+            },
+            "average_sell_value": {
+                "name": "Average Sell Value"
+            },
+            "average_trade_value": {
+                "name": "Average Trade Value"
+            },
+            "average_trades_per_month": {
+                "name": "Average Trades Per Month"
+            },
+            "benchmark_capital_gain_percent": {
+                "name": "Benchmark Capital Gain Percent"
+            },
+            "benchmark_code": {
+                "name": "Benchmark Code"
+            },
+            "benchmark_currency_gain_percent": {
+                "name": "Benchmark Currency Gain Percent"
+            },
+            "benchmark_dividend_gain_percent": {
+                "name": "Benchmark Dividend Gain Percent"
+            },
+            "benchmark_name": {
+                "name": "Benchmark Name"
+            },
+            "benchmark_total_gain_percent": {
+                "name": "Benchmark Total Gain Percent"
+            },
+            "capital_gain": {
+                "name": "Capital gain"
+            },
+            "capital_gain_percent": {
+                "name": "Capital gain percent"
+            },
+            "cash_accounts_count": {
+                "name": "Cash Accounts Count"
+            },
+            "cash_allocation_percent": {
+                "name": "Cash Allocation Percent"
+            },
+            "cash_balance": {
+                "name": "cash balance"
+            },
+            "cash_drag": {
+                "name": "Cash Drag"
+            },
+            "cash_transactions_count": {
+                "name": "Cash Transactions Count"
+            },
+            "cgt_concession_amount_fy": {
+                "name": "CGT Concession Amount FY"
+            },
+            "cgt_discounted_distributions_fy": {
+                "name": "CGT Discounted Distributions FY"
+            },
+            "cgt_long_term_gains_fy": {
+                "name": "CGT Long Term Gains FY"
+            },
+            "cgt_losses_fy": {
+                "name": "CGT Losses FY"
+            },
+            "cgt_non_discounted_distributions_fy": {
+                "name": "CGT Non-Discounted Distributions FY"
+            },
+            "cgt_short_term_gains_fy": {
+                "name": "CGT Short Term Gains FY"
+            },
+            "cgt_taxable_gain_fy": {
+                "name": "CGT Taxable Gain FY"
+            },
+            "concentration_hhi": {
+                "name": "Concentration (HHI)"
+            },
+            "contribution_count": {
+                "name": "Contribution Count"
+            },
+            "cost_basis": {
+                "name": "Cost Basis"
+            },
+            "currency_gain": {
+                "name": "Currency gain"
+            },
+            "currency_gain_percent": {
+                "name": "Currency gain percent"
+            },
+            "daily_capital_gain": {
+                "name": "Daily Capital Gain"
+            },
+            "daily_capital_gain_percent": {
+                "name": "Daily Capital Gain Percent"
+            },
+            "daily_change_amount": {
+                "name": "Daily Change Amount"
+            },
+            "daily_change_percent": {
+                "name": "Daily Change Percent"
+            },
+            "daily_currency_gain": {
+                "name": "Daily Currency Gain"
+            },
+            "daily_currency_gain_percent": {
+                "name": "Daily Currency Gain Percent"
+            },
+            "daily_dividend_gain": {
+                "name": "Daily Dividend Gain"
+            },
+            "daily_dividend_gain_percent": {
+                "name": "Daily Dividend Gain Percent"
+            },
+            "daily_end_value": {
+                "name": "Daily End Value"
+            },
+            "daily_start_value": {
+                "name": "Daily Start Value"
+            },
+            "days_until_next_dividend": {
+                "name": "Days Until Next Dividend"
+            },
+            "diversity_group_count": {
+                "name": "Diversity Group Count"
+            },
+            "dividend_gain": {
+                "name": "Dividend gain"
+            },
+            "dividend_gain_percent": {
+                "name": "Dividend gain percent"
+            },
+            "dividend_yield_percent": {
+                "name": "Dividend Yield Percent"
+            },
+            "dividend_yield_ttm_percent": {
+                "name": "Dividend Yield TTM Percent"
+            },
+            "dividends_last_12_months": {
+                "name": "Dividends Last 12 Months"
+            },
+            "dividends_last_30_days": {
+                "name": "Dividends Last 30 Days"
+            },
+            "dividends_previous_year": {
+                "name": "Dividends Previous Year"
+            },
+            "dividends_received_cash": {
+                "name": "Dividends Received (Cash)"
+            },
+            "dividends_ytd": {
+                "name": "Dividends YTD"
+            },
+            "drp_reinvestment_count": {
+                "name": "DRP Reinvestment Count"
+            },
+            "effective_number_of_holdings": {
+                "name": "Effective Number of Holdings"
+            },
+            "endpoints_on_cooldown": {
+                "name": "Endpoints on Cooldown"
+            },
+            "equity_allocation_percent": {
+                "name": "Equity Allocation Percent"
+            },
+            "equity_value": {
+                "name": "Equity Value"
+            },
+            "financial_year_annualised_return_percent": {
+                "name": "Financial Year Annualised Return Percent"
+            },
+            "financial_year_capital_gain": {
+                "name": "Financial Year Capital Gain"
+            },
+            "financial_year_capital_gain_percent": {
+                "name": "Financial Year Capital Gain Percent"
+            },
+            "financial_year_change_amount": {
+                "name": "Financial Year Change Amount"
+            },
+            "financial_year_change_percent": {
+                "name": "Financial Year Change Percent"
+            },
+            "financial_year_currency_gain": {
+                "name": "Financial Year Currency Gain"
+            },
+            "financial_year_currency_gain_percent": {
+                "name": "Financial Year Currency Gain Percent"
+            },
+            "financial_year_dividend_gain": {
+                "name": "Financial Year Dividend Gain"
+            },
+            "financial_year_dividend_gain_percent": {
+                "name": "Financial Year Dividend Gain Percent"
+            },
+            "financial_year_end": {
+                "name": "Financial Year End"
+            },
+            "financial_year_end_value": {
+                "name": "Financial Year End Value"
+            },
+            "financial_year_start_value": {
+                "name": "Financial Year Start Value"
+            },
+            "foreign_currency_exposure": {
+                "name": "Foreign Currency Exposure"
+            },
+            "forward_annual_income": {
+                "name": "Forward Annual Income"
+            },
+            "forward_dividend_yield": {
+                "name": "Forward Dividend Yield"
+            },
+            "fx_rate": {
+                "name": "{code} to {base} rate"
+            },
+            "holding_annualised_return_percent": {
+                "name": "annualised return percent"
+            },
+            "holding_brokerage_paid": {
+                "name": "brokerage paid"
+            },
+            "holding_capital_gain": {
+                "name": "capital gain"
+            },
+            "holding_capital_gain_percent": {
+                "name": "capital gain percent"
+            },
+            "holding_cost_base": {
+                "name": "cost base"
+            },
+            "holding_currency_gain": {
+                "name": "currency gain"
+            },
+            "holding_currency_gain_percent": {
+                "name": "currency gain percent"
+            },
+            "holding_dividend_count": {
+                "name": "dividend count"
+            },
+            "holding_eps": {
+                "name": "eps"
+            },
+            "holding_franking_ttm": {
+                "name": "franking ttm"
+            },
+            "holding_industry": {
+                "name": "industry"
+            },
+            "holding_instrument_price": {
+                "name": "instrument price"
+            },
+            "holding_instrument_type": {
+                "name": "instrument type"
+            },
+            "holding_last_dividend_amount": {
+                "name": "last dividend amount"
+            },
+            "holding_last_dividend_date": {
+                "name": "last dividend date"
+            },
+            "holding_last_trade_date": {
+                "name": "last trade date"
+            },
+            "holding_net_shares": {
+                "name": "net shares"
+            },
+            "holding_nta": {
+                "name": "nta"
+            },
+            "holding_payout_gain": {
+                "name": "payout gain"
+            },
+            "holding_payout_gain_percent": {
+                "name": "payout gain percent"
+            },
+            "holding_pe_ratio": {
+                "name": "pe ratio"
+            },
+            "holding_price_updated_at": {
+                "name": "price updated at"
+            },
+            "holding_quantity": {
+                "name": "quantity"
+            },
+            "holding_sector": {
+                "name": "sector"
+            },
+            "holding_total_gain": {
+                "name": "total gain"
+            },
+            "holding_total_gain_percent": {
+                "name": "total gain percent"
+            },
+            "holding_trade_count": {
+                "name": "trade count"
+            },
+            "holding_ttm_income": {
+                "name": "ttm income"
+            },
+            "holding_value": {
+                "name": "value"
+            },
+            "holding_vwap_buy_price": {
+                "name": "vwap buy price"
+            },
+            "holding_yield_on_cost": {
+                "name": "yield on cost"
+            },
+            "income_next_30_days": {
+                "name": "Income Next 30 Days"
+            },
+            "income_next_90_days": {
+                "name": "Income Next 90 Days"
+            },
+            "industry_count": {
+                "name": "Industry Count"
+            },
+            "label_percent": {
+                "name": "{label} percent"
+            },
+            "label_value": {
+                "name": "{label} value"
+            },
+            "largest_dividend_amount": {
+                "name": "Largest Dividend Amount"
+            },
+            "largest_dividend_symbol": {
+                "name": "Largest Dividend Symbol"
+            },
+            "largest_holding_percent": {
+                "name": "Largest Holding Percent"
+            },
+            "largest_holding_symbol": {
+                "name": "Largest Holding Symbol"
+            },
+            "largest_holding_value": {
+                "name": "Largest Holding Value"
+            },
+            "largest_market_name": {
+                "name": "Largest Market Name"
+            },
+            "largest_market_percent": {
+                "name": "Largest Market Percent"
+            },
+            "largest_market_value": {
+                "name": "Largest Market Value"
+            },
+            "largest_trade_symbol": {
+                "name": "Largest Trade Symbol"
+            },
+            "largest_trade_value": {
+                "name": "Largest Trade Value"
+            },
+            "last_buy_date": {
+                "name": "Last Buy Date"
+            },
+            "last_buy_symbol": {
+                "name": "Last Buy Symbol"
+            },
+            "last_buy_value": {
+                "name": "Last Buy Value"
+            },
+            "last_cash_transaction_amount": {
+                "name": "Last Cash Transaction Amount"
+            },
+            "last_cash_transaction_date": {
+                "name": "Last Cash Transaction Date"
+            },
+            "last_contribution_amount": {
+                "name": "Last Contribution Amount"
+            },
+            "last_contribution_date": {
+                "name": "Last Contribution Date"
+            },
+            "last_dividend_date": {
+                "name": "Last Dividend Date"
+            },
+            "last_sell_date": {
+                "name": "Last Sell Date"
+            },
+            "last_sell_symbol": {
+                "name": "Last Sell Symbol"
+            },
+            "last_sell_value": {
+                "name": "Last Sell Value"
+            },
+            "last_successful_update": {
+                "name": "Last Successful Update"
+            },
+            "last_trade_date": {
+                "name": "Last Trade Date"
+            },
+            "last_trade_symbol": {
+                "name": "Last Trade Symbol"
+            },
+            "last_trade_type": {
+                "name": "Last Trade Type"
+            },
+            "last_trade_value": {
+                "name": "Last Trade Value"
+            },
+            "latest_news": {
+                "name": "Latest News"
+            },
+            "market_annualised_return_percent": {
+                "name": "annualised return percent"
+            },
+            "market_capital_gain": {
+                "name": "capital gain"
+            },
+            "market_capital_gain_percent": {
+                "name": "capital gain percent"
+            },
+            "market_cost_base": {
+                "name": "cost base"
+            },
+            "market_count": {
+                "name": "Market Count"
+            },
+            "market_currency_gain": {
+                "name": "currency gain"
+            },
+            "market_currency_gain_percent": {
+                "name": "currency gain percent"
+            },
+            "market_holding_count": {
+                "name": "holding count"
+            },
+            "market_hours_next_close": {
+                "name": "{market} next close"
+            },
+            "market_hours_next_open": {
+                "name": "{market} next open"
+            },
+            "market_hours_status": {
+                "name": "{market} status"
+            },
+            "market_payout_gain": {
+                "name": "payout gain"
+            },
+            "market_payout_gain_percent": {
+                "name": "payout gain percent"
+            },
+            "market_total_gain": {
+                "name": "total gain"
+            },
+            "market_total_gain_percent": {
+                "name": "total gain percent"
+            },
+            "market_value": {
+                "name": "value"
+            },
+            "median_holding_value": {
+                "name": "Median Holding Value"
+            },
+            "monthly_annualised_return_percent": {
+                "name": "Monthly Annualised Return Percent"
+            },
+            "monthly_capital_gain": {
+                "name": "Monthly Capital Gain"
+            },
+            "monthly_capital_gain_percent": {
+                "name": "Monthly Capital Gain Percent"
+            },
+            "monthly_change_amount": {
+                "name": "Monthly Change Amount"
+            },
+            "monthly_change_percent": {
+                "name": "Monthly Change Percent"
+            },
+            "monthly_currency_gain": {
+                "name": "Monthly Currency Gain"
+            },
+            "monthly_currency_gain_percent": {
+                "name": "Monthly Currency Gain Percent"
+            },
+            "monthly_dividend_gain": {
+                "name": "Monthly Dividend Gain"
+            },
+            "monthly_dividend_gain_percent": {
+                "name": "Monthly Dividend Gain Percent"
+            },
+            "monthly_end_value": {
+                "name": "Monthly End Value"
+            },
+            "monthly_start_value": {
+                "name": "Monthly Start Value"
+            },
+            "most_traded_symbol": {
+                "name": "Most Traded Symbol"
+            },
+            "negative_holdings_count": {
+                "name": "Negative Holdings Count"
+            },
+            "negative_holdings_percent": {
+                "name": "Negative Holdings Percent"
+            },
+            "net_contributions": {
+                "name": "Net Contributions"
+            },
+            "net_investment_gain": {
+                "name": "Net Investment Gain"
+            },
+            "net_investment_gain_percent": {
+                "name": "Net Investment Gain Percent"
+            },
+            "net_trade_flow": {
+                "name": "Net Trade Flow"
+            },
+            "next_dividend_amount": {
+                "name": "Next Dividend Amount"
+            },
+            "next_dividend_date": {
+                "name": "Next Dividend Date"
+            },
+            "next_dividend_symbol": {
+                "name": "Next Dividend Symbol"
+            },
+            "number_of_dividends": {
+                "name": "Number of Dividends"
+            },
+            "number_of_holdings": {
+                "name": "Number of Holdings"
+            },
+            "performance_calculation_method": {
+                "name": "Performance Calculation Method"
+            },
+            "portfolio_access_level": {
+                "name": "Portfolio Access Level"
+            },
+            "portfolio_age_days": {
+                "name": "Portfolio Age (days)"
+            },
+            "portfolio_country": {
+                "name": "Portfolio Country"
+            },
+            "portfolio_excess_return_vs_benchmark": {
+                "name": "Portfolio Excess Return vs Benchmark"
+            },
+            "portfolio_id": {
+                "name": "Portfolio ID"
+            },
+            "portfolio_inception_date": {
+                "name": "Portfolio Inception Date"
+            },
+            "portfolio_name": {
+                "name": "Portfolio Name"
+            },
+            "portfolio_owner": {
+                "name": "Portfolio Owner"
+            },
+            "portfolio_start_value": {
+                "name": "Portfolio Start Value"
+            },
+            "portfolio_timezone": {
+                "name": "Portfolio Timezone"
+            },
+            "portfolio_value": {
+                "name": "Portfolio value"
+            },
+            "positive_holdings_count": {
+                "name": "Positive Holdings Count"
+            },
+            "positive_holdings_percent": {
+                "name": "Positive Holdings Percent"
+            },
+            "primary_currency": {
+                "name": "Primary Currency"
+            },
+            "report_combined": {
+                "name": "Report Combined"
+            },
+            "report_currency": {
+                "name": "Report Currency"
+            },
+            "report_grouping": {
+                "name": "Report Grouping"
+            },
+            "report_includes_sold_shares": {
+                "name": "Report Includes Sold Shares"
+            },
+            "return_is_annualised": {
+                "name": "Return Is Annualised"
+            },
+            "sector_count": {
+                "name": "Sector Count"
+            },
+            "sharesight_account_name": {
+                "name": "Account Name"
+            },
+            "sharesight_member_since": {
+                "name": "Member Since"
+            },
+            "sharesight_plan": {
+                "name": "Plan"
+            },
+            "sharesight_plan_code": {
+                "name": "Plan Code"
+            },
+            "sharesight_subscription_status": {
+                "name": "Subscription Status"
+            },
+            "smallest_holding_symbol": {
+                "name": "Smallest Holding Symbol"
+            },
+            "smallest_holding_value": {
+                "name": "Smallest Holding Value"
+            },
+            "stale_price_count": {
+                "name": "Stale Price Count"
+            },
+            "top_3_holdings_percent": {
+                "name": "Top 3 Holdings Percent"
+            },
+            "top_3_markets_percent": {
+                "name": "Top 3 Markets Percent"
+            },
+            "top_3_sectors_percent": {
+                "name": "Top 3 Sectors Percent"
+            },
+            "top_5_holdings_percent": {
+                "name": "Top 5 Holdings Percent"
+            },
+            "top_5_markets_percent": {
+                "name": "Top 5 Markets Percent"
+            },
+            "top_5_sectors_percent": {
+                "name": "Top 5 Sectors Percent"
+            },
+            "top_gain_amount": {
+                "name": "Top Gain Amount"
+            },
+            "top_gain_percent": {
+                "name": "Top Gain Percent"
+            },
+            "top_gain_symbol": {
+                "name": "Top Gain Symbol"
+            },
+            "top_industry_1_name": {
+                "name": "Top Industry 1 Name"
+            },
+            "top_industry_1_percent": {
+                "name": "Top Industry 1 Percent"
+            },
+            "top_industry_2_name": {
+                "name": "Top Industry 2 Name"
+            },
+            "top_industry_2_percent": {
+                "name": "Top Industry 2 Percent"
+            },
+            "top_market_1_name": {
+                "name": "Top Market 1 Name"
+            },
+            "top_market_1_percent": {
+                "name": "Top Market 1 Percent"
+            },
+            "top_market_1_value": {
+                "name": "Top Market 1 Value"
+            },
+            "top_market_2_name": {
+                "name": "Top Market 2 Name"
+            },
+            "top_market_2_percent": {
+                "name": "Top Market 2 Percent"
+            },
+            "top_market_2_value": {
+                "name": "Top Market 2 Value"
+            },
+            "top_market_3_name": {
+                "name": "Top Market 3 Name"
+            },
+            "top_market_3_percent": {
+                "name": "Top Market 3 Percent"
+            },
+            "top_market_3_value": {
+                "name": "Top Market 3 Value"
+            },
+            "top_market_4_name": {
+                "name": "Top Market 4 Name"
+            },
+            "top_market_4_percent": {
+                "name": "Top Market 4 Percent"
+            },
+            "top_market_4_value": {
+                "name": "Top Market 4 Value"
+            },
+            "top_market_5_name": {
+                "name": "Top Market 5 Name"
+            },
+            "top_market_5_percent": {
+                "name": "Top Market 5 Percent"
+            },
+            "top_market_5_value": {
+                "name": "Top Market 5 Value"
+            },
+            "top_sector_1_name": {
+                "name": "Top Sector 1 Name"
+            },
+            "top_sector_1_percent": {
+                "name": "Top Sector 1 Percent"
+            },
+            "top_sector_1_value": {
+                "name": "Top Sector 1 Value"
+            },
+            "top_sector_2_name": {
+                "name": "Top Sector 2 Name"
+            },
+            "top_sector_2_percent": {
+                "name": "Top Sector 2 Percent"
+            },
+            "top_sector_2_value": {
+                "name": "Top Sector 2 Value"
+            },
+            "top_sector_3_name": {
+                "name": "Top Sector 3 Name"
+            },
+            "top_sector_3_percent": {
+                "name": "Top Sector 3 Percent"
+            },
+            "top_sector_3_value": {
+                "name": "Top Sector 3 Value"
+            },
+            "top_sector_4_name": {
+                "name": "Top Sector 4 Name"
+            },
+            "top_sector_4_percent": {
+                "name": "Top Sector 4 Percent"
+            },
+            "top_sector_4_value": {
+                "name": "Top Sector 4 Value"
+            },
+            "top_sector_5_name": {
+                "name": "Top Sector 5 Name"
+            },
+            "top_sector_5_percent": {
+                "name": "Top Sector 5 Percent"
+            },
+            "top_sector_5_value": {
+                "name": "Top Sector 5 Value"
+            },
+            "total_brokerage": {
+                "name": "Total Brokerage"
+            },
+            "total_buy_trades": {
+                "name": "Total Buy Trades"
+            },
+            "total_buy_value": {
+                "name": "Total Buy Value"
+            },
+            "total_capital_gains_distributions": {
+                "name": "Total Capital Gains Distributions"
+            },
+            "total_cash_value": {
+                "name": "Total Cash Value"
+            },
+            "total_contributions": {
+                "name": "Total Contributions"
+            },
+            "total_dividend_income": {
+                "name": "Total Dividend Income"
+            },
+            "total_foreign_source_income": {
+                "name": "Total Foreign Source Income"
+            },
+            "total_franked_amount": {
+                "name": "Total Franked Amount"
+            },
+            "total_gain": {
+                "name": "Total gain"
+            },
+            "total_gain_percent": {
+                "name": "Total gain percent"
+            },
+            "total_gross_dividend_income": {
+                "name": "Total Gross Dividend Income"
+            },
+            "total_holdings_gain": {
+                "name": "Total Holdings Gain"
+            },
+            "total_holdings_value": {
+                "name": "Total Holdings Value"
+            },
+            "total_non_resident_withholding_tax": {
+                "name": "Total Non-Resident Withholding Tax"
+            },
+            "total_resident_withholding_tax": {
+                "name": "Total Resident Withholding Tax"
+            },
+            "total_sell_trades": {
+                "name": "Total Sell Trades"
+            },
+            "total_sell_value": {
+                "name": "Total Sell Value"
+            },
+            "total_tax_credits": {
+                "name": "Total Tax Credits"
+            },
+            "total_trades": {
+                "name": "Total Trades"
+            },
+            "total_unfranked_amount": {
+                "name": "Total Unfranked Amount"
+            },
+            "total_withdrawals": {
+                "name": "Total Withdrawals"
+            },
+            "trades_last_30_days": {
+                "name": "Trades Last 30 Days"
+            },
+            "trades_last_7_days": {
+                "name": "Trades Last 7 Days"
+            },
+            "trades_ytd": {
+                "name": "Trades YTD"
+            },
+            "unconfirmed_transactions": {
+                "name": "Unconfirmed Transactions"
+            },
+            "unrealised_cgt_concession_amount": {
+                "name": "Unrealised CGT Concession Amount"
+            },
+            "unrealised_cgt_long_term_gains": {
+                "name": "Unrealised CGT Long Term Gains"
+            },
+            "unrealised_cgt_losses": {
+                "name": "Unrealised CGT Losses"
+            },
+            "unrealised_cgt_short_term_gains": {
+                "name": "Unrealised CGT Short Term Gains"
+            },
+            "unrealised_cgt_taxable_gain": {
+                "name": "Unrealised CGT Taxable Gain"
+            },
+            "unrealised_gain": {
+                "name": "Unrealised Gain"
+            },
+            "unrealised_gain_percent": {
+                "name": "Unrealised Gain Percent"
+            },
+            "upcoming_dividends_count": {
+                "name": "Upcoming Dividends Count"
+            },
+            "update_interval_s": {
+                "name": "Update Interval (s)"
+            },
+            "user_id": {
+                "name": "User ID"
+            },
+            "value_change_30d": {
+                "name": "Value Change 30d"
+            },
+            "value_change_7d": {
+                "name": "Value Change 7d"
+            },
+            "watchlist_average_change_percent": {
+                "name": "Average Change Percent"
+            },
+            "watchlist_count": {
+                "name": "Count"
+            },
+            "watchlist_down_today": {
+                "name": "Down Today"
+            },
+            "watchlist_instrument_day_change_percent": {
+                "name": "{code} day change percent"
+            },
+            "watchlist_instrument_price": {
+                "name": "{code} price"
+            },
+            "watchlist_top_gainer": {
+                "name": "Top Gainer"
+            },
+            "watchlist_top_gainer_percent": {
+                "name": "Top Gainer Percent"
+            },
+            "watchlist_top_loser": {
+                "name": "Top Loser"
+            },
+            "watchlist_top_loser_percent": {
+                "name": "Top Loser Percent"
+            },
+            "watchlist_up_today": {
+                "name": "Up Today"
+            },
+            "weekly_capital_gain": {
+                "name": "Weekly Capital Gain"
+            },
+            "weekly_capital_gain_percent": {
+                "name": "Weekly Capital Gain Percent"
+            },
+            "weekly_change_amount": {
+                "name": "Weekly Change Amount"
+            },
+            "weekly_change_percent": {
+                "name": "Weekly Change Percent"
+            },
+            "weekly_currency_gain": {
+                "name": "Weekly Currency Gain"
+            },
+            "weekly_currency_gain_percent": {
+                "name": "Weekly Currency Gain Percent"
+            },
+            "weekly_dividend_gain": {
+                "name": "Weekly Dividend Gain"
+            },
+            "weekly_dividend_gain_percent": {
+                "name": "Weekly Dividend Gain Percent"
+            },
+            "weekly_end_value": {
+                "name": "Weekly End Value"
+            },
+            "weekly_start_value": {
+                "name": "Weekly Start Value"
+            },
+            "weighted_dividend_yield": {
+                "name": "Weighted Dividend Yield"
+            },
+            "weighted_p_e": {
+                "name": "Weighted P/E"
+            },
+            "withdrawal_count": {
+                "name": "Withdrawal Count"
+            },
+            "worst_gain_amount": {
+                "name": "Worst Gain Amount"
+            },
+            "worst_gain_percent": {
+                "name": "Worst Gain Percent"
+            },
+            "worst_gain_symbol": {
+                "name": "Worst Gain Symbol"
+            },
+            "ytd_annualised_return_percent": {
+                "name": "YTD Annualised Return Percent"
+            },
+            "ytd_capital_gain": {
+                "name": "YTD Capital Gain"
+            },
+            "ytd_capital_gain_percent": {
+                "name": "YTD Capital Gain Percent"
+            },
+            "ytd_change_amount": {
+                "name": "YTD Change Amount"
+            },
+            "ytd_change_percent": {
+                "name": "YTD Change Percent"
+            },
+            "ytd_currency_gain": {
+                "name": "YTD Currency Gain"
+            },
+            "ytd_currency_gain_percent": {
+                "name": "YTD Currency Gain Percent"
+            },
+            "ytd_dividend_gain": {
+                "name": "YTD Dividend Gain"
+            },
+            "ytd_dividend_gain_percent": {
+                "name": "YTD Dividend Gain Percent"
+            },
+            "ytd_end_value": {
+                "name": "YTD End Value"
+            },
+            "ytd_start_value": {
+                "name": "YTD Start Value"
+            }
+        },
+        "binary_sensor": {
+            "any_market_open": {
+                "name": "Any Market Open"
+            },
+            "api_degraded": {
+                "name": "API Degraded"
+            },
+            "dividend_imminent": {
+                "name": "Dividend Imminent"
+            },
+            "has_unconfirmed_transactions": {
+                "name": "Has Unconfirmed Transactions"
+            },
+            "subscription_problem": {
+                "name": "Subscription Problem"
+            }
+        },
+        "button": {
+            "rebuild_value_history": {
+                "name": "Rebuild Value History"
+            },
+            "refresh": {
+                "name": "Refresh"
+            }
+        },
+        "event": {
+            "activity": {
+                "name": "Activity"
+            }
+        },
+        "calendar": {
+            "dividends": {
+                "name": "Dividends"
             }
         }
     },

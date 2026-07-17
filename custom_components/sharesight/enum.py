@@ -38,11 +38,11 @@ class SharesightSensorDescription(SensorEntityDescription):
 
 CASH_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     SharesightSensorDescription(
+        translation_key="cash_balance",
         key='cash_accounts',
         sub_key="value",
         extension_key=None,
         name="CASH balance",
-        icon="mdi:cash",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -54,11 +54,11 @@ CASH_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
 
 MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     SharesightSensorDescription(
+        translation_key="market_value",
         key='sub_totals',
         sub_key="value",
         extension_key=None,
         name="MARKET value",
-        icon="mdi:finance",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -67,11 +67,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_capital_gain",
         key='sub_totals',
         sub_key="capital_gain",
         extension_key=None,
         name="MARKET capital gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -80,11 +80,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_capital_gain_percent",
         key='sub_totals',
         sub_key="capital_gain_percent",
         extension_key=None,
         name="MARKET capital gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -93,11 +93,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_total_gain",
         key='sub_totals',
         sub_key="total_gain",
         extension_key=None,
         name="MARKET total gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -106,11 +106,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_total_gain_percent",
         key='sub_totals',
         sub_key="total_gain_percent",
         extension_key=None,
         name="MARKET total gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -119,11 +119,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_currency_gain",
         key='sub_totals',
         sub_key="currency_gain",
         extension_key=None,
         name="MARKET currency gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -132,11 +132,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_currency_gain_percent",
         key='sub_totals',
         sub_key="currency_gain_percent",
         extension_key=None,
         name="MARKET currency gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -145,11 +145,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_payout_gain",
         key='sub_totals',
         sub_key="payout_gain",
         extension_key=None,
         name="MARKET dividend gain",
-        icon="mdi:hand-coin",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -158,11 +158,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_payout_gain_percent",
         key='sub_totals',
         sub_key="payout_gain_percent",
         extension_key=None,
         name="MARKET dividend gain percent",
-        icon="mdi:hand-coin",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -171,11 +171,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_holding_count",
         key='sub_totals',
         sub_key="holding_count",
         extension_key=None,
         name="MARKET holding count",
-        icon="mdi:format-list-numbered",
         native_unit_of_measurement="holdings",
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -184,11 +184,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_cost_base",
         key='sub_totals',
         sub_key="cost_base",
         extension_key=None,
         name="MARKET cost basis",
-        icon="mdi:cash-register",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -197,11 +197,11 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="market"
     ),
     SharesightSensorDescription(
+        translation_key="market_annualised_return_percent",
         key='sub_totals',
         sub_key="annualised_return_percent",
         extension_key=None,
         name="MARKET annualised return percent",
-        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -214,10 +214,10 @@ MARKET_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
 # Per-holding individual sensors (created dynamically for each holding)
 HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     SharesightSensorDescription(
+        translation_key="holding_value",
         key='holdings_list',
         sub_key="value",
         name="HOLDING value",
-        icon="mdi:cash",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -225,10 +225,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_capital_gain",
         key='holdings_list',
         sub_key="capital_gain",
         name="HOLDING capital gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -236,10 +236,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_capital_gain_percent",
         key='holdings_list',
         sub_key="capital_gain_percent",
         name="HOLDING capital gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -247,10 +247,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_payout_gain",
         key='holdings_list',
         sub_key="payout_gain",
         name="HOLDING dividend gain",
-        icon="mdi:hand-coin",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -258,10 +258,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_payout_gain_percent",
         key='holdings_list',
         sub_key="payout_gain_percent",
         name="HOLDING dividend gain percent",
-        icon="mdi:hand-coin",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -269,10 +269,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_currency_gain",
         key='holdings_list',
         sub_key="currency_gain",
         name="HOLDING currency gain",
-        icon="mdi:currency-usd",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -280,10 +280,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_currency_gain_percent",
         key='holdings_list',
         sub_key="currency_gain_percent",
         name="HOLDING currency gain percent",
-        icon="mdi:currency-usd",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -291,10 +291,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_total_gain",
         key='holdings_list',
         sub_key="total_gain",
         name="HOLDING total gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -302,10 +302,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_total_gain_percent",
         key='holdings_list',
         sub_key="total_gain_percent",
         name="HOLDING total gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -313,10 +313,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_cost_base",
         key='holdings_list',
         sub_key="cost_base",
         name="HOLDING cost basis",
-        icon="mdi:cash-register",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -324,10 +324,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_quantity",
         key='holdings_list',
         sub_key="quantity",
         name="HOLDING quantity",
-        icon="mdi:counter",
         native_unit_of_measurement="shares",
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -335,10 +335,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_instrument_price",
         key='holdings_list',
         sub_key="instrument_price",
         name="HOLDING price",
-        icon="mdi:tag-outline",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -346,10 +346,10 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         device_group="holding",
     ),
     SharesightSensorDescription(
+        translation_key="holding_annualised_return_percent",
         key='holdings_list',
         sub_key="annualised_return_percent",
         name="HOLDING annualised return percent",
-        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -359,31 +359,31 @@ HOLDING_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
 ]
 
 
-def _period_sensor(key, sub_key, name, icon, unit, device_class, state_class, precision, device_group="monthly"):
+def _period_sensor(key, sub_key, name, unit, device_class, state_class, precision, device_group="monthly", translation_key=None):
     """Helper to build monthly/YTD sensor descriptions."""
     return SharesightSensorDescription(
         key=key,
         sub_key=sub_key,
         extension_key="Extension",
         name=name,
-        icon=icon,
         native_unit_of_measurement=unit,
         device_class=device_class,
         state_class=state_class,
         entity_category=None,
         suggested_display_precision=precision,
         device_group=device_group,
+        translation_key=translation_key,
     )
 
 
 SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     # ===== Portfolio-level performance from V3 report =====
     SharesightSensorDescription(
+        translation_key="portfolio_value",
         key="value",
         sub_key="report",
         extension_key=None,
         name="Portfolio value",
-        icon="mdi:cash",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -391,11 +391,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="capital_gain",
         key="capital_gain",
         sub_key="report",
         extension_key=None,
         name="Capital gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -403,11 +403,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="capital_gain_percent",
         key="capital_gain_percent",
         sub_key="report",
         extension_key=None,
         name="Capital gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -415,11 +415,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="total_gain",
         key="total_gain",
         sub_key="report",
         extension_key=None,
         name="Total gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -427,11 +427,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="total_gain_percent",
         key="total_gain_percent",
         sub_key="report",
         extension_key=None,
         name="Total gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -439,11 +439,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="annualised_return_percent",
         key="annualised_return_percent",
         sub_key="report",
         extension_key=None,
         name="Annualised Return Percent",
-        icon="mdi:percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -451,11 +451,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="currency_gain",
         key="currency_gain",
         sub_key="report",
         extension_key=None,
         name="Currency gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -463,11 +463,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="currency_gain_percent",
         key="currency_gain_percent",
         sub_key="report",
         extension_key=None,
         name="Currency gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -475,11 +475,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="dividend_gain",
         key="payout_gain",
         sub_key="report",
         extension_key=None,
         name="Dividend gain",
-        icon="mdi:cash-plus",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -487,11 +487,11 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         suggested_display_precision=2
     ),
     SharesightSensorDescription(
+        translation_key="dividend_gain_percent",
         key="payout_gain_percent",
         sub_key="report",
         extension_key=None,
         name="Dividend gain percent",
-        icon="mdi:sack-percent",
         native_unit_of_measurement=PERCENTAGE,
         device_class=None,
         state_class=SensorStateClass.MEASUREMENT,
@@ -500,277 +500,277 @@ SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     ),
 
     # ===== Daily performance (one-day) =====
-    SharesightSensorDescription(key="total_gain_percent", sub_key="one-day", extension_key="Extension", name="Daily Change Percent", icon="mdi:chart-line-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="total_gain", sub_key="one-day", extension_key="Extension", name="Daily Change Amount", icon="mdi:chart-line-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="capital_gain", sub_key="one-day", extension_key="Extension", name="Daily Capital Gain", icon="mdi:chart-line-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="capital_gain_percent", sub_key="one-day", extension_key="Extension", name="Daily Capital Gain Percent", icon="mdi:chart-line-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="currency_gain", sub_key="one-day", extension_key="Extension", name="Daily Currency Gain", icon="mdi:currency-usd", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="currency_gain_percent", sub_key="one-day", extension_key="Extension", name="Daily Currency Gain Percent", icon="mdi:currency-usd", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="payout_gain", sub_key="one-day", extension_key="Extension", name="Daily Dividend Gain", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="payout_gain_percent", sub_key="one-day", extension_key="Extension", name="Daily Dividend Gain Percent", icon="mdi:hand-coin", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="start_value", sub_key="one-day", extension_key="Extension", name="Daily Start Value", icon="mdi:flag-checkered", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
-    SharesightSensorDescription(key="end_value", sub_key="one-day", extension_key="Extension", name="Daily End Value", icon="mdi:flag-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_change_percent", key="total_gain_percent", sub_key="one-day", extension_key="Extension", name="Daily Change Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_change_amount", key="total_gain", sub_key="one-day", extension_key="Extension", name="Daily Change Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_capital_gain", key="capital_gain", sub_key="one-day", extension_key="Extension", name="Daily Capital Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_capital_gain_percent", key="capital_gain_percent", sub_key="one-day", extension_key="Extension", name="Daily Capital Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_currency_gain", key="currency_gain", sub_key="one-day", extension_key="Extension", name="Daily Currency Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_currency_gain_percent", key="currency_gain_percent", sub_key="one-day", extension_key="Extension", name="Daily Currency Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_dividend_gain", key="payout_gain", sub_key="one-day", extension_key="Extension", name="Daily Dividend Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_dividend_gain_percent", key="payout_gain_percent", sub_key="one-day", extension_key="Extension", name="Daily Dividend Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_start_value", key="start_value", sub_key="one-day", extension_key="Extension", name="Daily Start Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
+    SharesightSensorDescription(translation_key="daily_end_value", key="end_value", sub_key="one-day", extension_key="Extension", name="Daily End Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="daily"),
 
     # ===== Weekly performance (one-week) =====
-    SharesightSensorDescription(key="total_gain", sub_key="one-week", extension_key="Extension", name="Weekly Change Amount", icon="mdi:chart-line-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="total_gain_percent", sub_key="one-week", extension_key="Extension", name="Weekly Change Percent", icon="mdi:chart-line-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="capital_gain", sub_key="one-week", extension_key="Extension", name="Weekly Capital Gain", icon="mdi:chart-line-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="capital_gain_percent", sub_key="one-week", extension_key="Extension", name="Weekly Capital Gain Percent", icon="mdi:chart-line-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="currency_gain", sub_key="one-week", extension_key="Extension", name="Weekly Currency Gain", icon="mdi:currency-usd", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="currency_gain_percent", sub_key="one-week", extension_key="Extension", name="Weekly Currency Gain Percent", icon="mdi:currency-usd", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="payout_gain", sub_key="one-week", extension_key="Extension", name="Weekly Dividend Gain", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="payout_gain_percent", sub_key="one-week", extension_key="Extension", name="Weekly Dividend Gain Percent", icon="mdi:hand-coin", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="start_value", sub_key="one-week", extension_key="Extension", name="Weekly Start Value", icon="mdi:flag-checkered", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
-    SharesightSensorDescription(key="end_value", sub_key="one-week", extension_key="Extension", name="Weekly End Value", icon="mdi:flag-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_change_amount", key="total_gain", sub_key="one-week", extension_key="Extension", name="Weekly Change Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_change_percent", key="total_gain_percent", sub_key="one-week", extension_key="Extension", name="Weekly Change Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_capital_gain", key="capital_gain", sub_key="one-week", extension_key="Extension", name="Weekly Capital Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_capital_gain_percent", key="capital_gain_percent", sub_key="one-week", extension_key="Extension", name="Weekly Capital Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_currency_gain", key="currency_gain", sub_key="one-week", extension_key="Extension", name="Weekly Currency Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_currency_gain_percent", key="currency_gain_percent", sub_key="one-week", extension_key="Extension", name="Weekly Currency Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_dividend_gain", key="payout_gain", sub_key="one-week", extension_key="Extension", name="Weekly Dividend Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_dividend_gain_percent", key="payout_gain_percent", sub_key="one-week", extension_key="Extension", name="Weekly Dividend Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_start_value", key="start_value", sub_key="one-week", extension_key="Extension", name="Weekly Start Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
+    SharesightSensorDescription(translation_key="weekly_end_value", key="end_value", sub_key="one-week", extension_key="Extension", name="Weekly End Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="weekly"),
 
     # ===== Financial Year =====
-    SharesightSensorDescription(key="total_gain_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Change Percent", icon="mdi:chart-timeline-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="total_gain", sub_key="financial-year", extension_key="Extension", name="Financial Year Change Amount", icon="mdi:chart-timeline-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="annualised_return_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Annualised Return Percent", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="capital_gain", sub_key="financial-year", extension_key="Extension", name="Financial Year Capital Gain", icon="mdi:chart-timeline-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="capital_gain_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Capital Gain Percent", icon="mdi:chart-timeline-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="currency_gain", sub_key="financial-year", extension_key="Extension", name="Financial Year Currency Gain", icon="mdi:currency-usd", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="currency_gain_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Currency Gain Percent", icon="mdi:currency-usd", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="payout_gain", sub_key="financial-year", extension_key="Extension", name="Financial Year Dividend Gain", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="payout_gain_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Dividend Gain Percent", icon="mdi:hand-coin", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="start_value", sub_key="financial-year", extension_key="Extension", name="Financial Year Start Value", icon="mdi:flag-checkered", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
-    SharesightSensorDescription(key="end_value", sub_key="financial-year", extension_key="Extension", name="Financial Year End Value", icon="mdi:flag-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_change_percent", key="total_gain_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Change Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_change_amount", key="total_gain", sub_key="financial-year", extension_key="Extension", name="Financial Year Change Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_annualised_return_percent", key="annualised_return_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Annualised Return Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_capital_gain", key="capital_gain", sub_key="financial-year", extension_key="Extension", name="Financial Year Capital Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_capital_gain_percent", key="capital_gain_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Capital Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_currency_gain", key="currency_gain", sub_key="financial-year", extension_key="Extension", name="Financial Year Currency Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_currency_gain_percent", key="currency_gain_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Currency Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_dividend_gain", key="payout_gain", sub_key="financial-year", extension_key="Extension", name="Financial Year Dividend Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_dividend_gain_percent", key="payout_gain_percent", sub_key="financial-year", extension_key="Extension", name="Financial Year Dividend Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_start_value", key="start_value", sub_key="financial-year", extension_key="Extension", name="Financial Year Start Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
+    SharesightSensorDescription(translation_key="financial_year_end_value", key="end_value", sub_key="financial-year", extension_key="Extension", name="Financial Year End Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="financial_year"),
 
     # ===== Monthly performance (one-month, 30 days) =====
-    _period_sensor("total_gain", "one-month", "Monthly Change Amount", "mdi:calendar-month", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("total_gain_percent", "one-month", "Monthly Change Percent", "mdi:calendar-month", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("capital_gain", "one-month", "Monthly Capital Gain", "mdi:calendar-month", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("capital_gain_percent", "one-month", "Monthly Capital Gain Percent", "mdi:calendar-month", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("currency_gain", "one-month", "Monthly Currency Gain", "mdi:currency-usd", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("currency_gain_percent", "one-month", "Monthly Currency Gain Percent", "mdi:currency-usd", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("payout_gain", "one-month", "Monthly Dividend Gain", "mdi:hand-coin", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("payout_gain_percent", "one-month", "Monthly Dividend Gain Percent", "mdi:hand-coin", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("start_value", "one-month", "Monthly Start Value", "mdi:flag-checkered", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("end_value", "one-month", "Monthly End Value", "mdi:flag-variant", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2),
-    _period_sensor("annualised_return_percent", "one-month", "Monthly Annualised Return Percent", "mdi:percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2),
+    _period_sensor("total_gain", "one-month", "Monthly Change Amount", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_change_amount"),
+    _period_sensor("total_gain_percent", "one-month", "Monthly Change Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_change_percent"),
+    _period_sensor("capital_gain", "one-month", "Monthly Capital Gain", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_capital_gain"),
+    _period_sensor("capital_gain_percent", "one-month", "Monthly Capital Gain Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_capital_gain_percent"),
+    _period_sensor("currency_gain", "one-month", "Monthly Currency Gain", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_currency_gain"),
+    _period_sensor("currency_gain_percent", "one-month", "Monthly Currency Gain Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_currency_gain_percent"),
+    _period_sensor("payout_gain", "one-month", "Monthly Dividend Gain", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_dividend_gain"),
+    _period_sensor("payout_gain_percent", "one-month", "Monthly Dividend Gain Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_dividend_gain_percent"),
+    _period_sensor("start_value", "one-month", "Monthly Start Value", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_start_value"),
+    _period_sensor("end_value", "one-month", "Monthly End Value", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_end_value"),
+    _period_sensor("annualised_return_percent", "one-month", "Monthly Annualised Return Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, translation_key="monthly_annualised_return_percent"),
 
     # ===== Year-to-Date (YTD) performance =====
-    _period_sensor("total_gain", "ytd", "YTD Change Amount", "mdi:calendar-today", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("total_gain_percent", "ytd", "YTD Change Percent", "mdi:calendar-today", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("capital_gain", "ytd", "YTD Capital Gain", "mdi:calendar-today", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("capital_gain_percent", "ytd", "YTD Capital Gain Percent", "mdi:calendar-today", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("currency_gain", "ytd", "YTD Currency Gain", "mdi:currency-usd", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("currency_gain_percent", "ytd", "YTD Currency Gain Percent", "mdi:currency-usd", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("payout_gain", "ytd", "YTD Dividend Gain", "mdi:hand-coin", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("payout_gain_percent", "ytd", "YTD Dividend Gain Percent", "mdi:hand-coin", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("start_value", "ytd", "YTD Start Value", "mdi:flag-checkered", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("end_value", "ytd", "YTD End Value", "mdi:flag-variant", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd"),
-    _period_sensor("annualised_return_percent", "ytd", "YTD Annualised Return Percent", "mdi:percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd"),
+    _period_sensor("total_gain", "ytd", "YTD Change Amount", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_change_amount"),
+    _period_sensor("total_gain_percent", "ytd", "YTD Change Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_change_percent"),
+    _period_sensor("capital_gain", "ytd", "YTD Capital Gain", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_capital_gain"),
+    _period_sensor("capital_gain_percent", "ytd", "YTD Capital Gain Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_capital_gain_percent"),
+    _period_sensor("currency_gain", "ytd", "YTD Currency Gain", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_currency_gain"),
+    _period_sensor("currency_gain_percent", "ytd", "YTD Currency Gain Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_currency_gain_percent"),
+    _period_sensor("payout_gain", "ytd", "YTD Dividend Gain", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_dividend_gain"),
+    _period_sensor("payout_gain_percent", "ytd", "YTD Dividend Gain Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_dividend_gain_percent"),
+    _period_sensor("start_value", "ytd", "YTD Start Value", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_start_value"),
+    _period_sensor("end_value", "ytd", "YTD End Value", CURRENCY_DOLLAR, SensorDeviceClass.MONETARY, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_end_value"),
+    _period_sensor("annualised_return_percent", "ytd", "YTD Annualised Return Percent", PERCENTAGE, None, SensorStateClass.MEASUREMENT, 2, "ytd", translation_key="ytd_annualised_return_percent"),
 
     # ===== Diagnostic / metadata sensors =====
-    SharesightSensorDescription(key="portfolio_id", sub_key="report", extension_key=None, name="Portfolio ID", icon="mdi:identifier", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=2),
-    SharesightSensorDescription(key="market_count", sub_key="report", extension_key=None, name="Market Count", icon="mdi:format-list-numbered", native_unit_of_measurement="markets", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
-    SharesightSensorDescription(key="cash_accounts_count", sub_key="report", extension_key=None, name="Cash Accounts Count", icon="mdi:bank", native_unit_of_measurement="accounts", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
-    SharesightSensorDescription(key="total_cash_value", sub_key="report", extension_key=None, name="Total Cash Value", icon="mdi:cash-multiple", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
-    SharesightSensorDescription(key="largest_market_name", sub_key="report", extension_key=None, name="Largest Market Name", icon="mdi:earth", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="largest_market_value", sub_key="report", extension_key=None, name="Largest Market Value", icon="mdi:earth", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
-    SharesightSensorDescription(key="largest_market_percent", sub_key="report", extension_key=None, name="Largest Market Percent", icon="mdi:earth", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
-    SharesightSensorDescription(key="portfolio_tz_name", sub_key="report", extension_key=None, name="Portfolio Timezone", icon="mdi:map-clock-outline", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="grouping", sub_key="report", extension_key=None, name="Active Grouping", icon="mdi:view-grid-outline", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="report_currency", sub_key="user_setting", extension_key=None, name="Report Currency", icon="mdi:cash", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="report_grouping", sub_key="user_setting", extension_key=None, name="Report Grouping", icon="mdi:view-list-outline", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="report_combined", sub_key="user_setting", extension_key=None, name="Report Combined", icon="mdi:call-merge", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="report_include_sold_shares", sub_key="user_setting", extension_key=None, name="Report Includes Sold Shares", icon="mdi:identifier", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="user_id", sub_key="portfolios", extension_key=None, name="User ID", icon="mdi:identifier", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=2),
-    SharesightSensorDescription(key="currency_code", sub_key="portfolios", extension_key=None, name="Primary Currency", icon="mdi:cash", native_unit_of_measurement=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC),
-    SharesightSensorDescription(key="name", sub_key="portfolios", extension_key=None, name="Portfolio Name", icon="mdi:briefcase", native_unit_of_measurement=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC),
-    SharesightSensorDescription(key="financial_year_end", sub_key="portfolios", extension_key=None, name="Financial Year End", icon="mdi:calendar-end", native_unit_of_measurement=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC),
+    SharesightSensorDescription(translation_key="portfolio_id", key="portfolio_id", sub_key="report", extension_key=None, name="Portfolio ID", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="market_count", key="market_count", sub_key="report", extension_key=None, name="Market Count", native_unit_of_measurement="markets", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
+    SharesightSensorDescription(translation_key="cash_accounts_count", key="cash_accounts_count", sub_key="report", extension_key=None, name="Cash Accounts Count", native_unit_of_measurement="accounts", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
+    SharesightSensorDescription(translation_key="total_cash_value", key="total_cash_value", sub_key="report", extension_key=None, name="Total Cash Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="largest_market_name", key="largest_market_name", sub_key="report", extension_key=None, name="Largest Market Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="largest_market_value", key="largest_market_value", sub_key="report", extension_key=None, name="Largest Market Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="largest_market_percent", key="largest_market_percent", sub_key="report", extension_key=None, name="Largest Market Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="portfolio_timezone", key="portfolio_tz_name", sub_key="report", extension_key=None, name="Portfolio Timezone", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="active_grouping", key="grouping", sub_key="report", extension_key=None, name="Active Grouping", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="report_currency", key="report_currency", sub_key="user_setting", extension_key=None, name="Report Currency", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="report_grouping", key="report_grouping", sub_key="user_setting", extension_key=None, name="Report Grouping", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="report_combined", key="report_combined", sub_key="user_setting", extension_key=None, name="Report Combined", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="report_includes_sold_shares", key="report_include_sold_shares", sub_key="user_setting", extension_key=None, name="Report Includes Sold Shares", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="user_id", key="user_id", sub_key="portfolios", extension_key=None, name="User ID", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="primary_currency", key="currency_code", sub_key="portfolios", extension_key=None, name="Primary Currency", native_unit_of_measurement=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC),
+    SharesightSensorDescription(translation_key="portfolio_name", key="name", sub_key="portfolios", extension_key=None, name="Portfolio Name", native_unit_of_measurement=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC),
+    SharesightSensorDescription(translation_key="financial_year_end", key="financial_year_end", sub_key="portfolios", extension_key=None, name="Financial Year End", native_unit_of_measurement=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC),
 
     # ===== All-time computed from report =====
-    SharesightSensorDescription(key="cost_base", sub_key="report", extension_key=None, name="Cost Basis", icon="mdi:cash-register", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
-    SharesightSensorDescription(key="unrealised_gain", sub_key="report", extension_key=None, name="Unrealised Gain", icon="mdi:trending-up", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
-    SharesightSensorDescription(key="unrealised_gain_percent", sub_key="report", extension_key=None, name="Unrealised Gain Percent", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
-    SharesightSensorDescription(key="start_value", sub_key="report", extension_key=None, name="Portfolio Start Value", icon="mdi:flag-checkered", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="cost_basis", key="cost_base", sub_key="report", extension_key=None, name="Cost Basis", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="unrealised_gain", key="unrealised_gain", sub_key="report", extension_key=None, name="Unrealised Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="unrealised_gain_percent", key="unrealised_gain_percent", sub_key="report", extension_key=None, name="Unrealised Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="portfolio_start_value", key="start_value", sub_key="report", extension_key=None, name="Portfolio Start Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
 
     # ===== Portfolio aggregate sensors =====
-    SharesightSensorDescription(key="equity_value", sub_key="report", extension_key=None, name="Equity Value", icon="mdi:chart-areaspline", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
-    SharesightSensorDescription(key="cash_allocation_percent", sub_key="report", extension_key=None, name="Cash Allocation Percent", icon="mdi:cash-100", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
-    SharesightSensorDescription(key="equity_allocation_percent", sub_key="report", extension_key=None, name="Equity Allocation Percent", icon="mdi:chart-pie", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="equity_value", key="equity_value", sub_key="report", extension_key=None, name="Equity Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="cash_allocation_percent", key="cash_allocation_percent", sub_key="report", extension_key=None, name="Cash Allocation Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
+    SharesightSensorDescription(translation_key="equity_allocation_percent", key="equity_allocation_percent", sub_key="report", extension_key=None, name="Equity Allocation Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2),
 
     # ===== Unconfirmed transactions =====
-    SharesightSensorDescription(key="unconfirmed_transactions", sub_key="holdings", extension_key=None, name="Unconfirmed Transactions", icon="mdi:alert-circle-outline", native_unit_of_measurement="transactions", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0, device_group="holdings"),
+    SharesightSensorDescription(translation_key="unconfirmed_transactions", key="unconfirmed_transactions", sub_key="holdings", extension_key=None, name="Unconfirmed Transactions", native_unit_of_measurement="transactions", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0, device_group="holdings"),
 
     # ===== Holdings aggregate sensors =====
-    SharesightSensorDescription(key="holding_count", sub_key="holdings", extension_key=None, name="Number of Holdings", icon="mdi:chart-box-multiple", native_unit_of_measurement="holdings", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="holdings"),
-    SharesightSensorDescription(key="largest_holding_symbol", sub_key="holdings", extension_key=None, name="Largest Holding Symbol", icon="mdi:crown", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holdings"),
-    SharesightSensorDescription(key="largest_holding_value", sub_key="holdings", extension_key=None, name="Largest Holding Value", icon="mdi:crown", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="largest_holding_percent", sub_key="holdings", extension_key=None, name="Largest Holding Percent", icon="mdi:crown", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="top_gain_symbol", sub_key="holdings", extension_key=None, name="Top Gain Symbol", icon="mdi:trending-up", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holdings"),
-    SharesightSensorDescription(key="top_gain_amount", sub_key="holdings", extension_key=None, name="Top Gain Amount", icon="mdi:trending-up", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="top_gain_percent", sub_key="holdings", extension_key=None, name="Top Gain Percent", icon="mdi:trending-up", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="worst_gain_symbol", sub_key="holdings", extension_key=None, name="Worst Gain Symbol", icon="mdi:trending-down", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holdings"),
-    SharesightSensorDescription(key="worst_gain_amount", sub_key="holdings", extension_key=None, name="Worst Gain Amount", icon="mdi:trending-down", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="worst_gain_percent", sub_key="holdings", extension_key=None, name="Worst Gain Percent", icon="mdi:trending-down", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="positive_holdings_count", sub_key="holdings", extension_key=None, name="Positive Holdings Count", icon="mdi:trending-up", native_unit_of_measurement="holdings", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="holdings"),
-    SharesightSensorDescription(key="negative_holdings_count", sub_key="holdings", extension_key=None, name="Negative Holdings Count", icon="mdi:trending-down", native_unit_of_measurement="holdings", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="holdings"),
-    SharesightSensorDescription(key="average_holding_value", sub_key="holdings", extension_key=None, name="Average Holding Value", icon="mdi:calculator", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="total_holdings_value", sub_key="holdings", extension_key=None, name="Total Holdings Value", icon="mdi:chart-areaspline", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="total_holdings_gain", sub_key="holdings", extension_key=None, name="Total Holdings Gain", icon="mdi:cash-plus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="smallest_holding_symbol", sub_key="holdings", extension_key=None, name="Smallest Holding Symbol", icon="mdi:arrow-down-thin", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holdings"),
-    SharesightSensorDescription(key="smallest_holding_value", sub_key="holdings", extension_key=None, name="Smallest Holding Value", icon="mdi:arrow-down-thin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="median_holding_value", sub_key="holdings", extension_key=None, name="Median Holding Value", icon="mdi:chart-bell-curve-cumulative", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="top_5_holdings_percent", sub_key="holdings", extension_key=None, name="Top 5 Holdings Percent", icon="mdi:chart-donut", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="top_3_holdings_percent", sub_key="holdings", extension_key=None, name="Top 3 Holdings Percent", icon="mdi:chart-donut", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="positive_holdings_percent", sub_key="holdings", extension_key=None, name="Positive Holdings Percent", icon="mdi:trending-up", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
-    SharesightSensorDescription(key="negative_holdings_percent", sub_key="holdings", extension_key=None, name="Negative Holdings Percent", icon="mdi:trending-down", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="number_of_holdings", key="holding_count", sub_key="holdings", extension_key=None, name="Number of Holdings", native_unit_of_measurement="holdings", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="holdings"),
+    SharesightSensorDescription(translation_key="largest_holding_symbol", key="largest_holding_symbol", sub_key="holdings", extension_key=None, name="Largest Holding Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holdings"),
+    SharesightSensorDescription(translation_key="largest_holding_value", key="largest_holding_value", sub_key="holdings", extension_key=None, name="Largest Holding Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="largest_holding_percent", key="largest_holding_percent", sub_key="holdings", extension_key=None, name="Largest Holding Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="top_gain_symbol", key="top_gain_symbol", sub_key="holdings", extension_key=None, name="Top Gain Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holdings"),
+    SharesightSensorDescription(translation_key="top_gain_amount", key="top_gain_amount", sub_key="holdings", extension_key=None, name="Top Gain Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="top_gain_percent", key="top_gain_percent", sub_key="holdings", extension_key=None, name="Top Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="worst_gain_symbol", key="worst_gain_symbol", sub_key="holdings", extension_key=None, name="Worst Gain Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holdings"),
+    SharesightSensorDescription(translation_key="worst_gain_amount", key="worst_gain_amount", sub_key="holdings", extension_key=None, name="Worst Gain Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="worst_gain_percent", key="worst_gain_percent", sub_key="holdings", extension_key=None, name="Worst Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="positive_holdings_count", key="positive_holdings_count", sub_key="holdings", extension_key=None, name="Positive Holdings Count", native_unit_of_measurement="holdings", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="holdings"),
+    SharesightSensorDescription(translation_key="negative_holdings_count", key="negative_holdings_count", sub_key="holdings", extension_key=None, name="Negative Holdings Count", native_unit_of_measurement="holdings", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="holdings"),
+    SharesightSensorDescription(translation_key="average_holding_value", key="average_holding_value", sub_key="holdings", extension_key=None, name="Average Holding Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="total_holdings_value", key="total_holdings_value", sub_key="holdings", extension_key=None, name="Total Holdings Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="total_holdings_gain", key="total_holdings_gain", sub_key="holdings", extension_key=None, name="Total Holdings Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="smallest_holding_symbol", key="smallest_holding_symbol", sub_key="holdings", extension_key=None, name="Smallest Holding Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holdings"),
+    SharesightSensorDescription(translation_key="smallest_holding_value", key="smallest_holding_value", sub_key="holdings", extension_key=None, name="Smallest Holding Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="median_holding_value", key="median_holding_value", sub_key="holdings", extension_key=None, name="Median Holding Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="top_5_holdings_percent", key="top_5_holdings_percent", sub_key="holdings", extension_key=None, name="Top 5 Holdings Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="top_3_holdings_percent", key="top_3_holdings_percent", sub_key="holdings", extension_key=None, name="Top 3 Holdings Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="positive_holdings_percent", key="positive_holdings_percent", sub_key="holdings", extension_key=None, name="Positive Holdings Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
+    SharesightSensorDescription(translation_key="negative_holdings_percent", key="negative_holdings_percent", sub_key="holdings", extension_key=None, name="Negative Holdings Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="holdings"),
 
     # ===== Income Report sensors =====
-    SharesightSensorDescription(key="total_income", sub_key="income_report", extension_key=None, name="Total Dividend Income", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="dividend_count", sub_key="income_report", extension_key=None, name="Number of Dividends", icon="mdi:hand-coin", native_unit_of_measurement="dividends", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
-    SharesightSensorDescription(key="last_dividend_date", sub_key="income_report", extension_key=None, name="Last Dividend Date", icon="mdi:calendar-check", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="income"),
-    SharesightSensorDescription(key="average_dividend_amount", sub_key="income_report", extension_key=None, name="Average Dividend Amount", icon="mdi:calculator-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="largest_dividend_symbol", sub_key="income_report", extension_key=None, name="Largest Dividend Symbol", icon="mdi:star", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="income"),
-    SharesightSensorDescription(key="largest_dividend_amount", sub_key="income_report", extension_key=None, name="Largest Dividend Amount", icon="mdi:star", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="total_dividend_income", key="total_income", sub_key="income_report", extension_key=None, name="Total Dividend Income", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="number_of_dividends", key="dividend_count", sub_key="income_report", extension_key=None, name="Number of Dividends", native_unit_of_measurement="dividends", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
+    SharesightSensorDescription(translation_key="last_dividend_date", key="last_dividend_date", sub_key="income_report", extension_key=None, name="Last Dividend Date", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="income"),
+    SharesightSensorDescription(translation_key="average_dividend_amount", key="average_dividend_amount", sub_key="income_report", extension_key=None, name="Average Dividend Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="largest_dividend_symbol", key="largest_dividend_symbol", sub_key="income_report", extension_key=None, name="Largest Dividend Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="income"),
+    SharesightSensorDescription(translation_key="largest_dividend_amount", key="largest_dividend_amount", sub_key="income_report", extension_key=None, name="Largest Dividend Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
 
     # ===== Diversity sensors =====
-    SharesightSensorDescription(key="market_1_name", sub_key="diversity", extension_key=None, name="Top Market 1 Name", icon="mdi:earth", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
-    SharesightSensorDescription(key="market_1_percent", sub_key="diversity", extension_key=None, name="Top Market 1 Percent", icon="mdi:earth", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_1_value", sub_key="diversity", extension_key=None, name="Top Market 1 Value", icon="mdi:earth", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_2_name", sub_key="diversity", extension_key=None, name="Top Market 2 Name", icon="mdi:earth", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
-    SharesightSensorDescription(key="market_2_percent", sub_key="diversity", extension_key=None, name="Top Market 2 Percent", icon="mdi:earth", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_2_value", sub_key="diversity", extension_key=None, name="Top Market 2 Value", icon="mdi:earth", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_3_name", sub_key="diversity", extension_key=None, name="Top Market 3 Name", icon="mdi:earth", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
-    SharesightSensorDescription(key="market_3_percent", sub_key="diversity", extension_key=None, name="Top Market 3 Percent", icon="mdi:earth", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_3_value", sub_key="diversity", extension_key=None, name="Top Market 3 Value", icon="mdi:earth", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_4_name", sub_key="diversity", extension_key=None, name="Top Market 4 Name", icon="mdi:earth", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
-    SharesightSensorDescription(key="market_4_percent", sub_key="diversity", extension_key=None, name="Top Market 4 Percent", icon="mdi:earth", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_4_value", sub_key="diversity", extension_key=None, name="Top Market 4 Value", icon="mdi:earth", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_5_name", sub_key="diversity", extension_key=None, name="Top Market 5 Name", icon="mdi:earth", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
-    SharesightSensorDescription(key="market_5_percent", sub_key="diversity", extension_key=None, name="Top Market 5 Percent", icon="mdi:earth", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="market_5_value", sub_key="diversity", extension_key=None, name="Top Market 5 Value", icon="mdi:earth", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="diversity_group_count", sub_key="diversity", extension_key=None, name="Diversity Group Count", icon="mdi:chart-pie", native_unit_of_measurement="groups", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="diversity"),
-    SharesightSensorDescription(key="top_3_markets_percent", sub_key="diversity", extension_key=None, name="Top 3 Markets Percent", icon="mdi:chart-donut", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
-    SharesightSensorDescription(key="top_5_markets_percent", sub_key="diversity", extension_key=None, name="Top 5 Markets Percent", icon="mdi:chart-donut", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_1_name", key="market_1_name", sub_key="diversity", extension_key=None, name="Top Market 1 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_1_percent", key="market_1_percent", sub_key="diversity", extension_key=None, name="Top Market 1 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_1_value", key="market_1_value", sub_key="diversity", extension_key=None, name="Top Market 1 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_2_name", key="market_2_name", sub_key="diversity", extension_key=None, name="Top Market 2 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_2_percent", key="market_2_percent", sub_key="diversity", extension_key=None, name="Top Market 2 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_2_value", key="market_2_value", sub_key="diversity", extension_key=None, name="Top Market 2 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_3_name", key="market_3_name", sub_key="diversity", extension_key=None, name="Top Market 3 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_3_percent", key="market_3_percent", sub_key="diversity", extension_key=None, name="Top Market 3 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_3_value", key="market_3_value", sub_key="diversity", extension_key=None, name="Top Market 3 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_4_name", key="market_4_name", sub_key="diversity", extension_key=None, name="Top Market 4 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_4_percent", key="market_4_percent", sub_key="diversity", extension_key=None, name="Top Market 4 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_4_value", key="market_4_value", sub_key="diversity", extension_key=None, name="Top Market 4 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_5_name", key="market_5_name", sub_key="diversity", extension_key=None, name="Top Market 5 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_5_percent", key="market_5_percent", sub_key="diversity", extension_key=None, name="Top Market 5 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_market_5_value", key="market_5_value", sub_key="diversity", extension_key=None, name="Top Market 5 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="diversity_group_count", key="diversity_group_count", sub_key="diversity", extension_key=None, name="Diversity Group Count", native_unit_of_measurement="groups", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_3_markets_percent", key="top_3_markets_percent", sub_key="diversity", extension_key=None, name="Top 3 Markets Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
+    SharesightSensorDescription(translation_key="top_5_markets_percent", key="top_5_markets_percent", sub_key="diversity", extension_key=None, name="Top 5 Markets Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="diversity"),
 
     # ===== Contribution sensors =====
-    SharesightSensorDescription(key="total_contributions", sub_key="contributions", extension_key=None, name="Total Contributions", icon="mdi:cash-plus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="contributions"),
-    SharesightSensorDescription(key="total_withdrawals", sub_key="contributions", extension_key=None, name="Total Withdrawals", icon="mdi:cash-minus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="contributions"),
-    SharesightSensorDescription(key="net_contributions", sub_key="contributions", extension_key=None, name="Net Contributions", icon="mdi:cash-sync", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
-    SharesightSensorDescription(key="last_contribution_date", sub_key="contributions", extension_key=None, name="Last Contribution Date", icon="mdi:calendar-clock", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="contributions"),
-    SharesightSensorDescription(key="last_contribution_amount", sub_key="contributions", extension_key=None, name="Last Contribution Amount", icon="mdi:cash-fast", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
-    SharesightSensorDescription(key="net_investment_gain", sub_key="contributions", extension_key=None, name="Net Investment Gain", icon="mdi:chart-line", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
-    SharesightSensorDescription(key="net_investment_gain_percent", sub_key="contributions", extension_key=None, name="Net Investment Gain Percent", icon="mdi:chart-line", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
-    SharesightSensorDescription(key="contribution_count", sub_key="contributions", extension_key=None, name="Contribution Count", icon="mdi:counter", native_unit_of_measurement="contributions", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="contributions"),
-    SharesightSensorDescription(key="withdrawal_count", sub_key="contributions", extension_key=None, name="Withdrawal Count", icon="mdi:counter", native_unit_of_measurement="withdrawals", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="contributions"),
-    SharesightSensorDescription(key="average_contribution_amount", sub_key="contributions", extension_key=None, name="Average Contribution Amount", icon="mdi:calculator-variant", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
+    SharesightSensorDescription(translation_key="total_contributions", key="total_contributions", sub_key="contributions", extension_key=None, name="Total Contributions", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="contributions"),
+    SharesightSensorDescription(translation_key="total_withdrawals", key="total_withdrawals", sub_key="contributions", extension_key=None, name="Total Withdrawals", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="contributions"),
+    SharesightSensorDescription(translation_key="net_contributions", key="net_contributions", sub_key="contributions", extension_key=None, name="Net Contributions", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
+    SharesightSensorDescription(translation_key="last_contribution_date", key="last_contribution_date", sub_key="contributions", extension_key=None, name="Last Contribution Date", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="contributions"),
+    SharesightSensorDescription(translation_key="last_contribution_amount", key="last_contribution_amount", sub_key="contributions", extension_key=None, name="Last Contribution Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
+    SharesightSensorDescription(translation_key="net_investment_gain", key="net_investment_gain", sub_key="contributions", extension_key=None, name="Net Investment Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
+    SharesightSensorDescription(translation_key="net_investment_gain_percent", key="net_investment_gain_percent", sub_key="contributions", extension_key=None, name="Net Investment Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
+    SharesightSensorDescription(translation_key="contribution_count", key="contribution_count", sub_key="contributions", extension_key=None, name="Contribution Count", native_unit_of_measurement="contributions", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="contributions"),
+    SharesightSensorDescription(translation_key="withdrawal_count", key="withdrawal_count", sub_key="contributions", extension_key=None, name="Withdrawal Count", native_unit_of_measurement="withdrawals", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="contributions"),
+    SharesightSensorDescription(translation_key="average_contribution_amount", key="average_contribution_amount", sub_key="contributions", extension_key=None, name="Average Contribution Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
 
     # ===== Payout Tax Detail Aggregate sensors =====
-    SharesightSensorDescription(key="total_gross_income", sub_key="income_report", extension_key=None, name="Total Gross Dividend Income", icon="mdi:cash-multiple", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="total_resident_withholding_tax", sub_key="income_report", extension_key=None, name="Total Resident Withholding Tax", icon="mdi:bank-minus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="total_non_resident_withholding_tax", sub_key="income_report", extension_key=None, name="Total Non-Resident Withholding Tax", icon="mdi:bank-minus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="total_tax_credits", sub_key="income_report", extension_key=None, name="Total Tax Credits", icon="mdi:bank-plus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="total_franked_amount", sub_key="income_report", extension_key=None, name="Total Franked Amount", icon="mdi:cash-check", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="total_unfranked_amount", sub_key="income_report", extension_key=None, name="Total Unfranked Amount", icon="mdi:cash-remove", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="total_foreign_source_income", sub_key="income_report", extension_key=None, name="Total Foreign Source Income", icon="mdi:earth", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="total_capital_gains_distributions", sub_key="income_report", extension_key=None, name="Total Capital Gains Distributions", icon="mdi:chart-line", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="drp_reinvestment_count", sub_key="income_report", extension_key=None, name="DRP Reinvestment Count", icon="mdi:autorenew", native_unit_of_measurement="reinvestments", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
-    SharesightSensorDescription(key="dividend_yield_percent", sub_key="income_report", extension_key=None, name="Dividend Yield Percent", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="dividends_30d", sub_key="income_report", extension_key=None, name="Dividends Last 30 Days", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="dividends_ytd", sub_key="income_report", extension_key=None, name="Dividends YTD", icon="mdi:calendar-today", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="dividends_ttm", sub_key="income_report", extension_key=None, name="Dividends Last 12 Months", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="dividends_prev_year", sub_key="income_report", extension_key=None, name="Dividends Previous Year", icon="mdi:calendar-blank", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="dividend_yield_ttm_percent", sub_key="income_report", extension_key=None, name="Dividend Yield TTM Percent", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="upcoming_dividends_count", sub_key="income_report", extension_key=None, name="Upcoming Dividends Count", icon="mdi:calendar-arrow-right", native_unit_of_measurement="dividends", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
-    SharesightSensorDescription(key="dividends_received_cash", sub_key="income_report", extension_key=None, name="Dividends Received (Cash)", icon="mdi:cash-fast", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="next_dividend_date", sub_key="income_report", extension_key=None, name="Next Dividend Date", icon="mdi:calendar-arrow-right", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="income"),
-    SharesightSensorDescription(key="next_dividend_amount", sub_key="income_report", extension_key=None, name="Next Dividend Amount", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="next_dividend_symbol", sub_key="income_report", extension_key=None, name="Next Dividend Symbol", icon="mdi:calendar-arrow-right", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="income"),
+    SharesightSensorDescription(translation_key="total_gross_dividend_income", key="total_gross_income", sub_key="income_report", extension_key=None, name="Total Gross Dividend Income", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="total_resident_withholding_tax", key="total_resident_withholding_tax", sub_key="income_report", extension_key=None, name="Total Resident Withholding Tax", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="total_non_resident_withholding_tax", key="total_non_resident_withholding_tax", sub_key="income_report", extension_key=None, name="Total Non-Resident Withholding Tax", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="total_tax_credits", key="total_tax_credits", sub_key="income_report", extension_key=None, name="Total Tax Credits", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="total_franked_amount", key="total_franked_amount", sub_key="income_report", extension_key=None, name="Total Franked Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="total_unfranked_amount", key="total_unfranked_amount", sub_key="income_report", extension_key=None, name="Total Unfranked Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="total_foreign_source_income", key="total_foreign_source_income", sub_key="income_report", extension_key=None, name="Total Foreign Source Income", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="total_capital_gains_distributions", key="total_capital_gains_distributions", sub_key="income_report", extension_key=None, name="Total Capital Gains Distributions", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="drp_reinvestment_count", key="drp_reinvestment_count", sub_key="income_report", extension_key=None, name="DRP Reinvestment Count", native_unit_of_measurement="reinvestments", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
+    SharesightSensorDescription(translation_key="dividend_yield_percent", key="dividend_yield_percent", sub_key="income_report", extension_key=None, name="Dividend Yield Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="dividends_last_30_days", key="dividends_30d", sub_key="income_report", extension_key=None, name="Dividends Last 30 Days", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="dividends_ytd", key="dividends_ytd", sub_key="income_report", extension_key=None, name="Dividends YTD", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="dividends_last_12_months", key="dividends_ttm", sub_key="income_report", extension_key=None, name="Dividends Last 12 Months", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="dividends_previous_year", key="dividends_prev_year", sub_key="income_report", extension_key=None, name="Dividends Previous Year", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="dividend_yield_ttm_percent", key="dividend_yield_ttm_percent", sub_key="income_report", extension_key=None, name="Dividend Yield TTM Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="upcoming_dividends_count", key="upcoming_dividends_count", sub_key="income_report", extension_key=None, name="Upcoming Dividends Count", native_unit_of_measurement="dividends", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
+    SharesightSensorDescription(translation_key="dividends_received_cash", key="dividends_received_cash", sub_key="income_report", extension_key=None, name="Dividends Received (Cash)", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="next_dividend_date", key="next_dividend_date", sub_key="income_report", extension_key=None, name="Next Dividend Date", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="income"),
+    SharesightSensorDescription(translation_key="next_dividend_amount", key="next_dividend_amount", sub_key="income_report", extension_key=None, name="Next Dividend Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="next_dividend_symbol", key="next_dividend_symbol", sub_key="income_report", extension_key=None, name="Next Dividend Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="income"),
 
     # ===== Forward income forecast sensors (Feature 6) =====
     # Keys map onto the forecast fields the coordinator merges into
     # income_report (analytics.build_income_forecast).  Zero extra API cost.
-    SharesightSensorDescription(key="forward_annual_income", sub_key="income_report", extension_key=None, name="Forward Annual Income", icon="mdi:cash-clock", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="forward_yield_percent", sub_key="income_report", extension_key=None, name="Forward Dividend Yield", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="income_30d", sub_key="income_report", extension_key=None, name="Income Next 30 Days", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="income_90d", sub_key="income_report", extension_key=None, name="Income Next 90 Days", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
-    SharesightSensorDescription(key="days_to_next", sub_key="income_report", extension_key=None, name="Days Until Next Dividend", icon="mdi:calendar-clock", native_unit_of_measurement="d", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
-    SharesightSensorDescription(key="announced_income", sub_key="income_report", extension_key=None, name="Announced Income Unpaid", icon="mdi:cash-check", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="forward_annual_income", key="forward_annual_income", sub_key="income_report", extension_key=None, name="Forward Annual Income", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="forward_dividend_yield", key="forward_yield_percent", sub_key="income_report", extension_key=None, name="Forward Dividend Yield", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="income_next_30_days", key="income_30d", sub_key="income_report", extension_key=None, name="Income Next 30 Days", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="income_next_90_days", key="income_90d", sub_key="income_report", extension_key=None, name="Income Next 90 Days", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
+    SharesightSensorDescription(translation_key="days_until_next_dividend", key="days_to_next", sub_key="income_report", extension_key=None, name="Days Until Next Dividend", native_unit_of_measurement="d", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="income"),
+    SharesightSensorDescription(translation_key="announced_income_unpaid", key="announced_income", sub_key="income_report", extension_key=None, name="Announced Income Unpaid", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="income"),
 
     # ===== Portfolio Metadata sensors =====
-    SharesightSensorDescription(key="inception_date", sub_key="portfolio_detail", extension_key=None, name="Portfolio Inception Date", icon="mdi:calendar-start", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="country_code", sub_key="portfolio_detail", extension_key=None, name="Portfolio Country", icon="mdi:flag", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="interest_method", sub_key="portfolio_detail", extension_key=None, name="Performance Calculation Method", icon="mdi:calculator-variant-outline", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="access_level", sub_key="portfolio_detail", extension_key=None, name="Portfolio Access Level", icon="mdi:shield-account", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="owner_name", sub_key="portfolio_detail", extension_key=None, name="Portfolio Owner", icon="mdi:account", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="portfolio_inception_date", key="inception_date", sub_key="portfolio_detail", extension_key=None, name="Portfolio Inception Date", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="portfolio_country", key="country_code", sub_key="portfolio_detail", extension_key=None, name="Portfolio Country", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="performance_calculation_method", key="interest_method", sub_key="portfolio_detail", extension_key=None, name="Performance Calculation Method", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="portfolio_access_level", key="access_level", sub_key="portfolio_detail", extension_key=None, name="Portfolio Access Level", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="portfolio_owner", key="owner_name", sub_key="portfolio_detail", extension_key=None, name="Portfolio Owner", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
 
     # ===== Trades sensors =====
-    SharesightSensorDescription(key="last_trade_date", sub_key="trades", extension_key=None, name="Last Trade Date", icon="mdi:calendar-clock", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
-    SharesightSensorDescription(key="last_trade_symbol", sub_key="trades", extension_key=None, name="Last Trade Symbol", icon="mdi:swap-horizontal", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
-    SharesightSensorDescription(key="last_trade_type", sub_key="trades", extension_key=None, name="Last Trade Type", icon="mdi:swap-horizontal-bold", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
-    SharesightSensorDescription(key="last_trade_value", sub_key="trades", extension_key=None, name="Last Trade Value", icon="mdi:cash-fast", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="trade_count_30d", sub_key="trades", extension_key=None, name="Trades Last 30 Days", icon="mdi:counter", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
-    SharesightSensorDescription(key="total_trades", sub_key="trades", extension_key=None, name="Total Trades", icon="mdi:counter", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
-    SharesightSensorDescription(key="buy_count", sub_key="trades", extension_key=None, name="Total Buy Trades", icon="mdi:cart-arrow-down", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
-    SharesightSensorDescription(key="sell_count", sub_key="trades", extension_key=None, name="Total Sell Trades", icon="mdi:cart-arrow-up", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
-    SharesightSensorDescription(key="total_buy_value", sub_key="trades", extension_key=None, name="Total Buy Value", icon="mdi:cart-arrow-down", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="total_sell_value", sub_key="trades", extension_key=None, name="Total Sell Value", icon="mdi:cart-arrow-up", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="net_trade_flow", sub_key="trades", extension_key=None, name="Net Trade Flow", icon="mdi:swap-vertical", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="largest_trade_value", sub_key="trades", extension_key=None, name="Largest Trade Value", icon="mdi:trophy", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="largest_trade_symbol", sub_key="trades", extension_key=None, name="Largest Trade Symbol", icon="mdi:trophy", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="trades"),
-    SharesightSensorDescription(key="trade_count_7d", sub_key="trades", extension_key=None, name="Trades Last 7 Days", icon="mdi:counter", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
-    SharesightSensorDescription(key="trade_count_ytd", sub_key="trades", extension_key=None, name="Trades YTD", icon="mdi:counter", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
-    SharesightSensorDescription(key="average_trade_value", sub_key="trades", extension_key=None, name="Average Trade Value", icon="mdi:calculator", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="average_buy_value", sub_key="trades", extension_key=None, name="Average Buy Value", icon="mdi:calculator", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="average_sell_value", sub_key="trades", extension_key=None, name="Average Sell Value", icon="mdi:calculator", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="total_brokerage", sub_key="trades", extension_key=None, name="Total Brokerage", icon="mdi:cash-minus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="trades_per_month", sub_key="trades", extension_key=None, name="Average Trades Per Month", icon="mdi:chart-timeline-variant", native_unit_of_measurement="trades/month", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="last_buy_date", sub_key="trades", extension_key=None, name="Last Buy Date", icon="mdi:cart-arrow-down", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
-    SharesightSensorDescription(key="last_buy_symbol", sub_key="trades", extension_key=None, name="Last Buy Symbol", icon="mdi:cart-arrow-down", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
-    SharesightSensorDescription(key="last_buy_value", sub_key="trades", extension_key=None, name="Last Buy Value", icon="mdi:cart-arrow-down", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="last_sell_date", sub_key="trades", extension_key=None, name="Last Sell Date", icon="mdi:cart-arrow-up", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
-    SharesightSensorDescription(key="last_sell_symbol", sub_key="trades", extension_key=None, name="Last Sell Symbol", icon="mdi:cart-arrow-up", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
-    SharesightSensorDescription(key="last_sell_value", sub_key="trades", extension_key=None, name="Last Sell Value", icon="mdi:cart-arrow-up", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
-    SharesightSensorDescription(key="most_traded_symbol", sub_key="trades", extension_key=None, name="Most Traded Symbol", icon="mdi:fire", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_trade_date", key="last_trade_date", sub_key="trades", extension_key=None, name="Last Trade Date", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_trade_symbol", key="last_trade_symbol", sub_key="trades", extension_key=None, name="Last Trade Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_trade_type", key="last_trade_type", sub_key="trades", extension_key=None, name="Last Trade Type", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_trade_value", key="last_trade_value", sub_key="trades", extension_key=None, name="Last Trade Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="trades_last_30_days", key="trade_count_30d", sub_key="trades", extension_key=None, name="Trades Last 30 Days", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
+    SharesightSensorDescription(translation_key="total_trades", key="total_trades", sub_key="trades", extension_key=None, name="Total Trades", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
+    SharesightSensorDescription(translation_key="total_buy_trades", key="buy_count", sub_key="trades", extension_key=None, name="Total Buy Trades", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
+    SharesightSensorDescription(translation_key="total_sell_trades", key="sell_count", sub_key="trades", extension_key=None, name="Total Sell Trades", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
+    SharesightSensorDescription(translation_key="total_buy_value", key="total_buy_value", sub_key="trades", extension_key=None, name="Total Buy Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="total_sell_value", key="total_sell_value", sub_key="trades", extension_key=None, name="Total Sell Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="net_trade_flow", key="net_trade_flow", sub_key="trades", extension_key=None, name="Net Trade Flow", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="largest_trade_value", key="largest_trade_value", sub_key="trades", extension_key=None, name="Largest Trade Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="largest_trade_symbol", key="largest_trade_symbol", sub_key="trades", extension_key=None, name="Largest Trade Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="trades_last_7_days", key="trade_count_7d", sub_key="trades", extension_key=None, name="Trades Last 7 Days", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
+    SharesightSensorDescription(translation_key="trades_ytd", key="trade_count_ytd", sub_key="trades", extension_key=None, name="Trades YTD", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="trades"),
+    SharesightSensorDescription(translation_key="average_trade_value", key="average_trade_value", sub_key="trades", extension_key=None, name="Average Trade Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="average_buy_value", key="average_buy_value", sub_key="trades", extension_key=None, name="Average Buy Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="average_sell_value", key="average_sell_value", sub_key="trades", extension_key=None, name="Average Sell Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="total_brokerage", key="total_brokerage", sub_key="trades", extension_key=None, name="Total Brokerage", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="average_trades_per_month", key="trades_per_month", sub_key="trades", extension_key=None, name="Average Trades Per Month", native_unit_of_measurement="trades/month", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_buy_date", key="last_buy_date", sub_key="trades", extension_key=None, name="Last Buy Date", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_buy_symbol", key="last_buy_symbol", sub_key="trades", extension_key=None, name="Last Buy Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_buy_value", key="last_buy_value", sub_key="trades", extension_key=None, name="Last Buy Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_sell_date", key="last_sell_date", sub_key="trades", extension_key=None, name="Last Sell Date", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_sell_symbol", key="last_sell_symbol", sub_key="trades", extension_key=None, name="Last Sell Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="trades"),
+    SharesightSensorDescription(translation_key="last_sell_value", key="last_sell_value", sub_key="trades", extension_key=None, name="Last Sell Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="trades"),
+    SharesightSensorDescription(translation_key="most_traded_symbol", key="most_traded_symbol", sub_key="trades", extension_key=None, name="Most Traded Symbol", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="trades"),
 
     # ===== Cash transaction analytics =====
-    SharesightSensorDescription(key="cash_transaction_count", sub_key="cash_account_transactions", extension_key=None, name="Cash Transactions Count", icon="mdi:bank-transfer", native_unit_of_measurement="transactions", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="contributions"),
-    SharesightSensorDescription(key="last_cash_transaction_date", sub_key="cash_account_transactions", extension_key=None, name="Last Cash Transaction Date", icon="mdi:calendar-clock", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="contributions"),
-    SharesightSensorDescription(key="last_cash_transaction_amount", sub_key="cash_account_transactions", extension_key=None, name="Last Cash Transaction Amount", icon="mdi:bank-transfer", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
+    SharesightSensorDescription(translation_key="cash_transactions_count", key="cash_transaction_count", sub_key="cash_account_transactions", extension_key=None, name="Cash Transactions Count", native_unit_of_measurement="transactions", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="contributions"),
+    SharesightSensorDescription(translation_key="last_cash_transaction_date", key="last_cash_transaction_date", sub_key="cash_account_transactions", extension_key=None, name="Last Cash Transaction Date", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="contributions"),
+    SharesightSensorDescription(translation_key="last_cash_transaction_amount", key="last_cash_transaction_amount", sub_key="cash_account_transactions", extension_key=None, name="Last Cash Transaction Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="contributions"),
 
     # ===== Portfolio derived =====
-    SharesightSensorDescription(key="portfolio_age_days", sub_key="portfolio_detail", extension_key=None, name="Portfolio Age (days)", icon="mdi:timer-sand", native_unit_of_measurement="days", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
+    SharesightSensorDescription(translation_key="portfolio_age_days", key="portfolio_age_days", sub_key="portfolio_detail", extension_key=None, name="Portfolio Age (days)", native_unit_of_measurement="days", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
 
     # ===== Integration diagnostics =====
-    SharesightSensorDescription(key="last_update_timestamp", sub_key="_integration", extension_key=None, name="Last Successful Update", icon="mdi:update", native_unit_of_measurement=None, device_class=SensorDeviceClass.TIMESTAMP, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
-    SharesightSensorDescription(key="update_interval_seconds", sub_key="_integration", extension_key=None, name="Update Interval (s)", icon="mdi:timer-cog", native_unit_of_measurement="s", device_class=SensorDeviceClass.DURATION, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
-    SharesightSensorDescription(key="optional_endpoints_on_cooldown", sub_key="_integration", extension_key=None, name="Endpoints on Cooldown", icon="mdi:pause-circle-outline", native_unit_of_measurement="endpoints", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
+    SharesightSensorDescription(translation_key="last_successful_update", key="last_update_timestamp", sub_key="_integration", extension_key=None, name="Last Successful Update", native_unit_of_measurement=None, device_class=SensorDeviceClass.TIMESTAMP, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None),
+    SharesightSensorDescription(translation_key="update_interval_s", key="update_interval_seconds", sub_key="_integration", extension_key=None, name="Update Interval (s)", native_unit_of_measurement="s", device_class=SensorDeviceClass.DURATION, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
+    SharesightSensorDescription(translation_key="endpoints_on_cooldown", key="optional_endpoints_on_cooldown", sub_key="_integration", extension_key=None, name="Endpoints on Cooldown", native_unit_of_measurement="endpoints", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0),
 ]
 
 # Capital gains tax sensors — only created for Australian portfolios, because
 # the V2 capital_gains / unrealised_cgt reports are AU-only.
 TAX_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     # Realised CGT for the current financial year (V2 capital_gains)
-    SharesightSensorDescription(key="tax_gain_loss", sub_key="capital_gains", extension_key=None, name="CGT Taxable Gain FY", icon="mdi:bank", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="short_term_gains", sub_key="capital_gains", extension_key=None, name="CGT Short Term Gains FY", icon="mdi:clock-fast", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="long_term_gains", sub_key="capital_gains", extension_key=None, name="CGT Long Term Gains FY", icon="mdi:clock-outline", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="losses", sub_key="capital_gains", extension_key=None, name="CGT Losses FY", icon="mdi:cash-minus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="cgt_concession_amount", sub_key="capital_gains", extension_key=None, name="CGT Concession Amount FY", icon="mdi:cash-refund", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="total_discounted_capital_gain_distributions", sub_key="capital_gains", extension_key=None, name="CGT Discounted Distributions FY", icon="mdi:sack-percent", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="total_non_discounted_capital_gain_distributions", sub_key="capital_gains", extension_key=None, name="CGT Non-Discounted Distributions FY", icon="mdi:sack", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="cgt_taxable_gain_fy", key="tax_gain_loss", sub_key="capital_gains", extension_key=None, name="CGT Taxable Gain FY", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="cgt_short_term_gains_fy", key="short_term_gains", sub_key="capital_gains", extension_key=None, name="CGT Short Term Gains FY", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="cgt_long_term_gains_fy", key="long_term_gains", sub_key="capital_gains", extension_key=None, name="CGT Long Term Gains FY", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="cgt_losses_fy", key="losses", sub_key="capital_gains", extension_key=None, name="CGT Losses FY", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="cgt_concession_amount_fy", key="cgt_concession_amount", sub_key="capital_gains", extension_key=None, name="CGT Concession Amount FY", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="cgt_discounted_distributions_fy", key="total_discounted_capital_gain_distributions", sub_key="capital_gains", extension_key=None, name="CGT Discounted Distributions FY", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="cgt_non_discounted_distributions_fy", key="total_non_discounted_capital_gain_distributions", sub_key="capital_gains", extension_key=None, name="CGT Non-Discounted Distributions FY", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
 
     # Unrealised CGT — "if I sold everything today" (V2 unrealised_cgt)
-    SharesightSensorDescription(key="unrealised_tax_gain_loss", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Taxable Gain", icon="mdi:bank-outline", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="unrealised_short_term_gains", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Short Term Gains", icon="mdi:clock-fast", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="unrealised_long_term_gains", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Long Term Gains", icon="mdi:clock-outline", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="unrealised_losses", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Losses", icon="mdi:cash-minus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
-    SharesightSensorDescription(key="unrealised_cgt_concession_amount", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Concession Amount", icon="mdi:cash-refund", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="unrealised_cgt_taxable_gain", key="unrealised_tax_gain_loss", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Taxable Gain", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="unrealised_cgt_short_term_gains", key="unrealised_short_term_gains", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Short Term Gains", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="unrealised_cgt_long_term_gains", key="unrealised_long_term_gains", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Long Term Gains", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="unrealised_cgt_losses", key="unrealised_losses", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Losses", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
+    SharesightSensorDescription(translation_key="unrealised_cgt_concession_amount", key="unrealised_cgt_concession_amount", sub_key="unrealised_cgt", extension_key=None, name="Unrealised CGT Concession Amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="tax"),
 ]
 
 # Benchmark comparison sensors — only created once the V3 benchmark report
 # returns data (i.e. the user has configured a benchmark on the portfolio).
 BENCHMARK_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="benchmark_name", sub_key="benchmark", extension_key=None, name="Benchmark Name", icon="mdi:speedometer", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="benchmark"),
-    SharesightSensorDescription(key="benchmark_code", sub_key="benchmark", extension_key=None, name="Benchmark Code", icon="mdi:identifier", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="benchmark"),
-    SharesightSensorDescription(key="benchmark_total_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Total Gain Percent", icon="mdi:speedometer", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
-    SharesightSensorDescription(key="benchmark_capital_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Capital Gain Percent", icon="mdi:chart-line", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
-    SharesightSensorDescription(key="benchmark_payout_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Dividend Gain Percent", icon="mdi:hand-coin", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
-    SharesightSensorDescription(key="benchmark_currency_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Currency Gain Percent", icon="mdi:currency-usd", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
-    SharesightSensorDescription(key="benchmark_excess_return_percent", sub_key="benchmark", extension_key=None, name="Portfolio Excess Return vs Benchmark", icon="mdi:scale-balance", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
+    SharesightSensorDescription(translation_key="benchmark_name", key="benchmark_name", sub_key="benchmark", extension_key=None, name="Benchmark Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="benchmark"),
+    SharesightSensorDescription(translation_key="benchmark_code", key="benchmark_code", sub_key="benchmark", extension_key=None, name="Benchmark Code", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="benchmark"),
+    SharesightSensorDescription(translation_key="benchmark_total_gain_percent", key="benchmark_total_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Total Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
+    SharesightSensorDescription(translation_key="benchmark_capital_gain_percent", key="benchmark_capital_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Capital Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
+    SharesightSensorDescription(translation_key="benchmark_dividend_gain_percent", key="benchmark_payout_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Dividend Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
+    SharesightSensorDescription(translation_key="benchmark_currency_gain_percent", key="benchmark_currency_gain_percent", sub_key="benchmark", extension_key=None, name="Benchmark Currency Gain Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
+    SharesightSensorDescription(translation_key="portfolio_excess_return_vs_benchmark", key="benchmark_excess_return_percent", sub_key="benchmark", extension_key=None, name="Portfolio Excess Return vs Benchmark", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="benchmark"),
 ]
 
 # Portfolio analytics — concentration / quality / composition metrics derived
@@ -778,13 +778,13 @@ BENCHMARK_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
 # sub_key="portfolio_analytics").  Keys map onto
 # analytics.build_portfolio_analytics.  Zero extra API cost.
 ANALYTICS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="hhi", sub_key="portfolio_analytics", extension_key=None, name="Concentration (HHI)", icon="mdi:chart-donut-variant", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=4, device_group="analytics"),
-    SharesightSensorDescription(key="effective_holdings", sub_key="portfolio_analytics", extension_key=None, name="Effective Number of Holdings", icon="mdi:format-list-numbered", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
-    SharesightSensorDescription(key="weighted_yield", sub_key="portfolio_analytics", extension_key=None, name="Weighted Dividend Yield", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
-    SharesightSensorDescription(key="weighted_pe", sub_key="portfolio_analytics", extension_key=None, name="Weighted P/E", icon="mdi:chart-line", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
-    SharesightSensorDescription(key="fx_exposure_percent", sub_key="portfolio_analytics", extension_key=None, name="Foreign Currency Exposure", icon="mdi:earth", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
-    SharesightSensorDescription(key="cash_drag_percent", sub_key="portfolio_analytics", extension_key=None, name="Cash Drag", icon="mdi:cash-100", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
-    SharesightSensorDescription(key="stale_price_count", sub_key="portfolio_analytics", extension_key=None, name="Stale Price Count", icon="mdi:clock-alert-outline", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="analytics"),
+    SharesightSensorDescription(translation_key="concentration_hhi", key="hhi", sub_key="portfolio_analytics", extension_key=None, name="Concentration (HHI)", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=4, device_group="analytics"),
+    SharesightSensorDescription(translation_key="effective_number_of_holdings", key="effective_holdings", sub_key="portfolio_analytics", extension_key=None, name="Effective Number of Holdings", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(translation_key="weighted_dividend_yield", key="weighted_yield", sub_key="portfolio_analytics", extension_key=None, name="Weighted Dividend Yield", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(translation_key="weighted_p_e", key="weighted_pe", sub_key="portfolio_analytics", extension_key=None, name="Weighted P/E", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, entity_registry_enabled_default=False, device_group="analytics"),
+    SharesightSensorDescription(translation_key="foreign_currency_exposure", key="fx_exposure_percent", sub_key="portfolio_analytics", extension_key=None, name="Foreign Currency Exposure", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(translation_key="cash_drag", key="cash_drag_percent", sub_key="portfolio_analytics", extension_key=None, name="Cash Drag", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="analytics"),
+    SharesightSensorDescription(translation_key="stale_price_count", key="stale_price_count", sub_key="portfolio_analytics", extension_key=None, name="Stale Price Count", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, entity_registry_enabled_default=False, device_group="analytics"),
 ]
 
 # All-time portfolio totals INCLUDING fully-sold positions (device_group=
@@ -792,44 +792,44 @@ ANALYTICS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
 # coordinator stores under coordinator.data["totals"].  Gated on key-presence
 # in sensor.py so scope-gated tokens get no phantom entities.
 TOTALS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="value", sub_key="totals", extension_key=None, name="All-Time Value (incl. sold)", icon="mdi:cash-multiple", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="totals"),
-    SharesightSensorDescription(key="total_return", sub_key="totals", extension_key=None, name="All-Time Return (incl. sold)", icon="mdi:cash-plus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="totals"),
-    SharesightSensorDescription(key="total_return_percent", sub_key="totals", extension_key=None, name="All-Time Return Percent (incl. sold)", icon="mdi:sack-percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="totals"),
-    SharesightSensorDescription(key="percentage_annualised", sub_key="totals", extension_key=None, name="Return Is Annualised", icon="mdi:calendar-sync", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="totals"),
+    SharesightSensorDescription(translation_key="all_time_value_incl_sold", key="value", sub_key="totals", extension_key=None, name="All-Time Value (incl. sold)", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="totals"),
+    SharesightSensorDescription(translation_key="all_time_return_incl_sold", key="total_return", sub_key="totals", extension_key=None, name="All-Time Return (incl. sold)", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, entity_category=None, suggested_display_precision=2, device_group="totals"),
+    SharesightSensorDescription(translation_key="all_time_return_percent_incl_sold", key="total_return_percent", sub_key="totals", extension_key=None, name="All-Time Return Percent (incl. sold)", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="totals"),
+    SharesightSensorDescription(translation_key="return_is_annualised", key="percentage_annualised", sub_key="totals", extension_key=None, name="Return Is Annualised", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="totals"),
 ]
 
 # Per-holding fundamentals — joined from the already-fetched user_instruments
 # feed onto each holding device (key="holding_fundamental").  Fundamentals are
 # routinely null for ETFs/funds/crypto, so sensors must tolerate None.
 HOLDING_FUNDAMENTAL_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="holding_fundamental", sub_key="pe_ratio", name="HOLDING PE ratio", icon="mdi:chart-line", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2, device_group="holding"),
-    SharesightSensorDescription(key="holding_fundamental", sub_key="eps", name="HOLDING EPS", icon="mdi:cash", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=4, device_group="holding"),
-    SharesightSensorDescription(key="holding_fundamental", sub_key="nta", name="HOLDING NTA", icon="mdi:bank", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=4, device_group="holding"),
-    SharesightSensorDescription(key="holding_fundamental", sub_key="sector", name="HOLDING sector", icon="mdi:shape", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holding"),
-    SharesightSensorDescription(key="holding_fundamental", sub_key="industry", name="HOLDING industry", icon="mdi:factory", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holding"),
-    SharesightSensorDescription(key="holding_fundamental", sub_key="instrument_type", name="HOLDING instrument type", icon="mdi:tag-outline", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holding"),
-    SharesightSensorDescription(key="holding_fundamental", sub_key="price_updated_at", name="HOLDING price updated", icon="mdi:clock-check-outline", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_pe_ratio", key="holding_fundamental", sub_key="pe_ratio", name="HOLDING PE ratio", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_eps", key="holding_fundamental", sub_key="eps", name="HOLDING EPS", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=4, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_nta", key="holding_fundamental", sub_key="nta", name="HOLDING NTA", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=4, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_sector", key="holding_fundamental", sub_key="sector", name="HOLDING sector", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_industry", key="holding_fundamental", sub_key="industry", name="HOLDING industry", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_instrument_type", key="holding_fundamental", sub_key="instrument_type", name="HOLDING instrument type", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_price_updated_at", key="holding_fundamental", sub_key="price_updated_at", name="HOLDING price updated", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="holding"),
 ]
 
 # Per-holding dividend income, grouped from the already-fetched portfolio
 # payouts list (key="holding_income").
 HOLDING_INCOME_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="holding_income", sub_key="ttm_income", name="HOLDING dividends TTM", icon="mdi:hand-coin", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, suggested_display_precision=2, device_group="holding"),
-    SharesightSensorDescription(key="holding_income", sub_key="yield_on_cost", name="HOLDING yield on cost", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2, device_group="holding"),
-    SharesightSensorDescription(key="holding_income", sub_key="franking_ttm", name="HOLDING franking credits TTM", icon="mdi:cash-check", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, suggested_display_precision=2, device_group="holding"),
-    SharesightSensorDescription(key="holding_income", sub_key="last_dividend_amount", name="HOLDING last dividend amount", icon="mdi:cash", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2, device_group="holding"),
-    SharesightSensorDescription(key="holding_income", sub_key="last_dividend_date", name="HOLDING last dividend date", icon="mdi:calendar-check", native_unit_of_measurement=None, device_class=None, state_class=None, device_group="holding"),
-    SharesightSensorDescription(key="holding_income", sub_key="dividend_count", name="HOLDING dividend count", icon="mdi:counter", native_unit_of_measurement="dividends", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_ttm_income", key="holding_income", sub_key="ttm_income", name="HOLDING dividends TTM", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, suggested_display_precision=2, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_yield_on_cost", key="holding_income", sub_key="yield_on_cost", name="HOLDING yield on cost", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_franking_ttm", key="holding_income", sub_key="franking_ttm", name="HOLDING franking credits TTM", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, suggested_display_precision=2, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_last_dividend_amount", key="holding_income", sub_key="last_dividend_amount", name="HOLDING last dividend amount", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_last_dividend_date", key="holding_income", sub_key="last_dividend_date", name="HOLDING last dividend date", native_unit_of_measurement=None, device_class=None, state_class=None, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_dividend_count", key="holding_income", sub_key="dividend_count", name="HOLDING dividend count", native_unit_of_measurement="dividends", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0, device_group="holding"),
 ]
 
 # Per-holding trade activity, grouped from the already-fetched trades list
 # (key="holding_trade").
 HOLDING_TRADE_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="holding_trade", sub_key="vwap_buy_price", name="HOLDING average buy price", icon="mdi:cart-arrow-down", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=4, device_group="holding"),
-    SharesightSensorDescription(key="holding_trade", sub_key="brokerage_paid", name="HOLDING brokerage paid", icon="mdi:cash-minus", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, suggested_display_precision=2, device_group="holding"),
-    SharesightSensorDescription(key="holding_trade", sub_key="last_trade_date", name="HOLDING last trade date", icon="mdi:calendar-clock", native_unit_of_measurement=None, device_class=None, state_class=None, device_group="holding"),
-    SharesightSensorDescription(key="holding_trade", sub_key="trade_count", name="HOLDING trade count", icon="mdi:counter", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0, device_group="holding"),
-    SharesightSensorDescription(key="holding_trade", sub_key="net_shares", name="HOLDING net shares traded", icon="mdi:swap-vertical", native_unit_of_measurement="shares", device_class=None, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=4, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_vwap_buy_price", key="holding_trade", sub_key="vwap_buy_price", name="HOLDING average buy price", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=4, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_brokerage_paid", key="holding_trade", sub_key="brokerage_paid", name="HOLDING brokerage paid", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.TOTAL, suggested_display_precision=2, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_last_trade_date", key="holding_trade", sub_key="last_trade_date", name="HOLDING last trade date", native_unit_of_measurement=None, device_class=None, state_class=None, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_trade_count", key="holding_trade", sub_key="trade_count", name="HOLDING trade count", native_unit_of_measurement="trades", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=0, device_group="holding"),
+    SharesightSensorDescription(translation_key="holding_net_shares", key="holding_trade", sub_key="net_shares", name="HOLDING net shares traded", native_unit_of_measurement="shares", device_class=None, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=4, device_group="holding"),
 ]
 
 # Combined per-holding description set iterated once per holding in sensor.py.
@@ -843,64 +843,64 @@ ALL_HOLDING_DESCRIPTIONS: list[SharesightSensorDescription] = (
 # Portfolio sector / industry allocation — a diversification lens the
 # market-based diversity device does not provide (device_group="sector").
 SECTOR_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="sector_1_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 1 Name", icon="mdi:shape", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
-    SharesightSensorDescription(key="sector_1_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 1 Percent", icon="mdi:shape", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_1_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 1 Value", icon="mdi:shape", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_2_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 2 Name", icon="mdi:shape", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
-    SharesightSensorDescription(key="sector_2_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 2 Percent", icon="mdi:shape", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_2_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 2 Value", icon="mdi:shape", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_3_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 3 Name", icon="mdi:shape", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
-    SharesightSensorDescription(key="sector_3_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 3 Percent", icon="mdi:shape", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_3_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 3 Value", icon="mdi:shape", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_4_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 4 Name", icon="mdi:shape", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
-    SharesightSensorDescription(key="sector_4_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 4 Percent", icon="mdi:shape", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_4_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 4 Value", icon="mdi:shape", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_5_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 5 Name", icon="mdi:shape", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
-    SharesightSensorDescription(key="sector_5_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 5 Percent", icon="mdi:shape", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_5_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 5 Value", icon="mdi:shape", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="sector_count", sub_key="sector_allocation", extension_key=None, name="Sector Count", icon="mdi:shape-plus", native_unit_of_measurement="sectors", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="sector"),
-    SharesightSensorDescription(key="top_3_sectors_percent", sub_key="sector_allocation", extension_key=None, name="Top 3 Sectors Percent", icon="mdi:chart-donut", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="top_5_sectors_percent", sub_key="sector_allocation", extension_key=None, name="Top 5 Sectors Percent", icon="mdi:chart-donut", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="industry_1_name", sub_key="industry_allocation", extension_key=None, name="Top Industry 1 Name", icon="mdi:factory", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
-    SharesightSensorDescription(key="industry_1_percent", sub_key="industry_allocation", extension_key=None, name="Top Industry 1 Percent", icon="mdi:factory", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="industry_2_name", sub_key="industry_allocation", extension_key=None, name="Top Industry 2 Name", icon="mdi:factory", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
-    SharesightSensorDescription(key="industry_2_percent", sub_key="industry_allocation", extension_key=None, name="Top Industry 2 Percent", icon="mdi:factory", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
-    SharesightSensorDescription(key="industry_count", sub_key="industry_allocation", extension_key=None, name="Industry Count", icon="mdi:factory", native_unit_of_measurement="industries", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_1_name", key="sector_1_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 1 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_1_percent", key="sector_1_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 1 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_1_value", key="sector_1_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 1 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_2_name", key="sector_2_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 2 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_2_percent", key="sector_2_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 2 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_2_value", key="sector_2_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 2 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_3_name", key="sector_3_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 3 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_3_percent", key="sector_3_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 3 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_3_value", key="sector_3_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 3 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_4_name", key="sector_4_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 4 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_4_percent", key="sector_4_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 4 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_4_value", key="sector_4_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 4 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_5_name", key="sector_5_name", sub_key="sector_allocation", extension_key=None, name="Top Sector 5 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_5_percent", key="sector_5_percent", sub_key="sector_allocation", extension_key=None, name="Top Sector 5 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_sector_5_value", key="sector_5_value", sub_key="sector_allocation", extension_key=None, name="Top Sector 5 Value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="sector_count", key="sector_count", sub_key="sector_allocation", extension_key=None, name="Sector Count", native_unit_of_measurement="sectors", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_3_sectors_percent", key="top_3_sectors_percent", sub_key="sector_allocation", extension_key=None, name="Top 3 Sectors Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_5_sectors_percent", key="top_5_sectors_percent", sub_key="sector_allocation", extension_key=None, name="Top 5 Sectors Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_industry_1_name", key="industry_1_name", sub_key="industry_allocation", extension_key=None, name="Top Industry 1 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_industry_1_percent", key="industry_1_percent", sub_key="industry_allocation", extension_key=None, name="Top Industry 1 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_industry_2_name", key="industry_2_name", sub_key="industry_allocation", extension_key=None, name="Top Industry 2 Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="sector"),
+    SharesightSensorDescription(translation_key="top_industry_2_percent", key="industry_2_percent", sub_key="industry_allocation", extension_key=None, name="Top Industry 2 Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="sector"),
+    SharesightSensorDescription(translation_key="industry_count", key="industry_count", sub_key="industry_allocation", extension_key=None, name="Industry Count", native_unit_of_measurement="industries", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="sector"),
 ]
 
 # Account / subscription sensors from V2 my_user.json (device_group="account").
 ACCOUNT_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="plan_label", sub_key="my_user", extension_key=None, name="Sharesight Plan", icon="mdi:card-account-details", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
-    SharesightSensorDescription(key="plan_code", sub_key="my_user", extension_key=None, name="Sharesight Plan Code", icon="mdi:identifier", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
-    SharesightSensorDescription(key="name", sub_key="my_user", extension_key=None, name="Sharesight Account Name", icon="mdi:account", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
-    SharesightSensorDescription(key="signed_up_at", sub_key="my_user", extension_key=None, name="Sharesight Member Since", icon="mdi:calendar-account", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
-    SharesightSensorDescription(key="subscription_status", sub_key="my_user", extension_key=None, name="Sharesight Subscription Status", icon="mdi:shield-account", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
+    SharesightSensorDescription(translation_key="sharesight_plan", key="plan_label", sub_key="my_user", extension_key=None, name="Sharesight Plan", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
+    SharesightSensorDescription(translation_key="sharesight_plan_code", key="plan_code", sub_key="my_user", extension_key=None, name="Sharesight Plan Code", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
+    SharesightSensorDescription(translation_key="sharesight_account_name", key="name", sub_key="my_user", extension_key=None, name="Sharesight Account Name", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
+    SharesightSensorDescription(translation_key="sharesight_member_since", key="signed_up_at", sub_key="my_user", extension_key=None, name="Sharesight Member Since", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
+    SharesightSensorDescription(translation_key="sharesight_subscription_status", key="subscription_status", sub_key="my_user", extension_key=None, name="Sharesight Subscription Status", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="account"),
 ]
 
 # Watchlist overview sensors from V3 watchlist.json (device_group="watchlist").
 WATCHLIST_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="watchlist_count", sub_key="watchlist", extension_key=None, name="Watchlist Count", icon="mdi:eye", native_unit_of_measurement="instruments", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="watchlist"),
-    SharesightSensorDescription(key="watchlist_up_count", sub_key="watchlist", extension_key=None, name="Watchlist Up Today", icon="mdi:trending-up", native_unit_of_measurement="instruments", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="watchlist"),
-    SharesightSensorDescription(key="watchlist_down_count", sub_key="watchlist", extension_key=None, name="Watchlist Down Today", icon="mdi:trending-down", native_unit_of_measurement="instruments", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="watchlist"),
-    SharesightSensorDescription(key="watchlist_top_gainer_symbol", sub_key="watchlist", extension_key=None, name="Watchlist Top Gainer", icon="mdi:trending-up", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="watchlist"),
-    SharesightSensorDescription(key="watchlist_top_gainer_percent", sub_key="watchlist", extension_key=None, name="Watchlist Top Gainer Percent", icon="mdi:trending-up", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="watchlist"),
-    SharesightSensorDescription(key="watchlist_top_loser_symbol", sub_key="watchlist", extension_key=None, name="Watchlist Top Loser", icon="mdi:trending-down", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="watchlist"),
-    SharesightSensorDescription(key="watchlist_top_loser_percent", sub_key="watchlist", extension_key=None, name="Watchlist Top Loser Percent", icon="mdi:trending-down", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="watchlist"),
-    SharesightSensorDescription(key="watchlist_average_percent", sub_key="watchlist", extension_key=None, name="Watchlist Average Change Percent", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_count", key="watchlist_count", sub_key="watchlist", extension_key=None, name="Watchlist Count", native_unit_of_measurement="instruments", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_up_today", key="watchlist_up_count", sub_key="watchlist", extension_key=None, name="Watchlist Up Today", native_unit_of_measurement="instruments", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_down_today", key="watchlist_down_count", sub_key="watchlist", extension_key=None, name="Watchlist Down Today", native_unit_of_measurement="instruments", device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=0, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_top_gainer", key="watchlist_top_gainer_symbol", sub_key="watchlist", extension_key=None, name="Watchlist Top Gainer", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_top_gainer_percent", key="watchlist_top_gainer_percent", sub_key="watchlist", extension_key=None, name="Watchlist Top Gainer Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_top_loser", key="watchlist_top_loser_symbol", sub_key="watchlist", extension_key=None, name="Watchlist Top Loser", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_top_loser_percent", key="watchlist_top_loser_percent", sub_key="watchlist", extension_key=None, name="Watchlist Top Loser Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_average_change_percent", key="watchlist_average_percent", sub_key="watchlist", extension_key=None, name="Watchlist Average Change Percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="watchlist"),
 ]
 
 # FX rate sensors — one per foreign currency held, instantiated dynamically
 # in sensor.py with local_name = the foreign currency code (device_group="fx").
 FX_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="fx_rate", sub_key="exchange_rates", extension_key=None, name="FX rate", icon="mdi:currency-usd", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=4, device_group="fx"),
+    SharesightSensorDescription(translation_key="fx_rate", key="fx_rate", sub_key="exchange_rates", extension_key=None, name="FX rate", native_unit_of_measurement=None, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=4, device_group="fx"),
 ]
 
 # Market trading-hours sensors — instantiated per held market with local_name =
 # the market code (device_group="market_hours").
 MARKET_HOURS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="market_status", sub_key="markets", extension_key=None, name="status", icon="mdi:store-clock", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="market_hours"),
-    SharesightSensorDescription(key="market_next_open", sub_key="markets", extension_key=None, name="next open", icon="mdi:clock-start", native_unit_of_measurement=None, device_class=SensorDeviceClass.TIMESTAMP, state_class=None, entity_category=None, suggested_display_precision=None, device_group="market_hours"),
-    SharesightSensorDescription(key="market_next_close", sub_key="markets", extension_key=None, name="next close", icon="mdi:clock-end", native_unit_of_measurement=None, device_class=SensorDeviceClass.TIMESTAMP, state_class=None, entity_category=None, suggested_display_precision=None, device_group="market_hours"),
+    SharesightSensorDescription(translation_key="market_hours_status", key="market_status", sub_key="markets", extension_key=None, name="status", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=EntityCategory.DIAGNOSTIC, suggested_display_precision=None, device_group="market_hours"),
+    SharesightSensorDescription(translation_key="market_hours_next_open", key="market_next_open", sub_key="markets", extension_key=None, name="next open", native_unit_of_measurement=None, device_class=SensorDeviceClass.TIMESTAMP, state_class=None, entity_category=None, suggested_display_precision=None, device_group="market_hours"),
+    SharesightSensorDescription(translation_key="market_hours_next_close", key="market_next_close", sub_key="markets", extension_key=None, name="next close", native_unit_of_measurement=None, device_class=SensorDeviceClass.TIMESTAMP, state_class=None, entity_category=None, suggested_display_precision=None, device_group="market_hours"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -915,8 +915,8 @@ MARKET_HOURS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
 # uses CURRENCY_DOLLAR so its unit resolves to the instrument's own currency,
 # passed as the sensor's currency at construction.
 WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="watchlist_instrument_price", sub_key="watchlist_instrument", extension_key=None, name="price", icon="mdi:cash", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=4, device_group="watchlist"),
-    SharesightSensorDescription(key="watchlist_instrument_day_change_percent", sub_key="watchlist_instrument", extension_key=None, name="day change percent", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_instrument_price", key="watchlist_instrument_price", sub_key="watchlist_instrument", extension_key=None, name="price", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=4, entity_registry_enabled_default=False, device_group="watchlist"),
+    SharesightSensorDescription(translation_key="watchlist_instrument_day_change_percent", key="watchlist_instrument_day_change_percent", sub_key="watchlist_instrument", extension_key=None, name="day change percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, entity_registry_enabled_default=False, device_group="watchlist"),
 ]
 
 # Latest instrument-news headline (W2) on the portfolio device.  State is the
@@ -925,15 +925,15 @@ WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
 # optional V2 instrument_news.json feed the coordinator stores under
 # coordinator.data["instrument_news"]["instrument_news"].
 NEWS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="latest_news", sub_key="instrument_news", extension_key=None, name="Latest News", icon="mdi:newspaper-variant-outline", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="portfolio"),
+    SharesightSensorDescription(translation_key="latest_news", key="latest_news", sub_key="instrument_news", extension_key=None, name="Latest News", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="portfolio"),
 ]
 
 # 30-day portfolio value-trend change sensors (W6) on the portfolio device.
 # Keys map onto analytics.build_value_trend (coordinator.data["value_trend"]);
 # the 30d sensor also carries the sparkline "series" in extra_state_attributes.
 VALUE_TREND_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="change_7d_percent", sub_key="value_trend", extension_key=None, name="Value Change 7d", icon="mdi:chart-line-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="portfolio"),
-    SharesightSensorDescription(key="change_30d_percent", sub_key="value_trend", extension_key=None, name="Value Change 30d", icon="mdi:chart-line-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="portfolio"),
+    SharesightSensorDescription(translation_key="value_change_7d", key="change_7d_percent", sub_key="value_trend", extension_key=None, name="Value Change 7d", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="portfolio"),
+    SharesightSensorDescription(translation_key="value_change_30d", key="change_30d_percent", sub_key="value_trend", extension_key=None, name="Value Change 30d", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="portfolio"),
 ]
 
 # Per-label value + percent sensors (W7) in a new "labels" device group.
@@ -942,6 +942,6 @@ VALUE_TREND_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
 # key (i.e. at least one holding carries a label).  Keys map onto
 # analytics.build_label_allocation entries (value / percentage).
 LABEL_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
-    SharesightSensorDescription(key="label_value", sub_key="label_allocation", extension_key=None, name="value", icon="mdi:tag", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="labels"),
-    SharesightSensorDescription(key="label_percent", sub_key="label_allocation", extension_key=None, name="percent", icon="mdi:tag-text-outline", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="labels"),
+    SharesightSensorDescription(translation_key="label_value", key="label_value", sub_key="label_allocation", extension_key=None, name="value", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, entity_registry_enabled_default=False, device_group="labels"),
+    SharesightSensorDescription(translation_key="label_percent", key="label_percent", sub_key="label_allocation", extension_key=None, name="percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, entity_registry_enabled_default=False, device_group="labels"),
 ]
