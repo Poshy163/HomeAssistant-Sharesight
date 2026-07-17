@@ -12,17 +12,19 @@ from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from SharesightAPI.SharesightAPI import SharesightAPI
 
+from .application_credentials import account_type_context
 from .const import (
+    ACCOUNT_DEVELOPER,
+    ACCOUNT_STANDARD,
     API_URL_BASE,
+    CONF_ACCOUNT_TYPE,
     CONF_ENABLE_LTS_BACKFILL,
     CONF_PORTFOLIO_ID,
     CONF_SCAN_INTERVAL,
-    CONF_USE_EDGE,
+    DEFAULT_ACCOUNT_TYPE,
     DEFAULT_ENABLE_LTS_BACKFILL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    EDGE_API_URL_BASE,
-    EDGE_TOKEN_URL,
     MAX_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
     TOKEN_URL,
@@ -36,7 +38,7 @@ class SharesightConfigFlow(
 ):
     """Handle the Sharesight config flow."""
 
-    VERSION = 2
+    VERSION = 3
     DOMAIN = DOMAIN
 
     def __init__(self) -> None:
@@ -44,6 +46,7 @@ class SharesightConfigFlow(
         self._oauth_data: dict[str, Any] = {}
         self._portfolios: dict[str, str] = {}  # {id_str: "name (id)"}
         self._reauth_entry: ConfigEntry | None = None
+        self._account_type: str = DEFAULT_ACCOUNT_TYPE
 
     @property
     def logger(self) -> logging.Logger:
@@ -55,23 +58,25 @@ class SharesightConfigFlow(
         """Return the options flow for this handler."""
         return SharesightOptionsFlow(config_entry)
 
-    async def _fetch_portfolios(self, use_edge: bool = False) -> dict[str, str]:
-        """Fetch portfolio list from Sharesight API using the current OAuth token."""
+    async def _fetch_portfolios(self) -> dict[str, str]:
+        """Fetch the portfolio list using the token just minted.
+
+        The token is only valid on the deployment that issued it, so the list
+        is implicitly scoped to ``self._account_type`` — there is nothing to
+        pass in, and no way for the two to disagree.
+        """
         access_token = self._oauth_data.get("token", {}).get("access_token")
         if not access_token:
             _LOGGER.error("No access token available to fetch portfolios")
             return {}
-
-        api_url = EDGE_API_URL_BASE if use_edge else API_URL_BASE
-        token_url = EDGE_TOKEN_URL if use_edge else TOKEN_URL
 
         client = SharesightAPI(
             client_id="",
             client_secret="",
             authorization_code="",
             redirect_uri="",
-            token_url=token_url,
-            api_url_base=api_url,
+            token_url=TOKEN_URL[self._account_type],
+            api_url_base=API_URL_BASE[self._account_type],
             use_token_file=False,
             session=async_get_clientsession(self.hass),
         )
@@ -99,8 +104,51 @@ class SharesightConfigFlow(
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         # Skip domain-level unique_id (which would block multiple portfolios)
-        # and go straight to the credential picker.
-        return await self.async_step_pick_implementation()
+        # and ask for the account type first — see async_step_pick_account_type.
+        return await self.async_step_pick_account_type()
+
+    async def async_step_pick_account_type(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask which kind of Sharesight account is being connected.
+
+        This must run before async_step_pick_implementation, because that is
+        where the authorize URL is generated and it cannot be changed
+        afterwards.  Standard and developer accounts live on separate
+        deployments with separate OAuth app registries, so the credential
+        picked on the next step must match the account type chosen here.
+        """
+        if user_input is not None:
+            self._account_type = user_input[CONF_ACCOUNT_TYPE]
+            return await self.async_step_pick_implementation()
+
+        return self.async_show_form(
+            step_id="pick_account_type",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ACCOUNT_TYPE, default=DEFAULT_ACCOUNT_TYPE
+                    ): vol.In(
+                        {
+                            ACCOUNT_STANDARD: "Standard",
+                            ACCOUNT_DEVELOPER: "Developer (sandbox)",
+                        }
+                    )
+                }
+            ),
+        )
+
+    async def async_step_pick_implementation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick the credential, with the account type published to the platform.
+
+        Wrapped rather than entered once in async_step_pick_account_type: the
+        ContextVar does not survive the form round-trip, since HA re-enters this
+        step in a fresh task when the user submits the credential picker.
+        """
+        with account_type_context(self._account_type):
+            return await super().async_step_pick_implementation(user_input)
 
     async def async_oauth_create_entry(self, data: dict[str, Any]) -> ConfigFlowResult:
         """Handle a successful OAuth flow."""
@@ -124,28 +172,39 @@ class SharesightConfigFlow(
 
         if user_input is not None:
             portfolio_id = str(user_input[CONF_PORTFOLIO_ID])
-            use_edge = user_input.get(CONF_USE_EDGE, False)
 
-            await self.async_set_unique_id(portfolio_id)
+            # Standard keeps a bare portfolio_id so entries created before the
+            # account-type picker keep their unique_id; developer is
+            # namespaced, since the two deployments allocate ids independently
+            # and could otherwise collide into a spurious "already configured".
+            await self.async_set_unique_id(
+                portfolio_id
+                if self._account_type == ACCOUNT_STANDARD
+                else f"{self._account_type}:{portfolio_id}"
+            )
             self._abort_if_unique_id_configured()
 
             portfolio_name = self._portfolios.get(portfolio_id, portfolio_id)
-            edge_label = " (Edge)" if use_edge else ""
+            edge_label = " (Edge)" if self._account_type == ACCOUNT_DEVELOPER else ""
             return self.async_create_entry(
                 title=f"Sharesight: {portfolio_name}{edge_label}",
                 data={
                     **self._oauth_data,
                     CONF_PORTFOLIO_ID: portfolio_id,
-                    CONF_USE_EDGE: use_edge,
+                    CONF_ACCOUNT_TYPE: self._account_type,
                 },
             )
 
         if self._portfolios:
             portfolio_selector: Any = vol.In(self._portfolios)
         else:
+            # Most likely cause is a credential/account-type mismatch: the
+            # token minted above is only valid on the deployment that issued it.
             _LOGGER.warning(
-                "Could not fetch portfolio list from Sharesight API, "
-                "falling back to manual entry"
+                "Could not fetch portfolio list for a Sharesight %s account — "
+                "check the credential picked matches that account type. "
+                "Falling back to manual entry",
+                self._account_type,
             )
             portfolio_selector = str
 
@@ -154,7 +213,6 @@ class SharesightConfigFlow(
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_PORTFOLIO_ID): portfolio_selector,
-                    vol.Required(CONF_USE_EDGE, default=False): bool,
                 }
             ),
             errors=errors,
@@ -165,6 +223,13 @@ class SharesightConfigFlow(
         self._reauth_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
         )
+        if self._reauth_entry is not None:
+            # Re-auth has to target the account type the entry was created
+            # against — its credential does not exist in the other deployment's
+            # registry, so re-minting there would fail with invalid_client.
+            self._account_type = self._reauth_entry.data.get(
+                CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE
+            )
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

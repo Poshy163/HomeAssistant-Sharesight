@@ -27,7 +27,7 @@
 | API base (prod) | `https://api.sharesight.com/api/` |
 | V2 full prefix | `https://api.sharesight.com/api/v2/` |
 | V3 full prefix | `https://api.sharesight.com/api/v3/` |
-| Edge base (used when `use_edge_url`) | `https://edge-api.sharesight.com/api/` |
+| Edge base (developer `account_type`) | `https://edge-api.sharesight.com/api/` |
 | OAuth authorize | `https://api.sharesight.com/oauth2/authorize` |
 | OAuth token | `https://api.sharesight.com/oauth2/token` |
 | Edge OAuth token | `https://edge-api.sharesight.com/oauth2/token` |
