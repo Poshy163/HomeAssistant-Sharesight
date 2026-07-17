@@ -77,7 +77,7 @@ def _get_scan_interval(entry: ConfigEntry | None) -> timedelta:
     return timedelta(seconds=seconds)
 
 
-class SharesightCoordinator(DataUpdateCoordinator):
+class SharesightCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinate polling of the Sharesight API for a single portfolio."""
 
     # Per-endpoint timeout (seconds).
@@ -117,16 +117,15 @@ class SharesightCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=DOMAIN,
+            config_entry=entry,
             update_interval=_get_scan_interval(entry),
         )
         self.entry = entry
         self.sharesight = client
         self.oauth_session = oauth_session
-        self.update_method = self._async_update_data
-        self.data: dict = {}
+        self.data: dict[str, Any] = {}
         self.portfolio_id = portfolio_id
         self.startup_endpoint = ["v3", f"portfolios/{self.portfolio_id}", None, False]
-        self.started_up = False
 
         # Cooldowns (monotonic timestamps) for optional endpoints.  Each entry
         # maps endpoint path -> { "next_retry": float, "backoff": timedelta }.
@@ -828,6 +827,56 @@ class SharesightCoordinator(DataUpdateCoordinator):
         combined_dict["activity_events_seq"] = self._activity_seq
 
     # ------------------------------------------------------------------
+    # One-time setup
+    # ------------------------------------------------------------------
+
+    async def _async_setup(self) -> None:
+        """Seed portfolio detail and financial-year bounds once at setup.
+
+        DataUpdateCoordinator calls this exactly once, inside
+        ``async_config_entry_first_refresh`` and before the first
+        ``_async_update_data``, which replaces the old per-poll
+        ``started_up`` gate.  A transient failure raises ``UpdateFailed`` so the
+        base surfaces a retriable ``ConfigEntryNotReady``; a 404 (portfolio
+        deleted or access lost) raises ``ConfigEntryAuthFailed`` to trigger a
+        reauth/reconfigure.
+        """
+        try:
+            access_token = await self._refresh_token_with_retries()
+        except ConfigEntryAuthFailed:
+            raise
+        except (
+            aiohttp.ClientError,
+            OSError,
+            asyncio.TimeoutError,
+            HomeAssistantError,
+        ) as token_error:
+            raise UpdateFailed(
+                f"Error validating Sharesight token during setup: {token_error}"
+            ) from token_error
+
+        try:
+            local_data = await self._call_endpoint(self.startup_endpoint, access_token)
+        except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as startup_error:
+            raise UpdateFailed(
+                f"Error during Sharesight startup fetch: {startup_error}"
+            ) from startup_error
+
+        if not isinstance(local_data, dict) or "error" in local_data:
+            status = self._response_status(local_data)
+            if status == 404:
+                raise ConfigEntryAuthFailed(
+                    f"Portfolio {self.portfolio_id} is no longer accessible. "
+                    "Please reconfigure the integration."
+                )
+            raise UpdateFailed(f"Invalid startup response: {local_data}")
+
+        self.start_financial_year, self.end_financial_year = get_financial_year_dates(
+            local_data.get("portfolio", {}).get("financial_year_end")
+        )
+        self._portfolio_detail = local_data.get("portfolio", {}) or {}
+
+    # ------------------------------------------------------------------
     # Main update loop
     # ------------------------------------------------------------------
 
@@ -859,42 +908,6 @@ class SharesightCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(
                 f"Error validating Sharesight token: {token_error}"
             ) from token_error
-
-        if not self.started_up:
-            try:
-                local_data = await self._call_endpoint(self.startup_endpoint, access_token)
-                if not isinstance(local_data, dict) or "error" in local_data:
-                    status = self._response_status(local_data)
-                    if status == 404:
-                        # The portfolio has been deleted or the user lost
-                        # access — ask for a full reauth/reconfigure.
-                        raise ConfigEntryAuthFailed(
-                            f"Portfolio {self.portfolio_id} is no longer "
-                            "accessible. Please reconfigure the integration."
-                        )
-                    raise ValueError(f"Invalid startup response: {local_data}")
-                self.start_financial_year, self.end_financial_year = get_financial_year_dates(
-                    local_data.get("portfolio", {}).get("financial_year_end")
-                )
-                self._portfolio_detail = local_data.get("portfolio", {}) or {}
-                self.started_up = True
-            except ConfigEntryAuthFailed:
-                raise
-            except (
-                aiohttp.ClientError,
-                OSError,
-                asyncio.TimeoutError,
-                ValueError,
-            ) as startup_error:
-                if self.data:
-                    _LOGGER.warning(
-                        "Startup request failed (%s), keeping last good data",
-                        startup_error,
-                    )
-                    return self.data
-                raise UpdateFailed(
-                    f"Error during Sharesight startup fetch: {startup_error}"
-                ) from startup_error
 
         today = dt_util.now().date()
         self.current_date = today

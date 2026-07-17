@@ -1,10 +1,12 @@
 from homeassistant.const import CURRENCY_DOLLAR
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.components.sensor import (
     SensorEntity
 )
 from .const import APP_VERSION, DOMAIN
+from .data import SharesightConfigEntry
 import logging
 from time import monotonic
 from datetime import datetime, time, timedelta
@@ -568,12 +570,16 @@ def _market_hours_status(market, now):
     )
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    data = hass.data[DOMAIN][entry.entry_id]
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: SharesightConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    runtime_data = entry.runtime_data
 
-    coordinator: SharesightCoordinator = data["coordinator"]
-    portfolio_id = data["portfolio_id"]
-    edge = data["edge"]
+    coordinator: SharesightCoordinator = runtime_data.coordinator
+    portfolio_id = runtime_data.portfolio_id
+    edge = runtime_data.edge
     portfolios = coordinator.data.get("portfolios", [])
     local_currency = "USD"
     if portfolios and isinstance(portfolios[0], dict):
@@ -582,11 +588,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
         local_currency = coordinator.data.get("report", {}).get("currency", {}).get("code", "USD")
 
     entry_id = entry.entry_id  # noqa: F841 — retained for logging/debug parity
-    # Per-entry tracking lives in hass.data so it is cleared automatically on
-    # unload.  It's populated by __init__.async_setup_entry.
-    market_sensors: list[str] = data.setdefault("market_sensors", [])
-    cash_sensors: list[str] = data.setdefault("cash_sensors", [])
-    holding_sensors: list[str] = data.setdefault("holding_sensors", [])
+    # runtime-data (Bronze): the three fan-out tracking lists live on
+    # entry.runtime_data (created in __init__.async_setup_entry, cleared with
+    # the entry on unload).  The update_sensors closure below appends the
+    # display names of dynamically-discovered entities to them.
+    market_sensors: list[str] = runtime_data.market_sensors
+    cash_sensors: list[str] = runtime_data.cash_sensors
+    holding_sensors: list[str] = runtime_data.holding_sensors
 
     sensors = []
     seen_unique_ids: set[str] = set()
@@ -606,7 +614,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # Benchmark sensors: only once the benchmark report has returned data
     # (requires a benchmark to be configured on the portfolio).  If it shows
     # up later, update_sensors() below adds them dynamically.
-    benchmark_added: list[str] = data.setdefault("benchmark_sensors", [])
+    benchmark_added: list[str] = []
 
     def _has_benchmark_data(coordinator_data) -> bool:
         bench = coordinator_data.get("benchmark")
@@ -622,7 +630,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # data.  It parks via the optional-endpoint backoff for scope-gated tokens,
     # so gating on key-presence (like benchmark) avoids phantom entities.  If it
     # comes online later, update_sensors() below adds them dynamically.
-    totals_added: list[str] = data.setdefault("totals_sensors", [])
+    totals_added: list[str] = []
 
     def _has_totals_data(coordinator_data) -> bool:
         totals = coordinator_data.get("totals")
@@ -719,7 +727,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                         local_currency, portfolio_id, edge))
 
     # Dynamic FX rate sensors — one per foreign currency held.
-    fx_sensors: list[str] = data.setdefault("fx_sensors", [])
+    fx_sensors: list[str] = []
     base_currency = local_currency
     for code in _foreign_currency_codes(coordinator.data, base_currency):
         for fx_sensor in FX_SENSOR_DESCRIPTIONS:
@@ -733,7 +741,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             fx_sensors.append(display_name)
 
     # Dynamic market trading-hours sensors — one set per held market.
-    market_hours_sensors: list[str] = data.setdefault("market_hours_sensors", [])
+    market_hours_sensors: list[str] = []
     for market_code in _held_market_codes(coordinator.data):
         for mh_sensor in MARKET_HOURS_SENSOR_DESCRIPTIONS:
             display_name = f"{market_code} {mh_sensor.name}"
@@ -747,7 +755,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     # Dynamic per-watchlist-instrument price + day-change sensors (W1) — one set
     # per watched instrument (capped), sharing the single watchlist device.
-    watchlist_instrument_sensors: list[str] = data.setdefault("watchlist_instrument_sensors", [])
+    watchlist_instrument_sensors: list[str] = []
     for wl_code, wl_currency in _watchlist_instruments_for_discovery(coordinator.data):
         inst_currency = wl_currency or local_currency
         for wl_sensor in WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS:
@@ -763,7 +771,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # Dynamic per-label value + percent sensors (W7) in the "labels" device
     # group.  Gated on the coordinator emitting label_allocation (present only
     # when at least one holding carries a label).
-    label_sensors: list[str] = data.setdefault("label_sensors", [])
+    label_sensors: list[str] = []
     label_allocation = coordinator.data.get("label_allocation")
     if isinstance(label_allocation, list):
         for label_entry in label_allocation:
@@ -788,10 +796,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
     def update_sensors() -> None:
         """Discover new markets/cash accounts/holdings after a coordinator refresh."""
         _LOGGER.debug("Checking for new market/cash/holding sensors")
-        update_data = hass.data[DOMAIN].get(entry.entry_id)
-        if not update_data:
-            return
-        update_coordinator: SharesightCoordinator = update_data["coordinator"]
+        # This listener is detached via entry.async_on_unload below, so it never
+        # fires after the entry unloads; read the coordinator captured at setup.
+        update_coordinator: SharesightCoordinator = coordinator
         if not update_coordinator.data:
             return
         update_report = update_coordinator.data.get("report", {})
@@ -935,9 +942,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     # Piggy-back on the coordinator's own update cycle rather than running a
     # second time interval.  New markets/holdings appear as soon as the next
-    # successful poll brings them in.
-    unsub = coordinator.async_add_listener(update_sensors)
-    hass.data[DOMAIN][entry.entry_id]["update_sensors_unsub"] = unsub
+    # successful poll brings them in.  entry.async_on_unload detaches the
+    # listener when the entry unloads (runtime-data / async-on-unload, Bronze).
+    entry.async_on_unload(coordinator.async_add_listener(update_sensors))
 
 
 class SharesightSensor(CoordinatorEntity, SensorEntity):

@@ -16,14 +16,16 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.const import EntityCategory
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from . import analytics
 from .const import APP_VERSION, DOMAIN
 from .coordinator import SharesightCoordinator
+from .data import SharesightConfigEntry
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -56,11 +58,15 @@ def _market_is_open(market, now, tz):
     return dt_time(start_h, start_m) <= local_now.time() <= dt_time(end_h, end_m)
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SharesightCoordinator = data["coordinator"]
-    portfolio_id = data["portfolio_id"]
-    edge = data["edge"]
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: SharesightConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    runtime_data = entry.runtime_data
+    coordinator: SharesightCoordinator = runtime_data.coordinator
+    portfolio_id = runtime_data.portfolio_id
+    edge = runtime_data.edge
     async_add_entities(
         [
             SharesightSubscriptionBinarySensor(coordinator, portfolio_id, edge),

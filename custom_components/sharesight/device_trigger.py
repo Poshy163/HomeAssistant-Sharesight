@@ -185,13 +185,19 @@ async def _attach_event_trigger(
     portfolio_id = _portfolio_id_for_device(hass, device_id)
     if portfolio_id is None:
         raise InvalidDeviceAutomationConfig(
-            f"Device {device_id} is not a Sharesight portfolio"
+            f"Device {device_id} is not a Sharesight portfolio",
+            translation_domain=DOMAIN,
+            translation_key="device_not_portfolio",
+            translation_placeholders={"device_id": str(device_id)},
         )
     event_uid = f"{portfolio_id}_activity_events_{APP_VERSION}"
     entity_id = er.async_get(hass).async_get_entity_id("event", DOMAIN, event_uid)
     if entity_id is None:
         raise InvalidDeviceAutomationConfig(
-            f"No Sharesight activity event entity for portfolio {portfolio_id}"
+            f"No Sharesight activity event entity for portfolio {portfolio_id}",
+            translation_domain=DOMAIN,
+            translation_key="no_event_entity",
+            translation_placeholders={"portfolio_id": str(portfolio_id)},
         )
 
     job = HassJob(action)
@@ -236,19 +242,32 @@ async def _attach_numeric_trigger(
     portfolio_id = _portfolio_id_for_device(hass, device_id)
     if portfolio_id is None:
         raise InvalidDeviceAutomationConfig(
-            f"Device {device_id} is not a Sharesight portfolio"
+            f"Device {device_id} is not a Sharesight portfolio",
+            translation_domain=DOMAIN,
+            translation_key="device_not_portfolio",
+            translation_placeholders={"device_id": str(device_id)},
         )
     target_uid = _numeric_target_unique_id(portfolio_id, trigger_type)
     entity_id = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, target_uid)
     if entity_id is None:
         raise InvalidDeviceAutomationConfig(
-            f"No target sensor for Sharesight trigger '{trigger_type}'"
+            f"No target sensor for Sharesight trigger '{trigger_type}'",
+            translation_domain=DOMAIN,
+            translation_key="no_target_sensor",
+            translation_placeholders={"trigger_type": str(trigger_type)},
         )
 
     if CONF_ABOVE not in config and CONF_BELOW not in config:
         raise InvalidDeviceAutomationConfig(
             f"Sharesight '{trigger_type}' trigger requires at least one of "
-            f"'{CONF_ABOVE}' or '{CONF_BELOW}'"
+            f"'{CONF_ABOVE}' or '{CONF_BELOW}'",
+            translation_domain=DOMAIN,
+            translation_key="numeric_trigger_needs_bound",
+            translation_placeholders={
+                "trigger_type": str(trigger_type),
+                "above": CONF_ABOVE,
+                "below": CONF_BELOW,
+            },
         )
 
     numeric_state_config = {

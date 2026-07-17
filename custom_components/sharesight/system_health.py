@@ -6,7 +6,7 @@ from typing import Any
 from homeassistant.components import system_health
 from homeassistant.core import HomeAssistant, callback
 
-from .const import API_URL_BASE, DOMAIN, EDGE_API_URL_BASE
+from .const import ACCOUNT_DEVELOPER, ACCOUNT_STANDARD, API_URL_BASE, DOMAIN
 
 
 @callback
@@ -19,18 +19,24 @@ def async_register(
 
 async def _system_health_info(hass: HomeAssistant) -> dict[str, Any]:
     """Return system health info for Sharesight."""
-    entries = hass.data.get(DOMAIN, {})
+    loaded_entries = [
+        entry
+        for entry in hass.config_entries.async_loaded_entries(DOMAIN)
+        if getattr(entry, "runtime_data", None) is not None
+    ]
     info: dict[str, Any] = {
-        "configured_portfolios": len(entries),
-        "can_reach_api": system_health.async_check_can_reach_url(hass, API_URL_BASE),
+        "configured_portfolios": len(loaded_entries),
+        "can_reach_api": system_health.async_check_can_reach_url(
+            hass, API_URL_BASE[ACCOUNT_STANDARD]
+        ),
         "can_reach_edge_api": system_health.async_check_can_reach_url(
-            hass, EDGE_API_URL_BASE
+            hass, API_URL_BASE[ACCOUNT_DEVELOPER]
         ),
     }
 
     last_update: float | None = None
-    for entry_data in entries.values():
-        coordinator = entry_data.get("coordinator")
+    for entry in loaded_entries:
+        coordinator = entry.runtime_data.coordinator
         if coordinator is None:
             continue
         dt = coordinator.last_update_success_time

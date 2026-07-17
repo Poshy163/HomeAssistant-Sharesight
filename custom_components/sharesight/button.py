@@ -11,11 +11,14 @@ from __future__ import annotations
 import logging
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import APP_VERSION, DOMAIN
 from .coordinator import SharesightCoordinator
+from .data import SharesightConfigEntry
 from .statistics_import import async_backfill_value_statistics
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -23,11 +26,15 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 PARALLEL_UPDATES = 0
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SharesightCoordinator = data["coordinator"]
-    portfolio_id = data["portfolio_id"]
-    edge = data["edge"]
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: SharesightConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    runtime_data = entry.runtime_data
+    coordinator: SharesightCoordinator = runtime_data.coordinator
+    portfolio_id = runtime_data.portfolio_id
+    edge = runtime_data.edge
     async_add_entities(
         [
             SharesightRefreshButton(coordinator, portfolio_id, edge),
@@ -97,7 +104,10 @@ class SharesightRebuildValueHistoryButton(CoordinatorEntity, ButtonEntity):
         portfolios = (self.coordinator.data or {}).get("portfolios", [])
         if portfolios and isinstance(portfolios[0], dict):
             currency = portfolios[0].get("currency_code", "USD")
-        self.hass.async_create_background_task(
+        # Entry-scoped so a reload/unload cancels an in-flight rebuild (matching
+        # the startup backfill in __init__.async_setup_entry).
+        self.coordinator.entry.async_create_background_task(
+            self.hass,
             async_backfill_value_statistics(
                 self.hass, self.coordinator, self._portfolio_id, currency
             ),

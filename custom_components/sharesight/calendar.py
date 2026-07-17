@@ -13,12 +13,15 @@ import logging
 from datetime import date, datetime, timedelta
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import APP_VERSION, DOMAIN
 from .coordinator import SharesightCoordinator
+from .data import SharesightConfigEntry
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -63,11 +66,15 @@ def _payout_symbol(payout: dict) -> str:
     )
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator: SharesightCoordinator = data["coordinator"]
-    portfolio_id = data["portfolio_id"]
-    edge = data["edge"]
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: SharesightConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    runtime_data = entry.runtime_data
+    coordinator: SharesightCoordinator = runtime_data.coordinator
+    portfolio_id = runtime_data.portfolio_id
+    edge = runtime_data.edge
 
     portfolios = coordinator.data.get("portfolios", [])
     currency = "USD"

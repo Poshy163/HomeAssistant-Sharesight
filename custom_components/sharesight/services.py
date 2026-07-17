@@ -29,6 +29,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID
 from homeassistant.core import (
     HomeAssistant,
@@ -41,6 +42,7 @@ from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from . import analytics
 from .const import DOMAIN
+from .data import SharesightConfigEntry
 from .sensor import (
     _get_holding_gain,
     _get_holding_gain_percent,
@@ -115,45 +117,83 @@ GET_INSTRUMENT_FUNDAMENTALS_SCHEMA = vol.Schema(
 GET_LOGIN_LINK_SCHEMA = vol.Schema({**_TARGET_FIELDS})
 
 
+def _loaded_entries(hass: HomeAssistant) -> list[SharesightConfigEntry]:
+    """Loaded Sharesight config entries that carry runtime data."""
+    return [
+        entry
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state is ConfigEntryState.LOADED
+        and getattr(entry, "runtime_data", None) is not None
+    ]
+
+
 def _resolve_coordinator(hass: HomeAssistant, call: ServiceCall) -> Any:
     """Pick the coordinator addressed by config_entry_id / device_id.
 
-    Falls back to the sole configured portfolio; raises a clear
-    ServiceValidationError when the target cannot be determined unambiguously.
+    Resolves against loaded Sharesight config entries via ``hass.config_entries``
+    (reading each entry's ``runtime_data``), falls back to the sole configured
+    portfolio, and raises a clear ServiceValidationError when the target cannot
+    be determined unambiguously.
     """
-    domain_data: dict[str, Any] = hass.data.get(DOMAIN, {})
-    entries = [d for d in domain_data.values() if isinstance(d, dict) and "coordinator" in d]
+    entries = _loaded_entries(hass)
 
     entry_id = call.data.get(CONF_CONFIG_ENTRY_ID)
     if entry_id:
-        entry_data = domain_data.get(entry_id)
-        if not isinstance(entry_data, dict) or "coordinator" not in entry_data:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if (
+            entry is None
+            or entry.domain != DOMAIN
+            or entry.state is not ConfigEntryState.LOADED
+            or getattr(entry, "runtime_data", None) is None
+        ):
             raise ServiceValidationError(
-                f"No Sharesight portfolio for config_entry_id {entry_id}"
+                f"No Sharesight portfolio for config_entry_id {entry_id}",
+                translation_domain=DOMAIN,
+                translation_key="no_portfolio_for_entry",
+                translation_placeholders={"entry_id": str(entry_id)},
             )
-        return entry_data["coordinator"]
+        return entry.runtime_data.coordinator
 
     device_id = call.data.get(CONF_DEVICE_ID)
     if device_id:
         device = dr.async_get(hass).async_get(device_id)
         if device is None:
-            raise ServiceValidationError(f"No device with id {device_id}")
+            raise ServiceValidationError(
+                f"No device with id {device_id}",
+                translation_domain=DOMAIN,
+                translation_key="no_such_device",
+                translation_placeholders={"device_id": str(device_id)},
+            )
         for cfg_entry_id in device.config_entries:
-            entry_data = domain_data.get(cfg_entry_id)
-            if isinstance(entry_data, dict) and "coordinator" in entry_data:
-                return entry_data["coordinator"]
+            entry = hass.config_entries.async_get_entry(cfg_entry_id)
+            if (
+                entry is not None
+                and entry.domain == DOMAIN
+                and entry.state is ConfigEntryState.LOADED
+                and getattr(entry, "runtime_data", None) is not None
+            ):
+                return entry.runtime_data.coordinator
         raise ServiceValidationError(
-            f"Device {device_id} is not a Sharesight portfolio"
+            f"Device {device_id} is not a Sharesight portfolio",
+            translation_domain=DOMAIN,
+            translation_key="device_not_portfolio",
+            translation_placeholders={"device_id": str(device_id)},
         )
 
     if not entries:
-        raise ServiceValidationError("No Sharesight portfolios are configured")
+        raise ServiceValidationError(
+            "No Sharesight portfolios are configured",
+            translation_domain=DOMAIN,
+            translation_key="no_portfolios_configured",
+        )
     if len(entries) > 1:
         raise ServiceValidationError(
             "Multiple Sharesight portfolios are configured; specify "
-            "config_entry_id or device_id"
+            "config_entry_id or device_id",
+            translation_domain=DOMAIN,
+            translation_key="multiple_portfolios",
         )
-    return entries[0]["coordinator"]
+    return entries[0].runtime_data.coordinator
 
 
 def _validate_date(value: str, field: str) -> str:
@@ -162,7 +202,10 @@ def _validate_date(value: str, field: str) -> str:
         datetime.strptime(value, "%Y-%m-%d")
     except (ValueError, TypeError) as err:
         raise ServiceValidationError(
-            f"{field} must be a date in YYYY-MM-DD format, got {value!r}"
+            f"{field} must be a date in YYYY-MM-DD format, got {value!r}",
+            translation_domain=DOMAIN,
+            translation_key="invalid_date",
+            translation_placeholders={"field": field, "value": str(value)},
         ) from err
     return value
 
@@ -484,7 +527,10 @@ async def _get_instrument_fundamentals(
     )
     if instrument_id is None:
         raise ServiceValidationError(
-            f"No holding found for symbol {symbol!r} in this portfolio"
+            f"No holding found for symbol {symbol!r} in this portfolio",
+            translation_domain=DOMAIN,
+            translation_key="symbol_not_held",
+            translation_placeholders={"symbol": str(symbol)},
         )
 
     # Sharechecker fundamentals + the two official cost figures.  Each

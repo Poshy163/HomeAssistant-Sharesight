@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 from SharesightAPI.SharesightAPI import SharesightAPI
 
 from .application_credentials import account_type_context
@@ -21,15 +22,28 @@ from .const import (
     CONF_USE_EDGE,
     DEFAULT_ACCOUNT_TYPE,
     DEFAULT_ENABLE_LTS_BACKFILL,
-    DOMAIN,
     PLATFORMS,
     TOKEN_URL,
 )
 from .coordinator import SharesightCoordinator
-from .services import async_setup_services, async_unload_services
+from .data import SharesightConfigEntry, SharesightRuntimeData
+from .services import async_setup_services
 from .statistics_import import async_backfill_value_statistics
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the Sharesight response services for the process lifetime.
+
+    action-setup (Bronze): the response services are registered once at
+    integration load rather than per config entry.  ``async_setup_services`` is
+    idempotent (guards on ``has_service``), and the handlers raise a clear
+    ``ServiceValidationError`` when no entry is loaded, so a call made while
+    unconfigured validates correctly instead of hitting an "unknown service".
+    """
+    async_setup_services(hass)
+    return True
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -66,7 +80,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -> bool:
     """Set up Sharesight from a config entry."""
     account_type = entry.data.get(CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE)
 
@@ -110,25 +124,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     await local_coordinator.async_config_entry_first_refresh()
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "coordinator": local_coordinator,
-        "portfolio_id": portfolio_id,
+    # runtime-data (Bronze): store per-entry state on the entry itself.
+    # Assigned BEFORE async_forward_entry_setups so every platform's
+    # async_setup_entry can read entry.runtime_data.
+    entry.runtime_data = SharesightRuntimeData(
+        coordinator=local_coordinator,
+        client=client,
+        portfolio_id=portfolio_id,
         # Kept as a bool: the entity platforms only use it for naming and the
         # configuration_url host prefix.
-        "edge": account_type == ACCOUNT_DEVELOPER,
-        "sharesight_client": client,
-        "market_sensors": [],
-        "cash_sensors": [],
-        "holding_sensors": [],
-        "last_options": dict(entry.options),
-    }
+        edge=account_type == ACCOUNT_DEVELOPER,
+        market_sensors=[],
+        cash_sensors=[],
+        holding_sensors=[],
+        last_options=dict(entry.options),
+    )
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Register the domain-global response services once; the helper is
-    # idempotent (guards on has_service) so setting up further entries is safe.
-    async_setup_services(hass)
 
     # Backfill the portfolio-value long-term statistics from inception once at
     # startup (opt-out via options).  Runs in the background so it never blocks
@@ -149,42 +162,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        domain_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-        unsub = domain_data.get("update_sensors_unsub")
-        if unsub:
-            unsub()
-        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-        # Tear the shared services down only once the last portfolio is gone.
-        if not hass.data.get(DOMAIN):
-            async_unload_services(hass)
-    return unload_ok
+async def async_unload_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -> bool:
+    """Unload a config entry.
+
+    The coordinator's refresh loop is torn down for free: passing
+    ``config_entry=`` to ``DataUpdateCoordinator`` registers ``async_shutdown``
+    via ``entry.async_on_unload``.  Per-entry state lives on
+    ``entry.runtime_data`` (cleared automatically by Home Assistant), and the
+    response services are process-global (see ``async_setup``), so nothing else
+    needs unwinding here.
+    """
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle removal of a config entry."""
-    domain_data = hass.data.get(DOMAIN, {})
-    domain_data.pop(entry.entry_id, None)
-    if not domain_data:
-        hass.data.pop(DOMAIN, None)
-
-
-async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def update_listener(hass: HomeAssistant, entry: SharesightConfigEntry) -> None:
     """Reload only when user-facing options actually change.
 
     Why: HA fires update listeners for every async_update_entry call, including
     OAuth2 token refreshes that periodically write a new token into entry.data.
     Reloading on every token refresh would tear down all sensors every ~30 min.
     """
-    domain_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if domain_data is None:
+    runtime_data = getattr(entry, "runtime_data", None)
+    if runtime_data is None:
         return
 
     new_options = dict(entry.options)
-    if domain_data.get("last_options") == new_options:
+    if runtime_data.last_options == new_options:
         return
 
-    domain_data["last_options"] = new_options
+    runtime_data.last_options = new_options
     await hass.config_entries.async_reload(entry.entry_id)

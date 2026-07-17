@@ -9,6 +9,9 @@
                 "description": "Choose the type of Sharesight account you are connecting. Standard is correct for almost everyone. Developer accounts use Sharesight's sandbox and require separate credentials issued by Sharesight.",
                 "data": {
                     "account_type": "Account type"
+                },
+                "data_description": {
+                    "account_type": "Standard suits almost everyone. Choose Developer only if Sharesight has issued you separate sandbox credentials."
                 }
             },
             "pick_implementation": {
@@ -20,6 +23,9 @@
                 "description": "Select the Sharesight portfolio you want to monitor.",
                 "data": {
                     "portfolio_id": "Portfolio"
+                },
+                "data_description": {
+                    "portfolio_id": "The Sharesight portfolio Home Assistant will create a device and sensors for."
                 }
             },
             "reauth_confirm": {
@@ -49,6 +55,7 @@
                     "enable_lts_backfill": "Backfill portfolio value history into long-term statistics"
                 },
                 "data_description": {
+                    "scan_interval": "How often Home Assistant polls the Sharesight API for this portfolio. Must be between 60 and 3600 seconds.",
                     "enable_lts_backfill": "On startup, import the full inception-to-today daily portfolio value series into the Portfolio value sensor's statistics. Requires the value-data endpoint to be available for your API access."
                 }
             }
@@ -183,6 +190,38 @@
             "daily_close": "Daily close (end-of-day rollover)",
             "portfolio_value": "Portfolio value",
             "daily_change": "Daily change amount"
+        }
+    },
+    "exceptions": {
+        "no_portfolio_for_entry": {
+            "message": "No Sharesight portfolio for config entry {entry_id}."
+        },
+        "no_such_device": {
+            "message": "No device with ID {device_id}."
+        },
+        "device_not_portfolio": {
+            "message": "Device {device_id} is not a Sharesight portfolio."
+        },
+        "no_portfolios_configured": {
+            "message": "No Sharesight portfolios are configured."
+        },
+        "multiple_portfolios": {
+            "message": "Multiple Sharesight portfolios are configured; specify config_entry_id or device_id."
+        },
+        "invalid_date": {
+            "message": "{field} must be a date in YYYY-MM-DD format, got {value}."
+        },
+        "symbol_not_held": {
+            "message": "No holding found for symbol {symbol} in this portfolio."
+        },
+        "no_event_entity": {
+            "message": "No Sharesight activity event entity for portfolio {portfolio_id}."
+        },
+        "no_target_sensor": {
+            "message": "No target sensor for Sharesight trigger '{trigger_type}'."
+        },
+        "numeric_trigger_needs_bound": {
+            "message": "The Sharesight '{trigger_type}' trigger requires at least one of '{above}' or '{below}'."
         }
     }
 }

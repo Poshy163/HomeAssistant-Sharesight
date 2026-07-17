@@ -1,54 +1,29 @@
 get_portfolio_summary:
-  name: Get portfolio summary
-  description: >-
-    Return a headline summary for a Sharesight portfolio (value, period gains,
-    top/worst movers, cash and trailing dividend income). Reads only data
-    already held by the integration, so it makes no extra API request.
   fields:
     config_entry_id:
-      name: Config entry
-      description: >-
-        The Sharesight config entry to query. Optional when only one portfolio
-        is configured.
       required: false
       selector:
         config_entry:
           integration: sharesight
     device_id:
-      name: Device
-      description: >-
-        A Sharesight portfolio device to query instead of a config entry.
       required: false
       selector:
         device:
           integration: sharesight
 
 get_holdings:
-  name: Get holdings
-  description: >-
-    Return the portfolio's holdings as a sortable, limitable list. Reads only
-    data already held by the integration, so it makes no extra API request.
   fields:
     config_entry_id:
-      name: Config entry
-      description: >-
-        The Sharesight config entry to query. Optional when only one portfolio
-        is configured.
       required: false
       selector:
         config_entry:
           integration: sharesight
     device_id:
-      name: Device
-      description: >-
-        A Sharesight portfolio device to query instead of a config entry.
       required: false
       selector:
         device:
           integration: sharesight
     sort_by:
-      name: Sort by
-      description: Field to sort the holdings by.
       required: false
       default: value
       selector:
@@ -59,8 +34,6 @@ get_holdings:
             - capital_gain_percent
             - symbol
     limit:
-      name: Limit
-      description: Maximum number of holdings to return.
       required: false
       selector:
         number:
@@ -69,142 +42,79 @@ get_holdings:
           mode: box
 
 get_income:
-  name: Get income
-  description: >-
-    Return trailing-twelve-month, calendar-year-to-date, and forward dividend
-    income for the portfolio, plus announced upcoming payouts. Reads only data
-    already held by the integration, so it makes no extra API request.
   fields:
     config_entry_id:
-      name: Config entry
-      description: >-
-        The Sharesight config entry to query. Optional when only one portfolio
-        is configured.
       required: false
       selector:
         config_entry:
           integration: sharesight
     device_id:
-      name: Device
-      description: >-
-        A Sharesight portfolio device to query instead of a config entry.
       required: false
       selector:
         device:
           integration: sharesight
 
 generate_performance_report:
-  name: Generate performance report
-  description: >-
-    Fetch an on-demand Sharesight performance report for an arbitrary date
-    range and grouping. This makes a single API request each time it is called.
   fields:
     config_entry_id:
-      name: Config entry
-      description: >-
-        The Sharesight config entry to query. Optional when only one portfolio
-        is configured.
       required: false
       selector:
         config_entry:
           integration: sharesight
     device_id:
-      name: Device
-      description: >-
-        A Sharesight portfolio device to query instead of a config entry.
       required: false
       selector:
         device:
           integration: sharesight
     start_date:
-      name: Start date
-      description: Report start date (YYYY-MM-DD).
       required: true
       example: "2024-07-01"
       selector:
         text:
     end_date:
-      name: End date
-      description: Report end date (YYYY-MM-DD).
       required: true
       example: "2025-06-30"
       selector:
         text:
     grouping:
-      name: Grouping
-      description: >-
-        Optional grouping axis passed through to the Sharesight report (e.g.
-        market, industry_classification, investment_type).
       required: false
       selector:
         text:
     consolidated:
-      name: Consolidated
-      description: Consolidate holdings across sub-portfolios.
       required: false
       selector:
         boolean:
     include_sales:
-      name: Include sales
-      description: Include realised gains from fully-sold positions.
       required: false
       selector:
         boolean:
 
 get_instrument_fundamentals:
-  name: Get instrument fundamentals
-  description: >-
-    Fetch sharechecker fundamentals plus the official average purchase price
-    and cost base for one held instrument, identified by its symbol. Makes a
-    few on-demand API requests each time it is called (some are mobile-scoped
-    and may be unavailable to standard API tokens).
   fields:
     config_entry_id:
-      name: Config entry
-      description: >-
-        The Sharesight config entry to query. Optional when only one portfolio
-        is configured.
       required: false
       selector:
         config_entry:
           integration: sharesight
     device_id:
-      name: Device
-      description: >-
-        A Sharesight portfolio device to query instead of a config entry.
       required: false
       selector:
         device:
           integration: sharesight
     symbol:
-      name: Symbol
-      description: >-
-        The instrument symbol/code of a holding in the portfolio (e.g. AAPL).
       required: true
       example: AAPL
       selector:
         text:
 
 get_login_link:
-  name: Get login link
-  description: >-
-    Return a single-sign-on URL that logs the user straight into their
-    Sharesight account. The link is valid for about one minute. Treat the
-    returned URL like a password - it is not logged by the integration.
   fields:
     config_entry_id:
-      name: Config entry
-      description: >-
-        The Sharesight config entry to query. Optional when only one portfolio
-        is configured.
       required: false
       selector:
         config_entry:
           integration: sharesight
     device_id:
-      name: Device
-      description: >-
-        A Sharesight portfolio device to query instead of a config entry.
       required: false
       selector:
         device:
