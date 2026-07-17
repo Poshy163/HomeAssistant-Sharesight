@@ -23,6 +23,10 @@ from .enum import (
     MARKET_HOURS_SENSOR_DESCRIPTIONS,
     ANALYTICS_SENSOR_DESCRIPTIONS,
     TOTALS_SENSOR_DESCRIPTIONS,
+    WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS,
+    NEWS_SENSOR_DESCRIPTIONS,
+    VALUE_TREND_SENSOR_DESCRIPTIONS,
+    LABEL_SENSOR_DESCRIPTIONS,
 )
 from . import analytics
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -34,6 +38,56 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 # no parallel-update limit is needed. Declaring this satisfies the HA quality
 # scale's parallel-updates rule.
 PARALLEL_UPDATES = 0
+
+# Cap the per-watchlist-instrument sensor fan-out (W1) so a large watchlist
+# can't spawn an unbounded number of entities.
+WATCHLIST_INSTRUMENT_CAP = 50
+
+
+def _slug_symbol(value):
+    """Slugify an instrument code / label into a registry-safe unique_id token.
+
+    Mirrors the entity_id slug rules used in SharesightSensor.__init__ so codes
+    like "BRK.B" or labels with spaces/punctuation collapse to a stable
+    lowercase [a-z0-9_] token.
+    """
+    slug = "".join(
+        c if c.isalnum() else "_"
+        for c in str(value).lower().replace(" ", "_")
+    )
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug.strip("_")
+
+
+def _watchlist_instruments_for_discovery(data, cap=WATCHLIST_INSTRUMENT_CAP):
+    """Distinct (code, currency_code) tuples for watchlist-instrument sensors.
+
+    Reads the V3 watchlist.json items already fetched by the coordinator,
+    de-duplicates by instrument code, and stops after ``cap`` instruments (W1).
+    currency_code comes from the item's price currency so the price sensor can
+    render in the instrument's own currency; it is None when absent.
+    """
+    if not isinstance(data, dict):
+        return []
+    watchlist_data = data.get("watchlist", {})
+    items = watchlist_data.get("watchlist", []) if isinstance(watchlist_data, dict) else []
+    out: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        instrument = item.get("instrument") or {}
+        code = instrument.get("code") or item.get("code")
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        price = item.get("price") or {}
+        currency = (price.get("currency") or {}).get("code")
+        out.append((str(code), currency))
+        if len(out) >= cap:
+            break
+    return out
 
 
 def _get_holding_value(h):
@@ -171,7 +225,6 @@ def _get_smallest_holding(holdings_data):
         return None
     try:
         smallest = min(holdings, key=_get_holding_value)
-        portfolio_value = float(holdings_data.get('value', 0) or 1)
         smallest_value = _get_holding_value(smallest)
         return {
             'symbol': _get_holding_symbol(smallest),
@@ -651,11 +704,16 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # Portfolio sector/industry allocation + account + watchlist + analytics
     # devices.  These are fixed sensor sets (no per-item fan-out).  Analytics
     # is derived every poll at zero API cost, so it is always created.
+    # NEWS + VALUE_TREND are portfolio-device sensors that read the optional
+    # instrument_news / value_trend keys; like the watchlist overview they are
+    # always created and simply report None until their endpoint comes online.
     for sensor in (
         SECTOR_SENSOR_DESCRIPTIONS
         + ACCOUNT_SENSOR_DESCRIPTIONS
         + WATCHLIST_SENSOR_DESCRIPTIONS
         + ANALYTICS_SENSOR_DESCRIPTIONS
+        + NEWS_SENSOR_DESCRIPTIONS
+        + VALUE_TREND_SENSOR_DESCRIPTIONS
     ):
         sensors.append(SharesightSensor(sensor, entry, coordinator,
                                         local_currency, portfolio_id, edge))
@@ -686,6 +744,43 @@ async def async_setup_entry(hass, entry, async_add_entities):
             sensors.append(SharesightSensor(mh_sensor, entry, coordinator,
                                             local_currency, portfolio_id, edge, 0, market_code, display_name))
             market_hours_sensors.append(display_name)
+
+    # Dynamic per-watchlist-instrument price + day-change sensors (W1) — one set
+    # per watched instrument (capped), sharing the single watchlist device.
+    watchlist_instrument_sensors: list[str] = data.setdefault("watchlist_instrument_sensors", [])
+    for wl_code, wl_currency in _watchlist_instruments_for_discovery(coordinator.data):
+        inst_currency = wl_currency or local_currency
+        for wl_sensor in WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS:
+            display_name = f"Watchlist {wl_code} {wl_sensor.name}"
+            uid = f"{portfolio_id}_watchlist_{_slug_symbol(wl_code)}_{wl_sensor.key}_{APP_VERSION}"
+            if uid in seen_unique_ids:
+                continue
+            seen_unique_ids.add(uid)
+            sensors.append(SharesightSensor(wl_sensor, entry, coordinator,
+                                            inst_currency, portfolio_id, edge, 0, wl_code, display_name))
+            watchlist_instrument_sensors.append(display_name)
+
+    # Dynamic per-label value + percent sensors (W7) in the "labels" device
+    # group.  Gated on the coordinator emitting label_allocation (present only
+    # when at least one holding carries a label).
+    label_sensors: list[str] = data.setdefault("label_sensors", [])
+    label_allocation = coordinator.data.get("label_allocation")
+    if isinstance(label_allocation, list):
+        for label_entry in label_allocation:
+            if not isinstance(label_entry, dict):
+                continue
+            label_name = label_entry.get("label")
+            if not label_name:
+                continue
+            for label_sensor in LABEL_SENSOR_DESCRIPTIONS:
+                display_name = f"{label_name} {label_sensor.name}"
+                uid = f"{portfolio_id}_label_{_slug_symbol(label_name)}_{label_sensor.key}_{APP_VERSION}"
+                if uid in seen_unique_ids:
+                    continue
+                seen_unique_ids.add(uid)
+                sensors.append(SharesightSensor(label_sensor, entry, coordinator,
+                                                local_currency, portfolio_id, edge, 0, label_name, display_name))
+                label_sensors.append(display_name)
 
     async_add_entities(sensors, True)
 
@@ -797,6 +892,46 @@ async def async_setup_entry(hass, entry, async_add_entities):
                         mh_sensor, entry, update_coordinator, local_currency,
                         portfolio_id, edge, 0, __market_code, __mh_display)], True)
                     market_hours_sensors.append(__mh_display)
+
+        # New watchlist instruments (per-instrument price + day-change sensors, W1).
+        # Dedupe on the computed unique_id (as setup does) — distinct codes can
+        # slugify to the same token (e.g. "BRK.B" vs "BRK-B"), so a display-name
+        # guard would let a colliding unique_id through and HA would reject it.
+        for __wl_code, __wl_currency in _watchlist_instruments_for_discovery(update_coordinator.data):
+            __inst_currency = __wl_currency or local_currency
+            for wl_sensor in WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS:
+                __wl_display = f"Watchlist {__wl_code} {wl_sensor.name}"
+                __wl_uid = f"{portfolio_id}_watchlist_{_slug_symbol(__wl_code)}_{wl_sensor.key}_{APP_VERSION}"
+                if __wl_uid not in seen_unique_ids:
+                    seen_unique_ids.add(__wl_uid)
+                    async_add_entities([SharesightSensor(
+                        wl_sensor, entry, update_coordinator, __inst_currency,
+                        portfolio_id, edge, 0, __wl_code, __wl_display)], True)
+                    watchlist_instrument_sensors.append(__wl_display)
+
+        # New labels (per-label value + percent sensors, W7).  Gated on the
+        # coordinator emitting label_allocation, so a portfolio that only later
+        # gains a label grows the "labels" device on the first poll it appears.
+        __update_label_allocation = update_coordinator.data.get("label_allocation")
+        if isinstance(__update_label_allocation, list):
+            for __label_entry in __update_label_allocation:
+                if not isinstance(__label_entry, dict):
+                    continue
+                __label_name = __label_entry.get("label")
+                if not __label_name:
+                    continue
+                for label_sensor in LABEL_SENSOR_DESCRIPTIONS:
+                    __label_display = f"{__label_name} {label_sensor.name}"
+                    # Dedupe on the computed unique_id (as setup does): distinct
+                    # labels can slugify to the same token, so a display-name
+                    # guard would let a colliding unique_id through.
+                    __label_uid = f"{portfolio_id}_label_{_slug_symbol(__label_name)}_{label_sensor.key}_{APP_VERSION}"
+                    if __label_uid not in seen_unique_ids:
+                        seen_unique_ids.add(__label_uid)
+                        async_add_entities([SharesightSensor(
+                            label_sensor, entry, update_coordinator, local_currency,
+                            portfolio_id, edge, 0, __label_name, __label_display)], True)
+                        label_sensors.append(__label_display)
 
     # Piggy-back on the coordinator's own update cycle rather than running a
     # second time interval.  New markets/holdings appear as soon as the next
@@ -963,6 +1098,11 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 "identifier": f"{self._portfolio_id}_totals",
                 "model": f"{base_model} - Portfolio Totals",
             },
+            "labels": {
+                "name": f"Sharesight{edge_name}Labels",
+                "identifier": f"{self._portfolio_id}_labels",
+                "model": f"{base_model} - Labels",
+            },
         }
 
         if self._device_group == "market" and local_name:
@@ -1023,7 +1163,17 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 # Dynamic per-currency / per-market sensor.
                 self._state = None
                 self._unique_id = f"{self._portfolio_id}_{self._device_group}_{local_name}_{self._key}_{APP_VERSION}"
-            elif self._sub_key in ("sector_allocation", "industry_allocation", "my_user", "watchlist"):
+            elif self._sub_key == "watchlist_instrument":
+                # Per-watchlist-instrument sensor (W1). Slugify the instrument
+                # code so codes like "BRK.B" produce a registry-safe unique_id.
+                self._state = None
+                self._unique_id = f"{self._portfolio_id}_watchlist_{_slug_symbol(local_name)}_{self._key}_{APP_VERSION}"
+            elif self._sub_key == "label_allocation":
+                # Per-label allocation sensor (W7). Slugify the (user-defined)
+                # label name for a registry-safe unique_id.
+                self._state = None
+                self._unique_id = f"{self._portfolio_id}_label_{_slug_symbol(local_name)}_{self._key}_{APP_VERSION}"
+            elif self._sub_key in ("sector_allocation", "industry_allocation", "my_user", "watchlist", "value_trend", "instrument_news"):
                 self._state = None
                 self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
             elif self._sub_key == "report" and self._key != "sub_totals" and self._key != "cash_accounts":
@@ -2154,6 +2304,60 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                 watchlist_data = self._coordinator.data.get('watchlist', {})
                 items = watchlist_data.get('watchlist', []) if isinstance(watchlist_data, dict) else []
                 return _watchlist_metric(items, self._key)
+            # Watchlist per-instrument price + day change (W1)
+            elif self._sub_key == "watchlist_instrument":
+                watchlist_data = self._coordinator.data.get('watchlist', {})
+                items = watchlist_data.get('watchlist', []) if isinstance(watchlist_data, dict) else []
+                item = next(
+                    (
+                        it for it in items
+                        if isinstance(it, dict)
+                        and ((it.get('instrument') or {}).get('code') or it.get('code')) == self._local_name
+                    ),
+                    None,
+                )
+                if not isinstance(item, dict):
+                    return None
+                price = item.get('price') or {}
+                if self._key == "watchlist_instrument_price":
+                    return price.get('value')
+                if self._key == "watchlist_instrument_day_change_percent":
+                    return price.get('diff_percent')
+                return None
+            # Latest instrument-news headline (W2), truncated to HA's 255-char cap
+            elif self._sub_key == "instrument_news":
+                news_container = self._coordinator.data.get('instrument_news', {})
+                articles = news_container.get('instrument_news', []) if isinstance(news_container, dict) else []
+                articles = [a for a in articles if isinstance(a, dict)]
+                if not articles:
+                    return None
+                latest = max(articles, key=lambda a: str(a.get('published_at') or ''))
+                title = latest.get('title')
+                if title is None:
+                    return None
+                return str(title)[:255]
+            # Portfolio value-trend 7d/30d change (W6)
+            elif self._sub_key == "value_trend":
+                trend = self._coordinator.data.get('value_trend', {})
+                if not isinstance(trend, dict):
+                    return None
+                return trend.get(self._key)
+            # Per-label allocation value / percent (W7)
+            elif self._sub_key == "label_allocation":
+                allocation = self._coordinator.data.get('label_allocation', [])
+                if not isinstance(allocation, list):
+                    return None
+                entry = next(
+                    (e for e in allocation if isinstance(e, dict) and e.get('label') == self._local_name),
+                    None,
+                )
+                if not isinstance(entry, dict):
+                    return None
+                if self._key == "label_value":
+                    return entry.get('value')
+                if self._key == "label_percent":
+                    return entry.get('percentage')
+                return None
             # FX rate (foreign currency -> base currency)
             elif self._device_group == "fx":
                 fx_data = self._coordinator.data.get('exchange_rates', {})
@@ -2458,6 +2662,48 @@ class SharesightSensor(CoordinatorEntity, SensorEntity):
                     "value": last.get("value") or last.get("cost_base") or last.get("amount"),
                     "type": last.get("transaction_type") or last.get("trade_type") or last.get("type"),
                 }
+
+            # Latest News — the capped list of recent articles (W2).
+            if self._sub_key == "instrument_news" and self._key == "latest_news":
+                news_container = data.get("instrument_news", {})
+                articles = news_container.get("instrument_news", []) if isinstance(news_container, dict) else []
+                articles = [a for a in articles if isinstance(a, dict)]
+                if not articles:
+                    return None
+                # Cap at 10 (matching the news event cap) so the serialized
+                # attribute payload stays well under HA's 16 KiB recorder limit;
+                # 25 long-title/long-URL articles can overflow it and the
+                # recorder then stores {} instead.
+                ordered = sorted(articles, key=lambda a: str(a.get("published_at") or ""), reverse=True)[:10]
+                latest = ordered[0]
+                return {
+                    "source": latest.get("source"),
+                    "published_at": latest.get("published_at"),
+                    "link": latest.get("link"),
+                    "author": latest.get("author"),
+                    "instrument_id": latest.get("instrument_id"),
+                    "articles": [
+                        {
+                            "title": (str(a.get("title"))[:255] if a.get("title") is not None else None),
+                            "source": a.get("source"),
+                            "published_at": a.get("published_at"),
+                            "link": a.get("link"),
+                            "author": a.get("author"),
+                            "instrument_id": a.get("instrument_id"),
+                        }
+                        for a in ordered
+                    ],
+                }
+
+            # Value Change 30d — the value-trend sparkline series (W6).
+            if self._sub_key == "value_trend" and self._key == "change_30d_percent":
+                trend = data.get("value_trend", {})
+                if not isinstance(trend, dict):
+                    return None
+                series = trend.get("series")
+                if not isinstance(series, list):
+                    return None
+                return {"series": series[:31]}
 
             return None
         except Exception as e:  # noqa: BLE001

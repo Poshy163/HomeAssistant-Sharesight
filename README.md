@@ -17,12 +17,13 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 - Per-holding fundamentals (P/E, EPS, NTA, sector, industry), dividend income, yield-on-cost and average buy price
 - Sector & industry allocation breakdown — a diversification lens beyond markets
 - Account device — plan tier, member-since, and a subscription-lapse alert (binary sensor)
-- Watchlist, live FX rates and market trading-hours sensors (where your Sharesight API access exposes them)
+- Watchlist (overview plus per-instrument live price and day-change), live FX rates and market trading-hours sensors (where your Sharesight API access exposes them)
 - Long-term statistics backfill — imports your full portfolio value history so HA charts show years, not just days since install (opt-out in options)
-- Response services — pull a portfolio summary, holdings, or income into scripts/templates, or generate an on-demand performance report for any date range
-- Activity events & device triggers — automate on new trades, dividends, holdings opened/closed, cash transactions and the daily-close rollover
+- Response services — pull a portfolio summary, holdings or income into scripts/templates, generate an on-demand performance report, fetch per-instrument fundamentals, or mint a one-minute single-sign-on login link
+- Activity events & device triggers — automate on new trades, dividends, holdings opened/closed, cash transactions, published instrument news and the daily-close rollover
 - Portfolio analytics — concentration (HHI), effective number of holdings, weighted yield/PE, foreign-currency exposure, cash drag and stale-price count
 - All-time totals & forward income — lifetime value/return including sold positions, plus projected forward dividend income and yield
+- Value-trend, Latest News & label sensors — 7-day / 30-day portfolio value change (with a sparkline series), a latest-headline sensor, plus value and portfolio share per Sharesight label (where your API access and labels expose them)
 - Supports both standard and Edge (developer) API accounts
 - Multiple portfolio support — add the integration once per portfolio
 
@@ -104,6 +105,8 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Unrealised Gain / Percent | Paper profit/loss on open positions |
 | Annualised Return Percent | Annualised total return |
 | Portfolio Start Value | Portfolio value at inception |
+| Value Change 7d / 30d | Portfolio value change over the last 7 / 30 days; the 30-day sensor carries the daily value series as a `series` attribute for ApexCharts / sparkline cards |
+| Latest News | Most recent instrument-news headline; up to 25 recent articles (title, source, link, published time) in attributes — mobile-scoped, appears only where your API access exposes the feed |
 | Portfolio ID, User ID, Primary Currency, Portfolio Name, Financial Year End | Diagnostic info |
 
 ### Daily Performance
@@ -182,7 +185,7 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Income Next 30 / 90 Days | Dividends due within the next 30 / 90 days |
 | Days Until Next Dividend | Days to the soonest upcoming ex-dividend / pay date |
 | Announced Income Unpaid | Declared-but-not-yet-paid dividend total |
-| **Dividend Calendar** (calendar entity) | All received + announced dividends as all-day calendar events — use it in calendar cards or calendar-trigger automations |
+| **Dividend Calendar** (calendar entity) | Received + announced dividends as all-day calendar events, **plus a distinct all-day ex-dividend event** on each payout's ex-date (summary `<SYMBOL> ex-dividend`, with the pay date in the description) — use it in calendar cards or calendar-trigger automations |
 
 ### Tax (CGT) — Australian portfolios only
 | Sensor | Description |
@@ -209,6 +212,14 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Top Sector 1–5 (Name / Percent / Value) | Your largest sector exposures (value-weighted) |
 | Sector Count / Top 3 / Top 5 Sectors Percent | Sector diversification and concentration |
 | Top Industry 1–2 (Name / Percent) / Industry Count | Finer industry breakdown |
+
+### Labels (only when your holdings carry Sharesight labels)
+| Sensor | Description |
+|--------|-------------|
+| `<Label>` value | Total portfolio value carrying this label |
+| `<Label>` percent | That value as a share of the whole portfolio |
+
+> Labels are **non-exclusive** — a holding can carry several — so these percentages can sum to **more than 100%**. Each figure is the share of portfolio value carrying that label, not a slice of a mutually-exclusive pie. The Labels device (and its sensors) appear only when at least one holding has a label; if none do, nothing is created. Derived in-memory from the already-fetched holdings, so they add no API cost.
 
 ### Analytics (concentration & quality — zero extra API cost)
 | Sensor | Description |
@@ -267,6 +278,7 @@ Derived from already-fetched data, so they add no API cost and give you somethin
 |--------|-------------|
 | Watchlist Count / Up Today / Down Today / Average Change | Overview of instruments you watch but don't hold |
 | Watchlist Top Gainer / Top Loser (+ percent) | Biggest daily movers on your watchlist |
+| Watchlist `<CODE>` price / day change percent | Live price and today's percent change for each instrument on your watchlist (up to 50, all on the single Watchlist device; auto-discovered on each poll) |
 | `<CUR>` to `<BASE>` rate | Live FX rate per foreign currency you hold (multi-currency portfolios) |
 | `<MARKET>` status / next open / next close | Trading-hours state per market you hold in |
 
@@ -321,7 +333,7 @@ Derived from already-fetched data, so they add no API cost and give you somethin
 
 ## Services
 
-The integration registers four **response services** — they return data rather than change state. Call them with `response_variable` in a script/automation, or tick **Return response** in **Developer Tools → Actions**. Each targets a portfolio via `config_entry_id` or `device_id`; both are optional when only one portfolio is configured.
+The integration registers six **response services** — they return data rather than change state. Call them with `response_variable` in a script/automation, or tick **Return response** in **Developer Tools → Actions**. Each targets a portfolio via `config_entry_id` or `device_id`; both are optional when only one portfolio is configured.
 
 ### `sharesight.get_portfolio_summary`
 
@@ -416,15 +428,61 @@ response_variable: report
 
 Response: the raw Sharesight performance report — `value`, `capital_gain(_percent)`, `payout_gain(_percent)`, `currency_gain(_percent)`, `total_gain(_percent)`, `start_date` / `end_date`, plus grouped `holdings` / `sub_totals`. On an API failure the response is `{ error: "..." }` rather than raising.
 
+### `sharesight.get_instrument_fundamentals`
+
+Sharechecker fundamentals plus the official average purchase price and cost base for one held instrument, identified by its symbol. Makes a few on-demand API requests each time it is called (some are mobile-scoped and may be unavailable to standard API tokens).
+
+```yaml
+action: sharesight.get_instrument_fundamentals
+data:
+  symbol: AAPL            # must be a symbol you hold in this portfolio
+response_variable: fundamentals
+```
+
+Response:
+
+```yaml
+symbol: AAPL
+instrument_id: 12345
+holding_id: 67890
+sharechecker:
+  instrument: { code: AAPL, market_code: NASDAQ, name: Apple Inc., sector_name: Technology }
+  performance: { capital_gain: 1200.0, capital_gain_percent: 18.4, total_return_gain_percent: 21.0 }
+  price: { value: 224.5, currency: USD }
+average_purchase_price: { value: 142.10, currency: USD }
+cost_base: { total_value: 14210.0, value_per_share: 142.10, currency: USD }
+```
+
+Each block is returned only if its call succeeded; a gated or unreachable call comes back as `{ error: "..." }` in that block's place rather than failing the whole service.
+
+### `sharesight.get_login_link`
+
+Returns a **single-sign-on URL** that logs straight into the Sharesight account — no email/password prompt. The link is valid for about one minute, and this endpoint is exempt from the API rate limit.
+
+```yaml
+action: sharesight.get_login_link
+response_variable: login
+```
+
+Response:
+
+```yaml
+login_url: "https://api.sharesight.com/users/sign_in?signon-token=..."
+```
+
+> ⚠️ **Treat the returned URL like a password.** Anyone who opens it lands in a fully logged-in Sharesight session. The integration never logs it at any level, and neither should your automation — if you surface it (e.g. in a mobile notification or a dashboard button) do so knowingly and rely on its ~one-minute expiry. On failure the response is `{ login_url: null, error: "..." }`.
+
 ---
 
 ## Activity events & device triggers
 
 Each portfolio gets an **activity event entity** — `event.sharesight_activity_<portfolio_id>` ("Sharesight Activity", on the Portfolio device). Every poll the coordinator diffs the new data against the previous poll (zero extra API cost) and fires an event when something changes. Event types:
 
-`dividend_announced`, `dividend_paid`, `trade_confirmed`, `holding_opened`, `holding_closed`, `cash_transaction`, `daily_close`
+`dividend_announced`, `dividend_paid`, `trade_confirmed`, `holding_opened`, `holding_closed`, `cash_transaction`, `daily_close`, `news_published`
 
 The fired `event_type`, the triggering record's fields, and the full same-poll batch (under `items`) are all carried on the event's attributes.
+
+`news_published` fires when Sharesight's instrument-news feed surfaces a new headline for one of your instruments (only the title, link, source, published time and symbol — never the article body). That feed is mobile-scoped, so it starts firing once the optional endpoint becomes reachable for your token; the same headlines also populate the **Latest News** sensor on the Portfolio device. The remaining event types are also exposed as pick-from-the-UI device triggers below; `news_published` is available as a state trigger on the event entity only.
 
 Example automation (state trigger on the event entity):
 

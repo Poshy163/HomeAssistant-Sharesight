@@ -118,20 +118,38 @@ From [coordinator.py](../custom_components/sharesight/coordinator.py):
 | V3 | `GET markets` | Market-hours device: open/closed + next open/close per held market — internal-scoped, parks if unreachable |
 | V3 | `GET exchange_rates` | Live FX rate sensors (per foreign currency held) — internal-scoped, multi-currency only, parks if unreachable |
 | V3 | `GET portfolios/{id}/totals` | All-time portfolio performance **including fully-sold positions** (`include_sales=true`) — restores lifetime P&L the main performance report omits ("totals" device). Light endpoint; parks via backoff if the token's scope can't reach it |
+| V2 | `GET portfolios/{id}/instrument_news.json` | Mobile-scoped recent-news feed for the portfolio's instruments → **Latest News** sensor (headline + up to 25 articles: title/source/link/published time) and the `news_published` activity event. Light; parks via backoff if the token can't reach it |
+| V3 | `GET portfolios/{id}/value` | 30-day daily portfolio value series → **Value Change 7d / 30d** trend sensors (the 30d sensor carries the series as an attribute for sparkline cards). Light; parks via backoff if the token's scope can't reach it |
 | V3 | `GET portfolios/{id}/portfolio_value_data.json` | One-shot at startup: backfills the inception→today daily value series into the Portfolio value sensor's long-term statistics (opt-out via options). Mobile-scoped — skips silently if unreachable. See [statistics_import.py](../custom_components/sharesight/statistics_import.py). |
 
 > **Zero-cost derivations:** the per-holding dividend income / yield-on-cost /
 > franking / last-dividend sensors and the per-holding trade activity / VWAP
 > average buy price / brokerage / last-trade sensors are computed in-memory
 > from the already-fetched `payouts` and `trades` lists — no extra requests.
-> See [analytics.py](../custom_components/sharesight/analytics.py).
+> The per-watchlist-instrument price / day-change sensors and the per-label
+> value / share sensors are likewise derived from the already-fetched
+> `watchlist.json` and `holdings` payloads. See
+> [analytics.py](../custom_components/sharesight/analytics.py).
+
+> **On-demand (service-only) calls:** these are never polled — they run once
+> per explicit service invocation (see the Services section of the
+> [README](../README.md)) and each tolerates a `403`/gated response by
+> returning an `{"error": ...}` block rather than raising:
+> - V3 `GET instruments/{instrument_id}/sharechecker`, V3
+>   `GET holdings/{holding_id}/average_purchase_price.json` and V3
+>   `GET holdings/{holding_id}/cost_base.json` — the
+>   `get_instrument_fundamentals` service (up to three calls; several are
+>   mobile-scoped so may be unavailable to standard tokens).
+> - V2 `GET single_sign_on.json` — the `get_login_link` service. Rate-limit
+>   exempt; returns a one-minute login URL that is treated as a secret and
+>   **never logged** at any level.
+> - V2/V3 `GET portfolios/{id}/performance` — the
+>   `generate_performance_report` service (one call per invocation, arbitrary
+>   date range + grouping).
 
 **Not yet used but potentially useful** (read-only, low cost): V2
-`GET currencies.json`, V3 `GET .../value` (30-day portfolio value series —
-lighter than a full performance report), V3 `GET .../overview` (holdings + cash,
-"performance minus calculations" — cheaper than `performance`), V3
-`GET instruments/{id}/sharechecker` (per-instrument fundamentals — one
-request per holding, so budget carefully).
+`GET currencies.json`, V3 `GET .../overview` (holdings + cash,
+"performance minus calculations" — cheaper than `performance`).
 
 ---
 

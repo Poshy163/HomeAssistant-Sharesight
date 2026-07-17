@@ -2,10 +2,11 @@
 
 Exposes one event entity per portfolio that fires HA events whenever the
 coordinator's activity diff (Feature 2) detects new trades, dividends,
-holdings opened/closed, cash transactions, or a daily-close rollover.  The
-detection itself is a zero-cost in-coordinator diff; this entity only replays
-the queued events onto HA's event bus so users can automate against them and
-device triggers can subscribe.
+holdings opened/closed, cash transactions, published instrument news, or a
+daily-close rollover.  The detection itself is a zero-cost in-coordinator diff
+(the news batch is queued by the same diff once its optional endpoint comes
+online); this entity only replays the queued events onto HA's event bus so
+users can automate against them and device triggers can subscribe.
 """
 from __future__ import annotations
 
@@ -25,6 +26,9 @@ PARALLEL_UPDATES = 0
 
 # Event types kept byte-identical to the keys the coordinator stages in
 # combined_dict["activity_events"] — any mismatch would silently drop events.
+# "news_published" (W2) rides the same activity_events dict/seq: the coordinator
+# only stages it on polls where the optional instrument_news endpoint returned
+# data, so it fires like any other family once that endpoint comes online.
 EVENT_TYPES = [
     "dividend_announced",
     "dividend_paid",
@@ -33,6 +37,7 @@ EVENT_TYPES = [
     "holding_closed",
     "cash_transaction",
     "daily_close",
+    "news_published",
 ]
 
 

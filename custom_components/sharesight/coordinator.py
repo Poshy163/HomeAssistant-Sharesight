@@ -99,6 +99,11 @@ class SharesightCoordinator(DataUpdateCoordinator):
     # never produce an unbounded event payload.
     _ACTIVITY_EVENT_CAP: int = 20
 
+    # News (W2) comes from an optional, mobile-scoped endpoint that can appear
+    # mid-life after its backoff clears, so its first real diff may surface a
+    # large batch; cap it tighter than the general activity cap.
+    _NEWS_EVENT_CAP: int = 10
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -165,6 +170,16 @@ class SharesightCoordinator(DataUpdateCoordinator):
         # keep-last-good cached return (which replays the same self.data and
         # would otherwise re-fire the batch on every degraded cycle).
         self._activity_seq: int = 0
+
+        # News diff (W2) — instrument_news is an OPTIONAL, mobile-scoped
+        # endpoint that may only come online mid-life (after its backoff
+        # clears), long after poll 1 already seeded the other activity
+        # families.  It therefore gets its OWN seed-on-first-sight guard,
+        # tripped the first poll the instrument_news key actually appears in
+        # the merged data — seeding silently then rather than on poll 1 — so a
+        # mid-life arrival never replays its whole backlog as "new" events.
+        self._seen_news_ids: set[Any] = set()
+        self._news_seeded: bool = False
 
     # ------------------------------------------------------------------
     # OAuth token handling
@@ -390,6 +405,71 @@ class SharesightCoordinator(DataUpdateCoordinator):
         ]
         return await self._call_endpoint(endpoint, token)
 
+    async def async_get_sharechecker(self, instrument_id: Any) -> Any:
+        """One-shot V3 sharechecker fetch for an instrument (W3 fundamentals).
+
+        Modelled on ``async_get_value_history``: refresh the token then call
+        the V3 sharechecker endpoint directly, bypassing the poll cadence.
+        Returns the raw API response (including an ``{"error": ...}`` dict on an
+        API-level failure) — the caller must tolerate a gated/absent endpoint
+        (this endpoint is mobile-scoped and may 403) and never assume success.
+        """
+        token = await self._refresh_token_with_retries()
+        endpoint = ["v3", f"instruments/{instrument_id}/sharechecker", None, False]
+        return await self._call_endpoint(endpoint, token)
+
+    async def async_get_official_costs(self, holding_id: Any) -> dict[str, Any]:
+        """One-shot fetch of a holding's official cost figures (W3 fundamentals).
+
+        Issues the two light V3 per-holding calls — average purchase price and
+        cost base — in parallel, each tolerant of a 403/error, and returns
+        ``{"average_purchase_price": <resp>, "cost_base": <resp>}`` where each
+        value is the raw API response (or an ``{"error": ...}`` dict on
+        failure).  Never raises for an API-level error, so the caller can
+        surface whichever leg succeeded.
+        """
+        token = await self._refresh_token_with_retries()
+        app_endpoint = [
+            "v3",
+            f"holdings/{holding_id}/average_purchase_price.json",
+            None,
+            False,
+        ]
+        cost_endpoint = [
+            "v3",
+            f"holdings/{holding_id}/cost_base.json",
+            None,
+            False,
+        ]
+        app_result, cost_result = await asyncio.gather(
+            self._call_endpoint(app_endpoint, token),
+            self._call_endpoint(cost_endpoint, token),
+            return_exceptions=True,
+        )
+
+        def _normalise(result: Any) -> Any:
+            if isinstance(result, Exception):
+                return {"error": str(result)}
+            return result
+
+        return {
+            "average_purchase_price": _normalise(app_result),
+            "cost_base": _normalise(cost_result),
+        }
+
+    async def async_get_sso_link(self) -> Any:
+        """One-shot Single Sign-On login-link fetch (W4).
+
+        SECURITY: the ``login_url`` this returns grants a logged-in Sharesight
+        session and must be treated like a password.  This method therefore
+        NEVER logs the URL (or the response) at any level, and the caller must
+        not either.  Returns the raw API response (an ``{"error": ...}`` dict on
+        failure); this endpoint is documented rate-limit exempt.
+        """
+        token = await self._refresh_token_with_retries()
+        endpoint = ["v2", "single_sign_on.json", None, False]
+        return await self._call_endpoint(endpoint, token)
+
     # ------------------------------------------------------------------
     # Optional endpoint cooldown bookkeeping
     # ------------------------------------------------------------------
@@ -509,6 +589,21 @@ class SharesightCoordinator(DataUpdateCoordinator):
             str(daily_close_date)[:10] if daily_close_date else today.isoformat()
         )
 
+        # News (W2).  The instrument_news key is only present on polls where the
+        # optional endpoint actually returned data; its absence (parked/backed
+        # off) must leave the news seed set untouched.  Presence is the signal
+        # that drives per-family seed-on-first-sight below.
+        news_container = combined_dict.get("instrument_news")
+        news_present = isinstance(news_container, dict)
+        news_items: list[dict[str, Any]] = []
+        if news_present:
+            raw_news = news_container.get("instrument_news")
+            if isinstance(raw_news, list):
+                news_items = [item for item in raw_news if isinstance(item, dict)]
+
+        def _news_key(article: dict[str, Any]) -> Any:
+            return self._activity_key(article, "instrument_id", "published_at", "title")
+
         # Seed silently on the first successful poll — no events fire.
         if not self._activity_seeded:
             for trade in trades:
@@ -533,6 +628,13 @@ class SharesightCoordinator(DataUpdateCoordinator):
                     )
             self._seen_holding_symbols = set(current_symbols)
             self._seen_daily_close_date = daily_close_date
+            # Seed news too, but only if the endpoint was reachable this poll;
+            # otherwise leave _news_seeded False so its own first-sight seed
+            # (below) fires whenever the key later appears mid-life.
+            if news_present:
+                for article in news_items:
+                    self._seen_news_ids.add(_news_key(article))
+                self._news_seeded = True
             self._activity_seeded = True
             return
 
@@ -657,6 +759,66 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 }
             ]
         self._seen_daily_close_date = daily_close_date
+
+        # news_published (W2) — only when the endpoint returned data this poll.
+        # The FIRST poll its key appears (which may be well after poll 1, once
+        # the optional-endpoint backoff clears) seeds the baseline silently so a
+        # backlog never fires; every later poll diffs by stable article id and
+        # stages the genuinely-new items into the SAME events dict, so they ride
+        # the single activity_events_seq bump below (never a separate one).
+        if news_present:
+            if not self._news_seeded:
+                for article in news_items:
+                    self._seen_news_ids.add(_news_key(article))
+                self._news_seeded = True
+            else:
+                inst_id_to_symbol: dict[str, str] = {}
+                user_instruments = combined_dict.get("user_instruments") or {}
+                if isinstance(user_instruments, dict):
+                    for inst in user_instruments.get("instruments", []) or []:
+                        if not isinstance(inst, dict):
+                            continue
+                        inst_id = inst.get("id")
+                        code = inst.get("code")
+                        if inst_id is not None and code:
+                            inst_id_to_symbol[str(inst_id)] = code
+                for holding in holdings_list:
+                    if not isinstance(holding, dict):
+                        continue
+                    instrument = holding.get("instrument") or {}
+                    inst_id = instrument.get("id") or holding.get("instrument_id")
+                    symbol = analytics.holding_symbol(holding)
+                    if inst_id is not None and symbol:
+                        inst_id_to_symbol.setdefault(str(inst_id), symbol)
+
+                new_news: list[dict[str, Any]] = []
+                new_news_keys: list[str] = []
+                for article in news_items:
+                    key = _news_key(article)
+                    if key in self._seen_news_ids:
+                        continue
+                    article_instrument = article.get("instrument_id")
+                    new_news.append(
+                        {
+                            # Headline/link/source/timestamp/symbol only — never
+                            # the article body or HTML.
+                            "title": article.get("title"),
+                            "url": article.get("link"),
+                            "source": article.get("source"),
+                            "published_at": article.get("published_at"),
+                            "symbol": inst_id_to_symbol.get(str(article_instrument))
+                            if article_instrument is not None
+                            else None,
+                        }
+                    )
+                    new_news_keys.append(key)
+                if new_news:
+                    # Only mark as seen the articles we actually emit this poll;
+                    # any beyond the cap stay unseen so a later poll can fire
+                    # them, rather than silently dropping them forever.
+                    events["news_published"] = new_news[: self._NEWS_EVENT_CAP]
+                    for emitted_key in new_news_keys[: self._NEWS_EVENT_CAP]:
+                        self._seen_news_ids.add(emitted_key)
 
         # Stamp a fresh sequence id for this diff.  Cached "keep last good"
         # returns reuse an old combined_dict (and its seq), so the event
@@ -862,6 +1024,24 @@ class SharesightCoordinator(DataUpdateCoordinator):
                 {"include_sales": "true", "consolidated": "false"},
                 "totals",
             ],
+            # Instrument news (W2) — a light V2 "mobile"-scoped feed of recent
+            # articles for the portfolio's instruments.  A standard API token
+            # may not reach it, so it parks via the optional-endpoint backoff.
+            [
+                "v2",
+                f"portfolios/{self.portfolio_id}/instrument_news.json",
+                None,
+                "instrument_news",
+            ],
+            # 30-day portfolio value series (W6) — a light V3 "mobile"-scoped
+            # endpoint feeding the value-trend sensors; parks via backoff for
+            # tokens whose scope can't reach it.
+            [
+                "v3",
+                f"portfolios/{self.portfolio_id}/value",
+                None,
+                "value_series",
+            ],
         ]
 
         # Live FX rates — only worth requesting for multi-currency portfolios.
@@ -1049,6 +1229,14 @@ class SharesightCoordinator(DataUpdateCoordinator):
                     continue
 
                 response = result
+                # The V3 /value series can answer with a bare top-level array.
+                # Wrap it under a "data" key so it clears the dict-shape guard
+                # below and its normaliser (_value_series_points) can peel it
+                # like the nested-list shapes; otherwise a valid list response
+                # would be discarded here and the value-trend sensors would
+                # never come online.
+                if extension == "value_series" and isinstance(response, list):
+                    response = {"data": response}
                 if response is None or not isinstance(response, dict):
                     _LOGGER.info(
                         "Optional endpoint %s returned %s, backing off",
@@ -1323,6 +1511,19 @@ class SharesightCoordinator(DataUpdateCoordinator):
                     combined_dict.get("report", {}),
                     today,
                 )
+                # 30-day value trend (W6).  Gate on the optional endpoint's key
+                # (like totals) so a parked token that never fetches the series
+                # sees no value_trend rather than an empty/misleading one.
+                if "value_series" in combined_dict:
+                    combined_dict["value_trend"] = analytics.build_value_trend(
+                        combined_dict.get("value_series")
+                    )
+                # Label allocation (W7).  Only assigned when at least one holding
+                # actually carries a label, so portfolios without labels grow no
+                # key (and Stage 3 creates no device/entities).
+                label_allocation = analytics.build_label_allocation(holdings_list)
+                if label_allocation:
+                    combined_dict["label_allocation"] = label_allocation
                 # Merge the forward-income forecast into income_report without
                 # clobbering the payouts/totals already assembled above.
                 forecast = analytics.build_income_forecast(

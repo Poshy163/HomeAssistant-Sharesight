@@ -1,17 +1,24 @@
 """Response services for the Sharesight integration.
 
-Four SupportsResponse.ONLY services that mine the data the coordinator already
-holds (or, for generate_performance_report, make a single on-demand call) and
-return it as a structured response for scripts/templates:
+Six SupportsResponse.ONLY services that mine the data the coordinator already
+holds (or, for the last three, make a single on-demand call) and return it as a
+structured response for scripts/templates:
 
 - get_portfolio_summary   — headline value / period gains / movers / income.
 - get_holdings            — sortable, limitable holdings list.
 - get_income              — trailing / YTD / forward dividend income.
 - generate_performance_report — arbitrary date-range performance report.
+- get_instrument_fundamentals — per-instrument sharechecker + official cost
+  figures for one held symbol (one-shot mobile/V3 calls).
+- get_login_link          — a one-minute single-sign-on URL for the portfolio.
 
 Each service selects the portfolio via an optional config_entry_id or
 device_id, falling back to the sole configured portfolio and raising a clear
 ServiceValidationError when the target is ambiguous.
+
+SECURITY: get_login_link returns a URL that grants a logged-in Sharesight
+session; it is treated like a password and is NEVER logged here (or by the
+coordinator method it calls) at any level.
 """
 from __future__ import annotations
 
@@ -49,12 +56,16 @@ SERVICE_GET_PORTFOLIO_SUMMARY = "get_portfolio_summary"
 SERVICE_GET_HOLDINGS = "get_holdings"
 SERVICE_GET_INCOME = "get_income"
 SERVICE_GENERATE_PERFORMANCE_REPORT = "generate_performance_report"
+SERVICE_GET_INSTRUMENT_FUNDAMENTALS = "get_instrument_fundamentals"
+SERVICE_GET_LOGIN_LINK = "get_login_link"
 
 _SERVICES = (
     SERVICE_GET_PORTFOLIO_SUMMARY,
     SERVICE_GET_HOLDINGS,
     SERVICE_GET_INCOME,
     SERVICE_GENERATE_PERFORMANCE_REPORT,
+    SERVICE_GET_INSTRUMENT_FUNDAMENTALS,
+    SERVICE_GET_LOGIN_LINK,
 )
 
 CONF_CONFIG_ENTRY_ID = "config_entry_id"
@@ -65,6 +76,7 @@ CONF_END_DATE = "end_date"
 CONF_GROUPING = "grouping"
 CONF_CONSOLIDATED = "consolidated"
 CONF_INCLUDE_SALES = "include_sales"
+CONF_SYMBOL = "symbol"
 
 # Holdings sort keys map onto the response dict keys, so a single name both
 # selects the sort field and matches the returned column.
@@ -94,6 +106,13 @@ GENERATE_PERFORMANCE_REPORT_SCHEMA = vol.Schema(
         vol.Optional(CONF_INCLUDE_SALES): cv.boolean,
     }
 )
+GET_INSTRUMENT_FUNDAMENTALS_SCHEMA = vol.Schema(
+    {
+        **_TARGET_FIELDS,
+        vol.Required(CONF_SYMBOL): cv.string,
+    }
+)
+GET_LOGIN_LINK_SCHEMA = vol.Schema({**_TARGET_FIELDS})
 
 
 def _resolve_coordinator(hass: HomeAssistant, call: ServiceCall) -> Any:
@@ -183,6 +202,120 @@ def _total_cash(report: dict[str, Any]) -> float:
         except (TypeError, ValueError):
             continue
     return round(total, 2)
+
+
+def _resolve_instrument(
+    coordinator: Any, symbol: str
+) -> tuple[Any, Any, str | None]:
+    """Resolve a symbol to its (instrument_id, holding_id, symbol) in-portfolio.
+
+    Matches case-insensitively against the coordinator's current holdings.  The
+    instrument id drives the sharechecker call and the holding id the official
+    cost calls; either can be None when the match lacks it (a holding always
+    has an id, so cost figures are available for any held symbol).  Returns
+    ``(None, None, None)`` when the symbol is not held.
+    """
+    data: dict[str, Any] = coordinator.data or {}
+    holdings_data = data.get("holdings", {}) if isinstance(data.get("holdings"), dict) else {}
+    target = (symbol or "").strip().upper()
+    if not target:
+        return None, None, None
+    for holding in holdings_data.get("holdings", []) or []:
+        if not isinstance(holding, dict):
+            continue
+        hsym = (_get_holding_symbol(holding) or "").upper()
+        if hsym and hsym == target:
+            instrument = holding.get("instrument") or {}
+            instrument_id = instrument.get("id") or holding.get("instrument_id")
+            holding_id = holding.get("id") or holding.get("holding_id")
+            return instrument_id, holding_id, _get_holding_symbol(holding)
+    return None, None, None
+
+
+def _currency_code(obj: Any) -> Any:
+    """3-letter code from a Sharesight currency object (or a bare string)."""
+    if isinstance(obj, dict):
+        return obj.get("code")
+    return obj
+
+
+def _extract_sharechecker(resp: Any) -> dict[str, Any]:
+    """Curate the V3 sharechecker payload down to the useful scalar figures.
+
+    Passes an ``{"error": ...}`` envelope straight through, and deliberately
+    drops the (potentially large) ``chart.data`` price series and logo URLs —
+    a response service should return figures, not a chart.
+    """
+    if not isinstance(resp, dict):
+        return {"error": "unavailable"}
+    if "error" in resp:
+        return resp
+    sharechecker = resp.get("sharechecker")
+    if not isinstance(sharechecker, dict):
+        return {"error": "unavailable"}
+    instrument = sharechecker.get("instrument") or {}
+    performance = sharechecker.get("performance") or {}
+    price = sharechecker.get("price") or {}
+    return {
+        "instrument": {
+            "id": instrument.get("id"),
+            "code": instrument.get("code"),
+            "market_code": instrument.get("market_code"),
+            "name": instrument.get("name"),
+            "country_name": instrument.get("country_name"),
+            "sector_name": instrument.get("sector_name"),
+        },
+        "amount_invested": sharechecker.get("amount_invested"),
+        "start_date": sharechecker.get("start_date"),
+        "interest_method": sharechecker.get("interest_method"),
+        "performance": {
+            "start_date": performance.get("start_date"),
+            "capital_gain": performance.get("capital_gain"),
+            "capital_gain_percent": performance.get("capital_gain_percent"),
+            "payout_gain": performance.get("payout_gain"),
+            "payout_gain_percent": performance.get("payout_gain_percent"),
+            "currency_gain": performance.get("currency_gain"),
+            "currency_gain_percent": performance.get("currency_gain_percent"),
+            "total_return_gain": performance.get("total_return_gain"),
+            "total_return_gain_percent": performance.get("total_return_gain_percent"),
+        },
+        "price": {
+            "value": price.get("value"),
+            "timestamp": price.get("timestamp"),
+            "currency": _currency_code(price.get("currency")),
+        },
+    }
+
+
+def _extract_average_purchase_price(resp: Any) -> Any:
+    """Curate the V3 average-purchase-price payload; pass errors through."""
+    if not isinstance(resp, dict):
+        return None
+    if "error" in resp:
+        return resp
+    inner = resp.get("average_purchase_price")
+    if not isinstance(inner, dict):
+        return None
+    return {
+        "value": inner.get("value"),
+        "currency": _currency_code(inner.get("currency")),
+    }
+
+
+def _extract_cost_base(resp: Any) -> Any:
+    """Curate the V3 cost-base payload; pass errors through."""
+    if not isinstance(resp, dict):
+        return None
+    if "error" in resp:
+        return resp
+    inner = resp.get("cost_base")
+    if not isinstance(inner, dict):
+        return None
+    return {
+        "total_value": inner.get("total_value"),
+        "value_per_share": inner.get("value_per_share"),
+        "currency": _currency_code(inner.get("currency")),
+    }
 
 
 async def _get_portfolio_summary(
@@ -341,6 +474,60 @@ async def _generate_performance_report(
     return {"result": response}
 
 
+async def _get_instrument_fundamentals(
+    hass: HomeAssistant, call: ServiceCall
+) -> ServiceResponse:
+    coordinator = _resolve_coordinator(hass, call)
+    symbol = call.data[CONF_SYMBOL]
+    instrument_id, holding_id, resolved_symbol = _resolve_instrument(
+        coordinator, symbol
+    )
+    if instrument_id is None:
+        raise ServiceValidationError(
+            f"No holding found for symbol {symbol!r} in this portfolio"
+        )
+
+    # Sharechecker fundamentals + the two official cost figures.  Each
+    # coordinator call tolerates a gated/absent (mobile-scoped) endpoint and
+    # returns an {"error": ...} envelope rather than raising, so surface
+    # whichever succeeded.
+    sharechecker = await coordinator.async_get_sharechecker(instrument_id)
+    average_purchase_price: Any = None
+    cost_base: Any = None
+    if holding_id is not None:
+        costs = await coordinator.async_get_official_costs(holding_id)
+        if isinstance(costs, dict):
+            average_purchase_price = _extract_average_purchase_price(
+                costs.get("average_purchase_price")
+            )
+            cost_base = _extract_cost_base(costs.get("cost_base"))
+
+    return {
+        "symbol": resolved_symbol or symbol,
+        "instrument_id": instrument_id,
+        "holding_id": holding_id,
+        "sharechecker": _extract_sharechecker(sharechecker),
+        "average_purchase_price": average_purchase_price,
+        "cost_base": cost_base,
+    }
+
+
+async def _get_login_link(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    coordinator = _resolve_coordinator(hass, call)
+    # SECURITY: async_get_sso_link never logs the URL/response, and neither
+    # must this handler — do not add any _LOGGER call that touches `response`
+    # or `login_url`.  The URL grants a logged-in Sharesight session and is
+    # valid for only one minute.
+    response = await coordinator.async_get_sso_link()
+    if isinstance(response, dict):
+        login_url = response.get("login_url")
+        if login_url:
+            return {"login_url": login_url}
+        if response.get("error"):
+            return {"login_url": None, "error": response["error"]}
+    return {"login_url": None, "error": "Single sign-on link unavailable"}
+
+
 def async_setup_services(hass: HomeAssistant) -> None:
     """Register the Sharesight response services (idempotent, domain-global)."""
     definitions = (
@@ -352,6 +539,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
             _generate_performance_report,
             GENERATE_PERFORMANCE_REPORT_SCHEMA,
         ),
+        (
+            SERVICE_GET_INSTRUMENT_FUNDAMENTALS,
+            _get_instrument_fundamentals,
+            GET_INSTRUMENT_FUNDAMENTALS_SCHEMA,
+        ),
+        (SERVICE_GET_LOGIN_LINK, _get_login_link, GET_LOGIN_LINK_SCHEMA),
     )
     for name, handler, schema in definitions:
         if hass.services.has_service(DOMAIN, name):

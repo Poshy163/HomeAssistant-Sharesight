@@ -587,3 +587,172 @@ def build_income_forecast(
     if pv and pv > 0:
         result["forward_yield_percent"] = round(forward_annual_income / pv * 100, 2)
     return result
+
+
+def _value_series_points(payload: Any) -> list[tuple[str, float]]:
+    """Normalise the V3 ``/value`` payload into sorted (date, value) points.
+
+    Sharesight's mobile value endpoint is documented loosely (the apiDoc
+    example is boilerplate), so tolerate every plausible shape: a
+    ``chart.data`` list, a ``values``/``data`` list, a nested ``values.values``
+    wrapper, or a ``{date: value}`` mapping.  Anything that cannot be parsed
+    into a dated numeric point is skipped rather than raising, and duplicate
+    dates keep the last value seen.
+    """
+    raw: Any = payload
+    # Peel known container keys until we reach the actual list/mapping of
+    # points.  Bounded so a self-referential shape can never loop forever.
+    for _ in range(4):
+        if not isinstance(raw, dict):
+            break
+        chart = raw.get("chart")
+        if isinstance(chart, dict) and isinstance(chart.get("data"), list):
+            raw = chart["data"]
+            break
+        if isinstance(raw.get("data"), list):
+            raw = raw["data"]
+            break
+        if "values" in raw:
+            raw = raw["values"]
+            continue
+        break
+
+    points: list[tuple[str, float]] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            parsed = _parse_date(
+                item.get("date") or item.get("timestamp") or item.get("as_at")
+            )
+            value = _f(item.get("value"))
+            if value is None:
+                value = _f((item.get("in_portfolio_currency") or {}).get("value"))
+            if parsed is not None and value is not None:
+                points.append((parsed.isoformat(), value))
+    elif isinstance(raw, dict):
+        for key, val in raw.items():
+            parsed = _parse_date(key)
+            if parsed is None:
+                continue
+            value = _f(val if not isinstance(val, dict) else val.get("value"))
+            if value is not None:
+                points.append((parsed.isoformat(), value))
+
+    dedup: dict[str, float] = {}
+    for date_str, value in points:
+        dedup[date_str] = value
+    return sorted(dedup.items(), key=lambda point: point[0])
+
+
+def build_value_trend(series: Any) -> dict[str, Any]:
+    """30-day portfolio value trend from the optional V3 ``/value`` payload.
+
+    Returns ``{change_7d_percent, change_30d_percent, series}`` where ``series``
+    is a chronologically sorted list of ``{date, value}`` capped at the most
+    recent 31 points (for an ApexCharts sparkline).  The percentage changes
+    compare the latest value against the last point on-or-before 7 / 30 days
+    earlier, falling back to the earliest available point when the series does
+    not quite reach that far back (weekend/holiday gaps), and are ``None`` when
+    the series is too short or the baseline is zero.  Accepts the raw endpoint
+    payload and degrades to empty/``None`` fields rather than raising.
+    """
+    result: dict[str, Any] = {
+        "change_7d_percent": None,
+        "change_30d_percent": None,
+        "series": [],
+    }
+    points = _value_series_points(series)
+    if not points:
+        return result
+
+    points = points[-31:]
+    result["series"] = [
+        {"date": date_str, "value": round(value, 2)} for date_str, value in points
+    ]
+
+    latest_date_str, latest_value = points[-1]
+    latest_date = _parse_date(latest_date_str)
+    earliest_date = _parse_date(points[0][0])
+
+    def _change(lookback_days: int) -> float | None:
+        if latest_date is None:
+            return None
+        target = latest_date - timedelta(days=lookback_days)
+        base: float | None = None
+        for date_str, value in points:
+            parsed = _parse_date(date_str)
+            if parsed is not None and parsed <= target:
+                base = value
+        if base is None:
+            # No point reaches back far enough — only use the earliest point as
+            # the baseline when the series roughly spans the window (a few days
+            # slack for weekends), otherwise the change is not meaningful.
+            if (
+                earliest_date is not None
+                and (latest_date - earliest_date).days >= lookback_days - 4
+            ):
+                base = points[0][1]
+        if not base:
+            return None
+        return round((latest_value - base) / base * 100, 2)
+
+    result["change_7d_percent"] = _change(7)
+    result["change_30d_percent"] = _change(30)
+    return result
+
+
+def build_label_allocation(
+    holdings_list: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Value-weighted allocation across the labels assigned to holdings.
+
+    Each holding in the V3 combined report may carry an inline ``labels`` array
+    (``{id, name, color, ...}``); this sums holding value into each distinct
+    label it carries and expresses that as a percentage of the WHOLE portfolio
+    value (all holdings, labelled or not).  Labels are non-exclusive, so a
+    holding with several labels contributes to each and the percentages can sum
+    to more than 100% — the figure is "share of portfolio value carrying this
+    label".  Returns an empty list (so the caller can skip assignment) when no
+    holding carries a label, and is fully tolerant of the field's absence.
+    """
+    total = 0.0
+    buckets: dict[str, dict[str, Any]] = {}
+    for holding in holdings_list or []:
+        if not isinstance(holding, dict):
+            continue
+        value = _f(holding.get("value")) or 0.0
+        total += value
+        labels = holding.get("labels")
+        if not isinstance(labels, list) or not labels:
+            continue
+        seen_names: set[str] = set()
+        for label in labels:
+            if isinstance(label, dict):
+                name = label.get("name")
+            elif isinstance(label, str):
+                name = label
+            else:
+                name = None
+            # A holding should count once per distinct label name even if the
+            # payload duplicates it.
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+            entry = buckets.setdefault(name, {"value": 0.0, "holding_count": 0})
+            entry["value"] += value
+            entry["holding_count"] += 1
+
+    allocation: list[dict[str, Any]] = []
+    for name, entry in buckets.items():
+        percentage = round(entry["value"] / total * 100, 2) if total else 0
+        allocation.append(
+            {
+                "label": name,
+                "value": round(entry["value"], 2),
+                "percentage": percentage,
+                "holding_count": entry["holding_count"],
+            }
+        )
+    allocation.sort(key=lambda item: item["value"], reverse=True)
+    return allocation

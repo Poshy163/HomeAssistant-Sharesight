@@ -902,3 +902,46 @@ MARKET_HOURS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
     SharesightSensorDescription(key="market_next_open", sub_key="markets", extension_key=None, name="next open", icon="mdi:clock-start", native_unit_of_measurement=None, device_class=SensorDeviceClass.TIMESTAMP, state_class=None, entity_category=None, suggested_display_precision=None, device_group="market_hours"),
     SharesightSensorDescription(key="market_next_close", sub_key="markets", extension_key=None, name="next close", icon="mdi:clock-end", native_unit_of_measurement=None, device_class=SensorDeviceClass.TIMESTAMP, state_class=None, entity_category=None, suggested_display_precision=None, device_group="market_hours"),
 ]
+
+# ---------------------------------------------------------------------------
+# Wave-2 (1.9.0) sensor descriptions
+# ---------------------------------------------------------------------------
+
+# Per-watchlist-instrument price + day-change sensors (W1).  Instantiated
+# dynamically in sensor.py — one set per watched instrument (capped) with
+# local_name = the instrument code — and share the single "watchlist" device
+# with the overview sensors above.  Read from the V3 watchlist.json items
+# (item["price"]["value"] / item["price"]["diff_percent"]).  The price sensor
+# uses CURRENCY_DOLLAR so its unit resolves to the instrument's own currency,
+# passed as the sensor's currency at construction.
+WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
+    SharesightSensorDescription(key="watchlist_instrument_price", sub_key="watchlist_instrument", extension_key=None, name="price", icon="mdi:cash", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=4, device_group="watchlist"),
+    SharesightSensorDescription(key="watchlist_instrument_day_change_percent", sub_key="watchlist_instrument", extension_key=None, name="day change percent", icon="mdi:percent", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="watchlist"),
+]
+
+# Latest instrument-news headline (W2) on the portfolio device.  State is the
+# most-recent article title (truncated to 255 chars in sensor.py); a capped
+# list of recent articles rides along in extra_state_attributes.  Read from the
+# optional V2 instrument_news.json feed the coordinator stores under
+# coordinator.data["instrument_news"]["instrument_news"].
+NEWS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
+    SharesightSensorDescription(key="latest_news", sub_key="instrument_news", extension_key=None, name="Latest News", icon="mdi:newspaper-variant-outline", native_unit_of_measurement=None, device_class=None, state_class=None, entity_category=None, suggested_display_precision=None, device_group="portfolio"),
+]
+
+# 30-day portfolio value-trend change sensors (W6) on the portfolio device.
+# Keys map onto analytics.build_value_trend (coordinator.data["value_trend"]);
+# the 30d sensor also carries the sparkline "series" in extra_state_attributes.
+VALUE_TREND_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
+    SharesightSensorDescription(key="change_7d_percent", sub_key="value_trend", extension_key=None, name="Value Change 7d", icon="mdi:chart-line-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="portfolio"),
+    SharesightSensorDescription(key="change_30d_percent", sub_key="value_trend", extension_key=None, name="Value Change 30d", icon="mdi:chart-line-variant", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="portfolio"),
+]
+
+# Per-label value + percent sensors (W7) in a new "labels" device group.
+# Instantiated dynamically in sensor.py — one set per label with local_name =
+# the label name — and gated on the coordinator emitting a label_allocation
+# key (i.e. at least one holding carries a label).  Keys map onto
+# analytics.build_label_allocation entries (value / percentage).
+LABEL_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
+    SharesightSensorDescription(key="label_value", sub_key="label_allocation", extension_key=None, name="value", icon="mdi:tag", native_unit_of_measurement=CURRENCY_DOLLAR, device_class=SensorDeviceClass.MONETARY, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="labels"),
+    SharesightSensorDescription(key="label_percent", sub_key="label_allocation", extension_key=None, name="percent", icon="mdi:tag-text-outline", native_unit_of_measurement=PERCENTAGE, device_class=None, state_class=SensorStateClass.MEASUREMENT, entity_category=None, suggested_display_precision=2, device_group="labels"),
+]
