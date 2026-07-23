@@ -28,6 +28,7 @@ from .const import (
 )
 from .coordinator import SharesightCoordinator
 from .data import SharesightConfigEntry, SharesightRuntimeData
+from .icons import async_load_entity_icons
 from .services import async_setup_services
 from .statistics_import import async_backfill_value_statistics
 
@@ -166,6 +167,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -
             f"https://{edge_host}portfolio.sharesight.com/portfolios/{portfolio_id}"
         ),
     )
+
+    # Resolve icons.json into {platform: {translation_key: icon}} before the
+    # platforms are forwarded, so every entity can mirror its icon into
+    # attributes.icon from its very first state write (see icons.py).
+    local_coordinator.entity_icons = await async_load_entity_icons(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

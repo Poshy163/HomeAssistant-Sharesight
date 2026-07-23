@@ -127,6 +127,14 @@ class SharesightCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.portfolio_id = portfolio_id
         self.startup_endpoint = ["v3", f"portfolios/{self.portfolio_id}", None, False]
 
+        # {platform: {translation_key: icon}} resolved from icons.json by
+        # __init__.async_setup_entry before the platforms are forwarded, so
+        # every entity can publish its icon in attributes.icon (see icons.py
+        # and SharesightBaseEntity.icon).  Empty until then, and harmlessly
+        # empty if the load fails — entities just fall back to no icon
+        # attribute, exactly as before.
+        self.entity_icons: dict[str, dict[str, str]] = {}
+
         # Cooldowns (monotonic timestamps) for optional endpoints.  Each entry
         # maps endpoint path -> { "next_retry": float, "backoff": timedelta }.
         self._optional_endpoint_cooldowns: dict[str, dict[str, Any]] = {}

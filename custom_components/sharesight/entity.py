@@ -46,6 +46,33 @@ class SharesightBaseEntity(CoordinatorEntity[SharesightCoordinator]):
         self._edge_url = "edge-" if edge else ""
 
     @property
+    def icon(self) -> str | None:
+        """Publish this entity's ``icons.json`` icon in ``attributes.icon``.
+
+        Home Assistant never copies an icon translation into the state machine
+        (see ``icons.py``), so consumers that read entity states rather than
+        talk to the HA frontend — Stream Deck plugins, REST/MQTT bridges,
+        custom dashboards — saw no icon at all and fell back to their own
+        generic per-domain default.  Returning the resolved icon here writes it
+        into ``attributes.icon`` for all of them.
+
+        The HA dashboard renders identically either way: it already prefers
+        ``attributes.icon`` over icon translations, and both now carry the same
+        string.  A hard-coded ``_attr_icon`` (the dividend calendar) still wins,
+        as does a user's per-entity icon override in the entity registry, which
+        HA applies ahead of this value.
+        """
+        if (icon := getattr(self, "_attr_icon", None)) is not None:
+            return icon
+        # ``platform`` is unset until HA adds the entity; states are only ever
+        # written afterwards, so this is populated whenever it matters.
+        if not (translation_key := self.translation_key) or self.platform is None:
+            return None
+        return self.coordinator.entity_icons.get(self.platform.domain, {}).get(
+            translation_key
+        )
+
+    @property
     def _configuration_url(self) -> str:
         """Deep link to this portfolio on the (edge or standard) web app."""
         return (

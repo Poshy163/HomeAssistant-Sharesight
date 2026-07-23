@@ -2743,7 +2743,13 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
 
     @property
     def icon(self):
-        return self._icon
+        """An ``icon=`` on the description wins; otherwise icons.json.
+
+        Without the fallback this override shadowed
+        ``SharesightBaseEntity.icon`` and pinned every sensor to ``None``
+        (no description sets ``icon=``), leaving ``attributes.icon`` unset.
+        """
+        return self._icon or super().icon
 
     @property
     def entity_category(self):
