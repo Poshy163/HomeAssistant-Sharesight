@@ -1,6 +1,7 @@
 """Diagnostics support for the Sharesight integration."""
 from __future__ import annotations
 
+from time import monotonic
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -81,17 +82,39 @@ async def async_get_config_entry_diagnostics(
             "setup_complete": bool(getattr(coordinator, "_portfolio_detail", None)),
             "start_financial_year": getattr(coordinator, "start_financial_year", None),
             "end_financial_year": getattr(coordinator, "end_financial_year", None),
-            "optional_endpoints_on_cooldown": list(
-                getattr(coordinator, "_optional_endpoint_cooldowns", {}).keys()
+            "optional_endpoints_on_cooldown": _active_cooldowns(
+                getattr(coordinator, "_optional_endpoint_cooldowns", None)
             ),
-            "cash_accounts_on_cooldown": list(
-                getattr(coordinator, "_cash_tx_account_cooldowns", {}).keys()
+            "cash_accounts_on_cooldown": _active_cooldowns(
+                getattr(coordinator, "_cash_tx_account_cooldowns", None)
             ),
             "data_keys": sorted(list((coordinator.data or {}).keys())),
             "data": _redact_coordinator_data(coordinator.data or {}),
         }
 
     return diagnostics
+
+
+def _active_cooldowns(cooldowns: Any) -> dict[str, int]:
+    """``{key: seconds of backoff left}`` for cooldowns that are still active.
+
+    A cooldown entry is only cleared when the endpoint next succeeds, so the
+    raw map accumulates every endpoint that has ever failed — dumping its keys
+    listed long-expired entries as though they were parked, and disagreed with
+    the "Endpoints on Cooldown" sensor, which counts only the live ones.
+    Filtering on the deadline and reporting the remaining seconds makes the two
+    agree and shows how long until the next retry.
+    """
+    if not isinstance(cooldowns, dict):
+        return {}
+    now = monotonic()
+    return {
+        str(key): int(info["next_retry"] - now)
+        for key, info in cooldowns.items()
+        if isinstance(info, dict)
+        and isinstance(info.get("next_retry"), (int, float))
+        and info["next_retry"] > now
+    }
 
 
 def _redact_coordinator_data(data: dict[str, Any]) -> dict[str, Any]:
