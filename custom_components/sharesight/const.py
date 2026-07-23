@@ -17,6 +17,12 @@ MAX_SCAN_INTERVAL_SECONDS = 60 * 60
 # instead of every poll.  12 polls ≈ hourly at the 5-minute default interval.
 SLOW_PERIOD_REFRESH_EVERY = 12
 
+# Days of daily portfolio value history requested for the value-trend sensors.
+# The sensors only need 30 days; the extra fortnight covers weekends, market
+# holidays and any lag in the series without pulling the whole inception-to-
+# today history the long-term-statistics backfill uses.
+VALUE_TREND_LOOKBACK_DAYS = 45
+
 PLATFORMS = [
     Platform.SENSOR,
     Platform.CALENDAR,

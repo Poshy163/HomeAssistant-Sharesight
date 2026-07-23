@@ -366,6 +366,37 @@ def _holding_yield(holding: dict[str, Any], instrument: dict[str, Any]) -> float
     return None
 
 
+def _trailing_yield(
+    holding: dict[str, Any],
+    value: float,
+    holding_income: dict[str, Any] | None,
+) -> float | None:
+    """Trailing-12-month dividend yield (%) for a holding, from its payouts.
+
+    Sharesight carries no yield field on either the holding or the instrument
+    payload, so ``_holding_yield`` returns None for every holding and the
+    value-weighted portfolio yield would be unknown forever.
+    ``build_holding_income`` has already derived each holding's TTM income from
+    the payouts feed, so divide that by the holding's current market value.
+
+    Approximate for foreign holdings — payout amounts are in the payout
+    currency while ``value`` is in portfolio currency — the same caveat
+    yield-on-cost already carries.
+    """
+    if not isinstance(holding_income, dict) or value <= 0:
+        return None
+    symbol = holding_symbol(holding)
+    if not symbol:
+        return None
+    entry = holding_income.get(str(symbol))
+    if not isinstance(entry, dict):
+        return None
+    ttm_income = _f(entry.get("ttm_income"))
+    if ttm_income is None or ttm_income < 0:
+        return None
+    return ttm_income / value * 100
+
+
 def _price_is_stale(updated_at: Any, today: date, max_age_days: int = 3) -> bool:
     """Whether an instrument price timestamp is older than ``max_age_days``.
 
@@ -383,6 +414,7 @@ def build_portfolio_analytics(
     instrument_lookup: dict[str, dict[str, Any]],
     report: dict[str, Any],
     today: date,
+    holding_income: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Portfolio-level concentration, quality and composition metrics.
 
@@ -396,7 +428,9 @@ def build_portfolio_analytics(
     - ``effective_holdings``: inverse-Simpson effective holding count (1/HHI).
     - ``weighted_yield`` / ``weighted_pe``: value-weighted over ONLY the
       holdings that expose a valid figure; ``pe_coverage_percent`` reports how
-      much of the equity value backs the P/E number.
+      much of the equity value backs the P/E number.  No Sharesight payload
+      carries a yield field, so the yield falls back to each holding's
+      trailing-12-month income (``holding_income``) over its market value.
     - ``fx_exposure_percent``: share of equity value NOT in the largest
       (assumed base) currency bucket.
     - ``cash_drag_percent``: cash / (equity + cash).
@@ -451,6 +485,8 @@ def build_portfolio_analytics(
                 pe_weighted_sum += value * pe
 
             holding_yield = _holding_yield(holding, instrument)
+            if holding_yield is None:
+                holding_yield = _trailing_yield(holding, value, holding_income)
             if holding_yield is not None and holding_yield >= 0:
                 yield_weight += value
                 yield_weighted_sum += value * holding_yield
@@ -590,14 +626,19 @@ def build_income_forecast(
 
 
 def _value_series_points(payload: Any) -> list[tuple[str, float]]:
-    """Normalise the V3 ``/value`` payload into sorted (date, value) points.
+    """Normalise a portfolio value-series payload into sorted (date, value) points.
 
-    Sharesight's mobile value endpoint is documented loosely (the apiDoc
+    Sharesight's mobile value endpoints are documented loosely (the apiDoc
     example is boilerplate), so tolerate every plausible shape: a
-    ``chart.data`` list, a ``values``/``data`` list, a nested ``values.values``
-    wrapper, or a ``{date: value}`` mapping.  Anything that cannot be parsed
-    into a dated numeric point is skipped rather than raising, and duplicate
-    dates keep the last value seen.
+    ``portfolio_value_data`` wrapper, a ``chart.data`` list, a
+    ``values``/``data`` list, a nested ``values.values`` wrapper, or a
+    ``{date: value}`` mapping.  Anything that cannot be parsed into a dated
+    numeric point is skipped rather than raising, and duplicate dates keep the
+    last value seen.
+
+    Note the V3 ``/value`` endpoint is NOT a source here: its only parameters
+    are ``consolidated``/``currency_code`` and it answers with a single
+    point-in-time balance, which yields no points at all.
     """
     raw: Any = payload
     # Peel known container keys until we reach the actual list/mapping of
@@ -612,6 +653,13 @@ def _value_series_points(payload: Any) -> list[tuple[str, float]]:
         if isinstance(raw.get("data"), list):
             raw = raw["data"]
             break
+        # portfolio_value_data.json wraps the daily series one level deeper
+        # ({portfolio_value_data: {chart: {data: [...]}}}); peel it and let the
+        # next pass find the chart/data list.
+        value_data = raw.get("portfolio_value_data")
+        if isinstance(value_data, dict):
+            raw = value_data
+            continue
         if "values" in raw:
             raw = raw["values"]
             continue

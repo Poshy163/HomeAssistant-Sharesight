@@ -31,6 +31,7 @@ from .const import (
     SHARESIGHT_HEAVY_CONCURRENCY,
     SHARESIGHT_LOCKOUT_COOLDOWN,
     SLOW_PERIOD_REFRESH_EVERY,
+    VALUE_TREND_LOOKBACK_DAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1065,16 +1066,37 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 None,
                 "instrument_news",
             ],
-            # 30-day portfolio value series (W6) — a light V3 "mobile"-scoped
-            # endpoint feeding the value-trend sensors; parks via backoff for
-            # tokens whose scope can't reach it.
-            [
-                "v3",
-                f"portfolios/{self.portfolio_id}/value",
-                None,
-                "value_series",
-            ],
         ]
+
+        # Portfolio value series (W6) feeding the value-trend sensors.
+        #
+        # NOT the V3 ``/value`` endpoint: its only parameters are
+        # consolidated/currency_code and it answers with a single
+        # point-in-time balance ({"values": {"in_portfolio_currency": ...}}),
+        # so it can never produce a trend — it was wired up on a misreading of
+        # the API docs and left the sensors permanently unknown.
+        # ``portfolio_value_data.json`` is the daily series, the same feed the
+        # long-term-statistics backfill uses; it is V3 "mobile"-scoped and
+        # parks via backoff for tokens that can't reach it.
+        #
+        # One point per day and a trend nobody needs at 5-minute resolution, so
+        # fetch it on the slow tier (like the FY/month/YTD windows) and carry
+        # the last series forward on the polls that skip it.  The window is
+        # bounded to keep the payload small while still spanning 30 days with
+        # weekend/holiday slack.
+        if refresh_slow_windows or "value_series" not in self.data:
+            optional_endpoint_list.append(
+                [
+                    "v3",
+                    f"portfolios/{self.portfolio_id}/portfolio_value_data.json",
+                    {
+                        "start_date": (
+                            f"{today - timedelta(days=VALUE_TREND_LOOKBACK_DAYS)}"
+                        )
+                    },
+                    "value_series",
+                ]
+            )
 
         # Live FX rates — only worth requesting for multi-currency portfolios.
         # Codes are derived from the previous poll's holdings/instruments (the
@@ -1261,7 +1283,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     continue
 
                 response = result
-                # The V3 /value series can answer with a bare top-level array.
+                # The value-data series can answer with a bare top-level array.
                 # Wrap it under a "data" key so it clears the dict-shape guard
                 # below and its normaliser (_value_series_points) can peel it
                 # like the nested-list shapes; otherwise a valid list response
@@ -1294,6 +1316,14 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 if extension:
                     response = {extension: response}
                 combined_dict = merge_dicts(combined_dict, response)
+
+            # Carry the slow-cadence value series forward on the polls that
+            # skip it (see the tiered fetch above) or where it failed, so the
+            # value-trend sensors hold their reading instead of flapping to
+            # unknown between refreshes.  Same idiom as the FY/month/YTD
+            # windows; the derived-analytics block below gates on this key.
+            if "value_series" not in combined_dict and "value_series" in self.data:
+                combined_dict["value_series"] = self.data["value_series"]
 
             # --- Per-account cash transactions (optional) ----------------
             cash_accounts_data = combined_dict.get("cash_accounts_v2", {})
@@ -1542,6 +1572,9 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     instrument_lookup,
                     combined_dict.get("report", {}),
                     today,
+                    # No Sharesight payload carries a per-holding yield, so the
+                    # weighted yield is derived from the TTM income built above.
+                    combined_dict.get("holding_income"),
                 )
                 # 30-day value trend (W6).  Gate on the optional endpoint's key
                 # (like totals) so a parked token that never fetches the series

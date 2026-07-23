@@ -119,8 +119,7 @@ From [coordinator.py](../custom_components/sharesight/coordinator.py):
 | V3 | `GET exchange_rates` | Live FX rate sensors (per foreign currency held) — internal-scoped, multi-currency only, parks if unreachable |
 | V3 | `GET portfolios/{id}/totals` | All-time portfolio performance **including fully-sold positions** (`include_sales=true`) — restores lifetime P&L the main performance report omits ("totals" device). Light endpoint; parks via backoff if the token's scope can't reach it |
 | V2 | `GET portfolios/{id}/instrument_news.json` | Mobile-scoped recent-news feed for the portfolio's instruments → **Latest News** sensor (headline + up to 25 articles: title/source/link/published time) and the `news_published` activity event. Light; parks via backoff if the token can't reach it |
-| V3 | `GET portfolios/{id}/value` | 30-day daily portfolio value series → **Value Change 7d / 30d** trend sensors (the 30d sensor carries the series as an attribute for sparkline cards). Light; parks via backoff if the token's scope can't reach it |
-| V3 | `GET portfolios/{id}/portfolio_value_data.json` | One-shot at startup: backfills the inception→today daily value series into the Portfolio value sensor's long-term statistics (opt-out via options). Mobile-scoped — skips silently if unreachable. See [statistics_import.py](../custom_components/sharesight/statistics_import.py). |
+| V3 | `GET portfolios/{id}/portfolio_value_data.json` | Daily portfolio value series. Two callers: a bounded ~45-day window on the slow poll tier → **Value Change 7d / 30d** trend sensors (the 30d sensor carries the series as an attribute for sparkline cards), and a one-shot inception→today fetch at startup that backfills the Portfolio value sensor's long-term statistics (opt-out via options). Mobile-scoped — parks via backoff / skips silently if unreachable. See [statistics_import.py](../custom_components/sharesight/statistics_import.py). |
 
 > **Zero-cost derivations:** the per-holding dividend income / yield-on-cost /
 > franking / last-dividend sensors and the per-holding trade activity / VWAP
@@ -263,7 +262,7 @@ Full path = `https://api.sharesight.com/api/v3` + path shown.
 | GET | `/portfolios/{id}/performance` | Performance report (heavy) |
 | GET | `/portfolios/{portfolio_id}/overview` | Overview: holdings + cash, "performance minus calculations" |
 | GET | `/portfolios/{portfolio_id}/totals` | Inception-to-date total performance |
-| GET | `/portfolios/{portfolio_id}/value` | Portfolio value, last 30 days → today |
+| GET | `/portfolios/{portfolio_id}/value` | Portfolio value **as at now** — a single balance, not a series (its only params are `consolidated`/`currency_code`). Unused by the integration; use `portfolio_value_data.json` for a series |
 | GET | `/portfolios/{portfolio_id}/benchmark.json` | Benchmark performance report |
 | GET | `/portfolios/{portfolio_id}/performance_index_chart` | Index chart data |
 | GET | `/portfolios/{portfolio_id}/reports` | List reports |
