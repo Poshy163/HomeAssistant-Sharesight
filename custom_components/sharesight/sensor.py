@@ -2478,10 +2478,11 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
             # Integration diagnostics
             elif self._sub_key == "_integration":
                 if self._key == "last_update_timestamp":
-                    ts = getattr(self._coordinator, 'last_update_success_time', None)
-                    if ts is None:
-                        ts = getattr(self._coordinator, 'last_update_time', None)
-                    return ts
+                    # Stamped by TimestampDataUpdateCoordinator after every
+                    # successful poll; None until the first one lands.  The old
+                    # getattr() chain silently returned None forever, because
+                    # neither attribute exists on a plain DataUpdateCoordinator.
+                    return self._coordinator.last_update_success_time
                 if self._key == "update_interval_seconds":
                     interval = getattr(self._coordinator, 'update_interval', None)
                     if interval is None:

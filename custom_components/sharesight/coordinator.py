@@ -14,7 +14,10 @@ from . import analytics
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import (
+    TimestampDataUpdateCoordinator,
+    UpdateFailed,
+)
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -77,8 +80,16 @@ def _get_scan_interval(entry: ConfigEntry | None) -> timedelta:
     return timedelta(seconds=seconds)
 
 
-class SharesightCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinate polling of the Sharesight API for a single portfolio."""
+class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
+    """Coordinate polling of the Sharesight API for a single portfolio.
+
+    Subclasses ``TimestampDataUpdateCoordinator`` rather than the plain
+    ``DataUpdateCoordinator`` purely for ``last_update_success_time``: the
+    "Last Successful Update" diagnostic sensor reads that attribute, and the
+    plain base class never defines it, so the sensor could only ever report
+    Unknown.  The timestamp variant stamps it in ``_async_refresh_finished``
+    after every successful poll and is otherwise identical.
+    """
 
     # Per-endpoint timeout (seconds).
     _ENDPOINT_TIMEOUT: int = 60
