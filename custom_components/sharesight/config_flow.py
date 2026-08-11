@@ -57,8 +57,14 @@ class SharesightConfigFlow(
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
-        """Return the options flow for this handler."""
-        return SharesightOptionsFlow(config_entry)
+        """Return the options flow for this handler.
+
+        The entry is deliberately not passed in: Home Assistant assigns it to
+        the flow itself, and ``OptionsFlow.config_entry`` has been a read-only
+        property since 2024.11 (its setter was removed outright in 2025.12, so
+        assigning it raises AttributeError and the flow 500s).
+        """
+        return SharesightOptionsFlow()
 
     async def _fetch_portfolios(self) -> dict[str, str]:
         """Fetch the portfolio list using the token just minted.
@@ -246,10 +252,11 @@ class SharesightConfigFlow(
 
 
 class SharesightOptionsFlow(OptionsFlow):
-    """Options flow for Sharesight — currently only the poll interval."""
+    """Options flow: poll interval, statistics backfill, stale-device cleanup.
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        self.config_entry = config_entry
+    Takes no constructor arguments — ``self.config_entry`` is provided by the
+    base class (see ``async_get_options_flow``).
+    """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
