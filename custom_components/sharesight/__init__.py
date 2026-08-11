@@ -191,6 +191,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -
                 partial(_async_prune_stale_devices, hass, entry)
             )
         )
+        # Count this load's data as the first confirmation instead of idling
+        # until the next poll.  Setup only gets this far after a successful
+        # first refresh, so it is evidence of the same quality as a poll's —
+        # and it means enabling the option (which reloads the entry) starts
+        # the count immediately rather than a full interval later.
+        _async_prune_stale_devices(hass, entry)
 
     # Backfill the portfolio-value long-term statistics from inception once at
     # startup (opt-out via options).  Runs in the background so it never blocks
@@ -383,6 +389,12 @@ def _async_prune_stale_devices(
         polls = strikes.get(device_entry.id, 0) + 1
         if polls < STALE_DEVICE_POLL_CONFIRMATIONS:
             strikes[device_entry.id] = polls
+            _LOGGER.debug(
+                "Sharesight device '%s' looks stale (%s of %s confirmations)",
+                device_entry.name_by_user or device_entry.name,
+                polls,
+                STALE_DEVICE_POLL_CONFIRMATIONS,
+            )
             continue
 
         strikes.pop(device_entry.id, None)
