@@ -28,6 +28,9 @@ class SharesightRuntimeData:
     cash_sensors: list[Any] = field(default_factory=list)
     holding_sensors: list[Any] = field(default_factory=list)
     last_options: dict[str, Any] = field(default_factory=dict)
+    # device_id -> consecutive polls its item has been missing from the
+    # portfolio, counted only while auto-removal is enabled (see __init__).
+    stale_device_strikes: dict[str, int] = field(default_factory=dict)
 
 
 type SharesightConfigEntry = ConfigEntry[SharesightRuntimeData]

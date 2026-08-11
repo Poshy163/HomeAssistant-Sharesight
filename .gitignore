@@ -5,3 +5,6 @@
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# Downloaded HA diagnostics dumps — real portfolio data, never commit
+/diagnostics/

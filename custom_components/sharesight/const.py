@@ -41,6 +41,18 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_ENABLE_LTS_BACKFILL = "enable_lts_backfill"
 DEFAULT_ENABLE_LTS_BACKFILL = True
 
+# Delete a per-item device (a holding, market or cash account) automatically
+# once its item is gone from the portfolio.  Opt-in, because removing a device
+# also removes its entities and their recorded history — the alternative is the
+# manual three-dot > Delete, which stays available either way.
+CONF_AUTO_REMOVE_STALE_DEVICES = "auto_remove_stale_devices"
+DEFAULT_AUTO_REMOVE_STALE_DEVICES = False
+
+# Consecutive successful polls an item must be absent for before its device is
+# auto-removed.  Three (≈15 minutes at the default interval) rides out a
+# Sharesight blip that returns a short payload without erroring.
+STALE_DEVICE_POLL_CONFIRMATIONS = 3
+
 APP_VERSION = "v2"
 
 # Sharesight serves standard accounts and developer (tester) accounts from two

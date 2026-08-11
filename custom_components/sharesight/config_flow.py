@@ -18,10 +18,12 @@ from .const import (
     ACCOUNT_STANDARD,
     API_URL_BASE,
     CONF_ACCOUNT_TYPE,
+    CONF_AUTO_REMOVE_STALE_DEVICES,
     CONF_ENABLE_LTS_BACKFILL,
     CONF_PORTFOLIO_ID,
     CONF_SCAN_INTERVAL,
     DEFAULT_ACCOUNT_TYPE,
+    DEFAULT_AUTO_REMOVE_STALE_DEVICES,
     DEFAULT_ENABLE_LTS_BACKFILL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -262,6 +264,9 @@ class SharesightOptionsFlow(OptionsFlow):
         current_backfill = self.config_entry.options.get(
             CONF_ENABLE_LTS_BACKFILL, DEFAULT_ENABLE_LTS_BACKFILL
         )
+        current_auto_remove = self.config_entry.options.get(
+            CONF_AUTO_REMOVE_STALE_DEVICES, DEFAULT_AUTO_REMOVE_STALE_DEVICES
+        )
 
         schema = vol.Schema(
             {
@@ -278,6 +283,10 @@ class SharesightOptionsFlow(OptionsFlow):
                 vol.Required(
                     CONF_ENABLE_LTS_BACKFILL,
                     default=current_backfill,
+                ): bool,
+                vol.Required(
+                    CONF_AUTO_REMOVE_STALE_DEVICES,
+                    default=current_auto_remove,
                 ): bool,
             }
         )

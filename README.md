@@ -45,6 +45,12 @@ No reconfiguration is required: update, restart Home Assistant, and the devices 
 
 When you sell out of a holding, exit a market, or close a cash account, its per-item device is no longer refreshed. 2.0 lets you **delete such a device from the UI** (its three-dot menu → **Delete**) once it no longer appears in your current portfolio data. The portfolio hub and the fixed report/container devices can't be deleted this way, and a device that is still live (or that can't be confirmed stale because the integration is mid-refresh) is kept — so you can't accidentally remove an active device.
 
+Entities of a per-item device go **unavailable** as soon as their item leaves your portfolio — a holding sold, a market exited, a cash account closed, an instrument dropped from your watchlist, a label removed from the last holding carrying it. That is the cue that the device is ready to delete; previously they sat on *Unknown* indefinitely.
+
+Prefer not to do it by hand? Turn on **Automatically delete devices for sold holdings** in the integration's **Options**. Each holding / market / cash-account device is then deleted on its own once its item has been missing from **three consecutive successful polls** (≈15 minutes at the default interval) — long enough to ride out a short Sharesight payload, and it never acts on an empty list, so a bad response can't wipe out live devices. It is off by default because deleting a device also deletes its entities and their recorded history; the portfolio hub and the fixed report/container devices are never touched. Buy back in later and the holding's device and entities come back on the next poll.
+
+Sharesight sometimes leaves a sold holding in its performance report when the sale doesn't net to exactly zero (a residue such as `-0.00004` shares, worth nothing, flagged as an invalid position). The integration treats that as sold rather than as a live $0 holding, so the device is deletable and the ghost can't skew the holding count, smallest-holding or label sensors.
+
 ---
 
 ## Prerequisites
@@ -107,7 +113,7 @@ After installation and restart:
 
 ## Sensors
 
-All sensors are organized into separate HA devices by category. Data refreshes every **5 minutes** by default; you can change the poll interval (60–3600 seconds) in the integration's **Options**.
+All sensors are organized into separate HA devices by category. Data refreshes every **5 minutes** by default; you can change the poll interval (60–3600 seconds) in the integration's **Options**, along with the long-term-statistics backfill and the automatic removal of [devices for sold holdings](#deleting-stale-devices).
 
 > **Tiered polling:** the headline value plus the day and week windows refresh on **every** poll, but the slower financial-year, year-to-date and one-month performance windows only re-fetch roughly **hourly** (every 12th poll) — so those period sensors update less often by design, keeping well inside the API rate limit. See [Polling, performance & the recorder](#polling-performance--the-recorder).
 

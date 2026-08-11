@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_entry_oauth2_flow, device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -17,13 +19,16 @@ from .const import (
     ACCOUNT_STANDARD,
     API_URL_BASE,
     CONF_ACCOUNT_TYPE,
+    CONF_AUTO_REMOVE_STALE_DEVICES,
     CONF_ENABLE_LTS_BACKFILL,
     CONF_PORTFOLIO_ID,
     CONF_USE_EDGE,
     DEFAULT_ACCOUNT_TYPE,
+    DEFAULT_AUTO_REMOVE_STALE_DEVICES,
     DEFAULT_ENABLE_LTS_BACKFILL,
     DOMAIN,
     PLATFORMS,
+    STALE_DEVICE_POLL_CONFIRMATIONS,
     TOKEN_URL,
 )
 from .coordinator import SharesightCoordinator
@@ -175,6 +180,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Auto-remove devices for sold holdings / exited markets / closed cash
+    # accounts (opt-in).  Registered after the platforms so the first prune
+    # scan sees the devices this load created, and detached on unload.
+    if entry.options.get(
+        CONF_AUTO_REMOVE_STALE_DEVICES, DEFAULT_AUTO_REMOVE_STALE_DEVICES
+    ):
+        entry.async_on_unload(
+            local_coordinator.async_add_listener(
+                partial(_async_prune_stale_devices, hass, entry)
+            )
+        )
+
     # Backfill the portfolio-value long-term statistics from inception once at
     # startup (opt-out via options).  Runs in the background so it never blocks
     # setup, and is idempotent so re-running on restart is safe.
@@ -242,6 +259,158 @@ _STATIC_DEVICE_GROUPS = frozenset(
 )
 
 
+def _live_item_names(data: Any) -> dict[str, set[str]] | None:
+    """Per-item device families currently present in the portfolio.
+
+    Keyed by the device-identifier prefix that introduces each family, so a
+    device suffix can be matched against the right set.  None when the payload
+    can't support any judgement at all (no data / entry unloaded).
+    """
+    if not isinstance(data, dict):
+        return None
+
+    # Deferred import: reuse sensor.py's exact symbol resolution so a
+    # reconstructed holding identifier matches byte-for-byte, without a
+    # module-load import cycle (sensor imports from this package at import time).
+    from .sensor import _get_holding_symbol
+
+    report = data.get("report")
+    if not isinstance(report, dict):
+        report = {}
+    holdings = data.get("holdings")
+    holdings_list = holdings.get("holdings", []) if isinstance(holdings, dict) else []
+    return {
+        "market_": {
+            market.get("group_name", "Unknown Market")
+            for market in report.get("sub_totals", [])
+            if isinstance(market, dict)
+        },
+        "cash_": {
+            cash.get("name", "Unknown Cash Account")
+            for cash in report.get("cash_accounts", [])
+            if isinstance(cash, dict)
+        },
+        "holding_": {
+            symbol
+            for holding in holdings_list
+            if isinstance(holding, dict) and (symbol := _get_holding_symbol(holding))
+        },
+    }
+
+
+def _stale_item(
+    device_entry: dr.DeviceEntry,
+    prefix: str,
+    live: dict[str, set[str]],
+    *,
+    require_evidence: bool,
+) -> tuple[str, str] | None:
+    """The (family, item name) this device represents, if it is stale.
+
+    None means "keep": a fixed device, an unrecognised identifier, an item
+    that is still live, or — when ``require_evidence`` is set — a family whose
+    list came back empty, which is a short payload rather than proof that
+    every item in it is gone.  A device carrying several identifiers is only
+    stale when every one of them is.
+    """
+    stale_item: tuple[str, str] | None = None
+    for domain, identifier in device_entry.identifiers:
+        if domain != DOMAIN:
+            continue
+        if not identifier.startswith(prefix):
+            # Foreign / malformed identifier under our domain — keep it.
+            return None
+        suffix = identifier[len(prefix):]
+
+        # Fixed devices, checked first: "market_hours" would otherwise be
+        # misread as a per-market device named "hours".
+        if suffix in _STATIC_DEVICE_GROUPS:
+            return None
+
+        for family, names in live.items():
+            if suffix.startswith(family):
+                item = suffix[len(family):]
+                if item in names or (require_evidence and not names):
+                    return None
+                stale_item = (family, item)
+                break
+        else:
+            # Unrecognised per-portfolio device — keep it to be safe.
+            return None
+
+    return stale_item
+
+
+@callback
+def _async_prune_stale_devices(
+    hass: HomeAssistant, entry: SharesightConfigEntry
+) -> None:
+    """Delete per-item devices whose item has left the portfolio (opt-in).
+
+    Runs after every coordinator refresh when the user has enabled
+    ``CONF_AUTO_REMOVE_STALE_DEVICES``.  A device is only removed after its
+    item has been missing from ``STALE_DEVICE_POLL_CONFIRMATIONS`` consecutive
+    *successful* polls, and never on the strength of an empty list — Sharesight
+    occasionally returns a short payload without erroring, and a sold holding
+    is not worth deleting a live one over.  Removing the device removes its
+    entities (and their history) with it, which is why this is opt-in.
+    """
+    runtime_data = getattr(entry, "runtime_data", None)
+    if runtime_data is None:
+        return
+    coordinator = runtime_data.coordinator
+    if not coordinator.last_update_success:
+        return
+    live = _live_item_names(coordinator.data)
+    if live is None:
+        return
+
+    portfolio_id = entry.data.get(CONF_PORTFOLIO_ID)
+    if portfolio_id is None:
+        return
+    prefix = f"{portfolio_id}_"
+
+    strikes = runtime_data.stale_device_strikes
+    device_registry = dr.async_get(hass)
+    for device_entry in dr.async_entries_for_config_entry(
+        device_registry, entry.entry_id
+    ):
+        stale = _stale_item(device_entry, prefix, live, require_evidence=True)
+        if stale is None:
+            strikes.pop(device_entry.id, None)
+            continue
+
+        polls = strikes.get(device_entry.id, 0) + 1
+        if polls < STALE_DEVICE_POLL_CONFIRMATIONS:
+            strikes[device_entry.id] = polls
+            continue
+
+        strikes.pop(device_entry.id, None)
+        _family, item = stale
+        _LOGGER.info(
+            "Removing Sharesight device '%s': %s has been absent from portfolio "
+            "%s for %s consecutive updates",
+            device_entry.name_by_user or device_entry.name,
+            item,
+            portfolio_id,
+            polls,
+        )
+        # Drop the item's entity names from the platform's "already created"
+        # guards, so buying back in recreates its entities on the next poll
+        # instead of waiting for a restart.
+        for created in (
+            runtime_data.holding_sensors,
+            runtime_data.market_sensors,
+            runtime_data.cash_sensors,
+        ):
+            created[:] = [
+                name for name in created if not str(name).startswith(f"{item} ")
+            ]
+        device_registry.async_update_device(
+            device_entry.id, remove_config_entry_id=entry.entry_id
+        )
+
+
 async def async_remove_config_entry_device(
     hass: HomeAssistant,
     config_entry: SharesightConfigEntry,
@@ -258,78 +427,26 @@ async def async_remove_config_entry_device(
     Labels, Exchange Rates and Market Hours devices, whose per-item entities are
     grouped inside one device) are always refused.
 
-    Conservative by design: this supports *user-initiated* deletion only. The
-    integration never auto-prunes on data absence, because a transient API gap
-    routinely omits items for a poll or two; auto-deleting on that would orphan
-    live devices. When the coordinator has no data (entry unloaded / mid-outage)
-    staleness cannot be proven, so every device is refused — a deliberately safe
-    default the user can retry once data is back.
+    Conservative by design. Deletion here is *user-initiated*, so an item
+    missing from a single poll is enough — the user is asserting the device is
+    finished with. The unattended path (``_async_prune_stale_devices``, opt-in
+    via CONF_AUTO_REMOVE_STALE_DEVICES) holds itself to a stricter standard:
+    several consecutive confirmations and never on an empty list. When the
+    coordinator has no data (entry unloaded / mid-outage) staleness cannot be
+    proven either way, so every device is refused — a safe default the user can
+    retry once data is back.
     """
-    # Deferred import: reuse sensor.py's exact symbol resolution so a
-    # reconstructed holding identifier matches byte-for-byte, without a
-    # module-load import cycle (sensor imports from this package at import time).
-    from .sensor import _get_holding_symbol
-
     runtime_data = getattr(config_entry, "runtime_data", None)
     portfolio_id = config_entry.data.get(CONF_PORTFOLIO_ID)
     coordinator = runtime_data.coordinator if runtime_data is not None else None
-    data = coordinator.data if coordinator is not None else None
+    live = _live_item_names(coordinator.data if coordinator is not None else None)
 
-    if portfolio_id is None or not isinstance(data, dict):
+    if portfolio_id is None or live is None:
         return False
 
-    prefix = f"{portfolio_id}_"
-
-    report = data.get("report")
-    if not isinstance(report, dict):
-        report = {}
-    live_markets = {
-        market.get("group_name", "Unknown Market")
-        for market in report.get("sub_totals", [])
-        if isinstance(market, dict)
-    }
-    live_cash = {
-        cash.get("name", "Unknown Cash Account")
-        for cash in report.get("cash_accounts", [])
-        if isinstance(cash, dict)
-    }
-    holdings = data.get("holdings")
-    holdings_list = holdings.get("holdings", []) if isinstance(holdings, dict) else []
-    live_holdings = {
-        symbol
-        for holding in holdings_list
-        if isinstance(holding, dict) and (symbol := _get_holding_symbol(holding))
-    }
-
-    # A device may carry several identifiers; refuse if ANY of ours is a fixed or
-    # still-live device. Remove only when every Sharesight identifier on the
-    # device resolves to a stale per-item device.
-    saw_removable = False
-    for domain, identifier in device_entry.identifiers:
-        if domain != DOMAIN:
-            continue
-        if not identifier.startswith(prefix):
-            # Foreign / malformed identifier under our domain — keep it.
-            return False
-        suffix = identifier[len(prefix):]
-
-        # Fixed devices, checked first: "market_hours" would otherwise be
-        # misread as a per-market device named "hours".
-        if suffix in _STATIC_DEVICE_GROUPS:
-            return False
-
-        if suffix.startswith("market_"):
-            stale = suffix[len("market_"):] not in live_markets
-        elif suffix.startswith("cash_"):
-            stale = suffix[len("cash_"):] not in live_cash
-        elif suffix.startswith("holding_"):
-            stale = suffix[len("holding_"):] not in live_holdings
-        else:
-            # Unrecognised per-portfolio device — keep it to be safe.
-            return False
-
-        if not stale:
-            return False
-        saw_removable = True
-
-    return saw_removable
+    return (
+        _stale_item(
+            device_entry, f"{portfolio_id}_", live, require_evidence=False
+        )
+        is not None
+    )

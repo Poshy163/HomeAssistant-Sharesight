@@ -1219,7 +1219,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 self._state = self._coordinator.data[self._sub_key][0][self._key]
                 self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
-                sub_entry = self._coordinator.data['report'][self._key][self._index]
+                sub_entry = self._report_sub_entry() or {}
                 if self._sub_key == "holding_count":
                     self._state = len(sub_entry.get('holdings', []))
                 elif self._sub_key == "cost_base":
@@ -1252,6 +1252,96 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 self._unique_id = f"{self._portfolio_id}_holding_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
             else:
                 self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
+
+    def _report_sub_entry(self) -> dict | None:
+        """This market / cash sensor's row in the report, matched by name.
+
+        A row's position in the array is not stable: exiting a market or
+        closing a cash account shortens it, and a sensor created beforehand
+        would then read whichever row slid into its old slot — a market device
+        silently reporting a different market's value.  Match on the name the
+        sensor was created with, falling back to the creation-time index only
+        for payloads whose rows carry no name at all.  None means the item is
+        gone, which ``available`` turns into an unavailable entity.
+        """
+        report = self._coordinator.data.get('report') or {}
+        rows = report.get(self._key) or []
+        name_field = "group_name" if self._key == "sub_totals" else "name"
+        named = [row for row in rows if isinstance(row, dict) and row.get(name_field)]
+        if named:
+            return next(
+                (row for row in named if row[name_field] == self._local_name), None
+            )
+        if isinstance(self._index, int) and 0 <= self._index < len(rows):
+            row = rows[self._index]
+            return row if isinstance(row, dict) else None
+        return None
+
+    def _dynamic_item_present(self) -> bool | None:
+        """Whether this entity's dynamically-discovered item still exists.
+
+        Every per-item family — holding, market, cash account, FX pair, market
+        hours, watchlist instrument, label — is discovered from a list in the
+        coordinator payload, and any of them can disappear: a holding sold, a
+        market exited, an account closed, an instrument dropped from the
+        watchlist, a label removed from the last holding carrying it.
+
+        True when the item is still listed, False when the list is present but
+        no longer contains it, and None when this entity belongs to no per-item
+        family or the source list is missing entirely — a failed or parked
+        endpoint must never be read as "every item vanished".
+        """
+        if not self._local_name:
+            return None
+        data = self._coordinator.data
+        if self._device_group == "holding":
+            holdings_data = data.get("holdings")
+            holdings = (
+                holdings_data.get("holdings") or []
+                if isinstance(holdings_data, dict)
+                else []
+            )
+            if not holdings:
+                return None
+            return _find_holding_by_symbol(holdings, self._local_name) is not None
+        if self._device_group in ("market", "cash"):
+            report = data.get("report") or {}
+            rows = report.get(self._key) or []
+            name_field = "group_name" if self._key == "sub_totals" else "name"
+            names = {
+                row.get(name_field)
+                for row in rows
+                if isinstance(row, dict) and row.get(name_field)
+            }
+            if not names:
+                return None
+            return self._local_name in names
+        if self._device_group == "fx":
+            codes = analytics.portfolio_currency_codes(data)
+            if not codes:
+                return None
+            return str(self._local_name).upper() in codes
+        if self._device_group == "market_hours":
+            codes = _held_market_codes(data)
+            if not codes:
+                return None
+            return self._local_name in codes
+        if self._sub_key == "watchlist_instrument":
+            codes = [code for code, _ in _watchlist_instruments_for_discovery(data)]
+            if not codes:
+                return None
+            return self._local_name in codes
+        if self._sub_key == "label_allocation":
+            # The coordinator emits this list on every poll its analytics run,
+            # so an empty list is meaningful here: the label is gone.
+            allocation = data.get("label_allocation")
+            if not isinstance(allocation, list):
+                return None
+            return any(
+                isinstance(entry, dict) and entry.get("label") == self._local_name
+                for entry in allocation
+            )
+        return None
 
     @property
     def native_value(self):
@@ -1436,7 +1526,9 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 return value
             elif "sub_totals" in self._key or "cash_accounts" in self._key:
                 # Used for cash accounts or market data
-                sub_entry = self._coordinator.data['report'][self._key][self._index]
+                sub_entry = self._report_sub_entry()
+                if sub_entry is None:
+                    return None
                 if self._sub_key == "holding_count":
                     # Count holdings nested inside this sub_total or from report holdings
                     holdings = sub_entry.get('holdings', [])
@@ -2786,11 +2878,21 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         update, update interval, optional endpoints on cooldown) are *always*
         available — their whole point is to surface state about the
         integration itself, including during failures.
+
+        The one exception is an entity from a per-item family whose item has
+        left the portfolio — a holding sold, a market exited, a cash account
+        closed.  Reporting Unknown (or worse, a stale history-derived figure)
+        makes a closed position look live, so those go unavailable instead,
+        which is the cue that the device is ready to delete.  As with the
+        holding_closed activity event, that is only ever concluded from a
+        populated source list; a missing one means the endpoint failed, not
+        that everything vanished.  See ``_dynamic_item_present``.
         """
         if self._sub_key == "_integration":
             return True
         if self._coordinator.data:
-            return True
+            present = self._dynamic_item_present()
+            return True if present is None else present
         # Fall back to HA's default: check last_update_success.  This only
         # matters on the very first poll cycle before any data exists.
         return self._coordinator.last_update_success

@@ -50,6 +50,53 @@ def holding_market(holding: dict[str, Any]) -> str | None:
     )
 
 
+# Field-name fallbacks for the two numbers that decide whether a holding row
+# still represents a position: the report, the V3 holdings list and the
+# diversity payload each spell them slightly differently.
+_QUANTITY_FIELDS = ("quantity", "number_of_units", "units")
+_VALUE_FIELDS = ("value", "market_value", "total_value", "current_value", "last_value")
+
+# Dust thresholds.  Sharesight keeps a sold-out holding in the report when the
+# sale doesn't net to exactly zero (a rounding residue such as -4e-05 shares,
+# flagged ``valid_position: false``).  No real position is a ten-thousandth of
+# a share, and none is worth less than half a cent.
+_CLOSED_QUANTITY_EPSILON = 1e-4
+_CLOSED_VALUE_EPSILON = 0.005
+
+
+def _first_number(holding: dict[str, Any], fields: tuple[str, ...]) -> float | None:
+    """First field of ``fields`` present on ``holding`` as a float."""
+    for field in fields:
+        number = _f(holding.get(field))
+        if number is not None:
+            return number
+    return None
+
+
+def is_open_position(holding: dict[str, Any]) -> bool:
+    """Whether a holding row still represents a position the user holds.
+
+    The performance report is requested with ``include_sales=false``, so a
+    holding you sell out of normally drops out of it entirely.  The exception
+    is a sale that leaves a rounding residue: the row survives carrying dust
+    quantity, no value and ``valid_position: false``, which keeps a sold
+    holding's device alive and lets a $0 ghost skew "smallest holding", the
+    holding count and label allocation.
+
+    Only dust is filtered.  A row is kept whenever it has no quantity to judge
+    by, whenever its quantity is materially non-zero (so a short position —
+    negative quantity, also ``valid_position: false`` — stays), and whenever it
+    still carries a value despite a dust quantity.
+    """
+    if not isinstance(holding, dict):
+        return False
+    quantity = _first_number(holding, _QUANTITY_FIELDS)
+    if quantity is None or abs(quantity) >= _CLOSED_QUANTITY_EPSILON:
+        return True
+    value = _first_number(holding, _VALUE_FIELDS)
+    return value is not None and abs(value) >= _CLOSED_VALUE_EPSILON
+
+
 def _holding_cost_base(holding: dict[str, Any]) -> float | None:
     """Cost base for a holding: use the field if present, else value - gain."""
     cost_base = _f(holding.get("cost_base"))
@@ -202,6 +249,42 @@ def build_holding_income(
     return result
 
 
+# Transaction types that add or remove shares without changing what was paid
+# for them.  Sharesight books the *difference* in share count (a 5:1
+# consolidation of 241.0123 shares is a CONSOLD row of 192.80984, leaving
+# 48.20246), so these are applied against the running position.
+_SPLIT_TYPES = frozenset({"SPLIT", "BONUS"})
+_CONSOLIDATION_TYPES = frozenset({"CONSOLD"})
+# Cost-bearing purchases: the only rows that feed the VWAP numerator.
+_BUY_TYPES = frozenset({"BUY", "OPENING BALANCE", "OPENING_BALANCE"})
+# Plain reductions — they retire shares but leave the purchase history alone.
+_SELL_TYPES = frozenset({"SELL", "CANCEL", "MERGE_CANCEL"})
+# Capital returns hand money back without touching the share count, which
+# lowers what the remaining shares effectively cost.
+_CAPITAL_RETURN_TYPES = frozenset({"CAPITAL_RETURN"})
+
+
+def _trade_order_key(trade: dict[str, Any]) -> tuple[str, float]:
+    """Chronological sort key (date, then id) for replaying a holding's trades."""
+    trade_date = str(trade.get("transaction_date") or trade.get("date") or "")[:10]
+    return (trade_date, _f(trade.get("id")) or 0.0)
+
+
+def _rescale_buy_quantity(
+    entry: dict[str, Any], old_quantity: float, new_quantity: float
+) -> None:
+    """Restate accumulated buy quantity across a split or consolidation.
+
+    Neither event changes the money spent, only how many shares that money
+    bought, so the buy quantity moves by the same ratio as the position and the
+    VWAP comes out as a per-share cost in post-event shares.  Skipped when
+    either side is non-positive — there is no meaningful ratio then.
+    """
+    if old_quantity <= 0 or new_quantity <= 0:
+        return
+    entry["_buy_qty"] *= new_quantity / old_quantity
+
+
 def build_holding_trades(
     trades: list[dict[str, Any]],
     holdings: list[dict[str, Any]],
@@ -209,16 +292,24 @@ def build_holding_trades(
     """Per-holding trade activity keyed by symbol.
 
     From the already-fetched trades list: trade count, last trade date,
-    brokerage paid, net shares traded and a volume-weighted average BUY
-    price (sum(qty*price)/sum(qty) over BUY + OPENING BALANCE rows).  The
-    VWAP is an approximation in instrument currency and does not adjust for
-    splits/DRP the way Sharesight's official average purchase price does.
+    brokerage paid, net shares held and a volume-weighted average BUY price
+    (sum(qty*price)/sum(qty) over BUY + OPENING BALANCE rows).
+
+    Trades are replayed in date order so share splits, bonus issues,
+    consolidations and capital returns can be applied against the running
+    position: without that a consolidated holding reports the
+    pre-consolidation share count (and a VWAP off by the consolidation ratio)
+    long after it has been sold.  The VWAP remains an approximation in
+    instrument currency — it does not restate historic buys at the exchange
+    rate Sharesight's official average purchase price uses.
     """
     id_to_symbol = _holding_id_to_symbol(holdings)
     result: dict[str, dict[str, Any]] = {}
-    for trade in trades or []:
-        if not isinstance(trade, dict):
-            continue
+    ordered_trades = sorted(
+        (trade for trade in trades or [] if isinstance(trade, dict)),
+        key=_trade_order_key,
+    )
+    for trade in ordered_trades:
         holding_id = trade.get("holding_id")
         symbol = id_to_symbol.get(str(holding_id)) if holding_id is not None else None
         if not symbol:
@@ -248,12 +339,30 @@ def build_holding_trades(
         qty = _f(trade.get("quantity")) or 0.0
         price = _f(trade.get("price")) or 0.0
         trade_type = str(trade.get("transaction_type") or "").upper()
-        if trade_type in ("BUY", "OPENING BALANCE"):
+        if trade_type in _BUY_TYPES:
             entry["_buy_qty"] += qty
             entry["_buy_cost"] += qty * price
             entry["net_shares"] += qty
-        elif trade_type == "SELL":
+        elif trade_type in _SELL_TYPES:
             entry["net_shares"] -= qty
+        elif trade_type in _SPLIT_TYPES:
+            _rescale_buy_quantity(
+                entry, entry["net_shares"], entry["net_shares"] + qty
+            )
+            entry["net_shares"] += qty
+        elif trade_type in _CONSOLIDATION_TYPES:
+            _rescale_buy_quantity(
+                entry, entry["net_shares"], entry["net_shares"] - qty
+            )
+            entry["net_shares"] -= qty
+        elif trade_type in _CAPITAL_RETURN_TYPES:
+            # ``capital_return_value`` is the whole distribution for the
+            # holding, in the same currency as the trade prices.
+            capital_return = _f(trade.get("capital_return_value"))
+            if capital_return:
+                entry["_buy_cost"] = max(
+                    0.0, entry["_buy_cost"] - abs(capital_return)
+                )
 
     for entry in result.values():
         entry["brokerage"] = round(entry["brokerage"], 2)

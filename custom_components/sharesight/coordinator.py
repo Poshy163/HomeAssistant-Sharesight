@@ -535,6 +535,43 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         self._cash_tx_account_cooldowns.pop(account_id, None)
 
     # ------------------------------------------------------------------
+    # Holdings hygiene
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _open_positions(holdings: Any) -> list[dict[str, Any]]:
+        """Drop holdings the user has sold out of from a holdings list.
+
+        Sharesight asks the performance report for open positions only, but a
+        sale that doesn't net to exactly zero leaves the holding behind as a
+        dust row (a quantity like -4e-05, no value, ``valid_position: false``).
+        Left in, that row keeps a sold holding's device looking live —
+        entities publish zeros forever, the device can't be deleted from the
+        UI, and a $0 holding skews the smallest-holding, holding-count and
+        label-allocation sensors.
+
+        Filtering here, before anything reads the payload, makes a sold-out
+        holding behave the same whether Sharesight drops it or leaves dust
+        behind: its entities stop updating and its device becomes prunable.
+        """
+        open_holdings: list[dict[str, Any]] = []
+        closed: list[str] = []
+        for holding in holdings or []:
+            if not isinstance(holding, dict):
+                continue
+            if analytics.is_open_position(holding):
+                open_holdings.append(holding)
+            else:
+                closed.append(str(analytics.holding_symbol(holding) or "?"))
+        if closed:
+            _LOGGER.debug(
+                "Ignoring %d sold-out holding(s) still listed by Sharesight: %s",
+                len(closed),
+                ", ".join(sorted(closed)),
+            )
+        return open_holdings
+
+    # ------------------------------------------------------------------
     # Activity diff (Feature 2)
     # ------------------------------------------------------------------
 
@@ -1390,7 +1427,12 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 combined_dict["portfolio_detail"] = self._portfolio_detail
 
             report_data = combined_dict.get("report", {})
-            report_holdings = report_data.get("holdings", [])
+            report_holdings = self._open_positions(report_data.get("holdings", []))
+            # Write the pruned list back so the handful of consumers that read
+            # report.holdings directly (per-market holding counts, unconfirmed
+            # transactions) agree with the holdings key derived below.
+            if isinstance(report_data, dict) and "holdings" in report_data:
+                report_data["holdings"] = report_holdings
 
             sub_totals = report_data.get("sub_totals", [])
             if sub_totals:
@@ -1423,7 +1465,9 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     "value": report_data.get("value", 0),
                 }
             elif isinstance(holdings_from_api, dict) and "error" not in holdings_from_api:
-                api_holdings_list = holdings_from_api.get("holdings", [])
+                api_holdings_list = self._open_positions(
+                    holdings_from_api.get("holdings", [])
+                )
                 if api_holdings_list:
                     total_val = sum(
                         float(h.get("value", 0) or h.get("market_value", 0) or 0)
@@ -1583,12 +1627,14 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     combined_dict["value_trend"] = analytics.build_value_trend(
                         combined_dict.get("value_series")
                     )
-                # Label allocation (W7).  Only assigned when at least one holding
-                # actually carries a label, so portfolios without labels grow no
-                # key (and Stage 3 creates no device/entities).
-                label_allocation = analytics.build_label_allocation(holdings_list)
-                if label_allocation:
-                    combined_dict["label_allocation"] = label_allocation
+                # Label allocation (W7).  An empty list is still published so
+                # existing label entities can tell "no holding carries this
+                # label any more" (go unavailable) from "the analytics never
+                # ran this poll" (stay put).  Stage 3 iterates the list to
+                # create entities, so an empty one still creates none.
+                combined_dict["label_allocation"] = analytics.build_label_allocation(
+                    holdings_list
+                )
                 # Merge the forward-income forecast into income_report without
                 # clobbering the payouts/totals already assembled above.
                 forecast = analytics.build_income_forecast(

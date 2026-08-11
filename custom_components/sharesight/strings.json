@@ -52,11 +52,13 @@
                 "description": "Configure how frequently Home Assistant polls the Sharesight API for this portfolio. Must be between 60 and 3600 seconds.",
                 "data": {
                     "scan_interval": "Poll interval (seconds)",
-                    "enable_lts_backfill": "Backfill portfolio value history into long-term statistics"
+                    "enable_lts_backfill": "Backfill portfolio value history into long-term statistics",
+                    "auto_remove_stale_devices": "Automatically delete devices for sold holdings"
                 },
                 "data_description": {
                     "scan_interval": "How often Home Assistant polls the Sharesight API for this portfolio. Must be between 60 and 3600 seconds.",
-                    "enable_lts_backfill": "On startup, import the full inception-to-today daily portfolio value series into the Portfolio value sensor's statistics. Requires the value-data endpoint to be available for your API access."
+                    "enable_lts_backfill": "On startup, import the full inception-to-today daily portfolio value series into the Portfolio value sensor's statistics. Requires the value-data endpoint to be available for your API access.",
+                    "auto_remove_stale_devices": "When a holding is sold, a market exited or a cash account closed, delete its device and entities automatically once it has been gone from your portfolio for three consecutive updates. This also deletes those entities' recorded history. Leave this off to delete them yourself from the device page's three-dot menu."
                 }
             }
         }
