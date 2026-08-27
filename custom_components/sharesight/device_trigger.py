@@ -14,11 +14,8 @@ The numeric target sensors are resolved from the entity registry by their
 stable unique_id rather than a stored entity_id, so a user renaming the entity
 never breaks the trigger.
 """
+
 from __future__ import annotations
-
-import logging
-
-import voluptuous as vol
 
 from homeassistant.components.device_automation import (
     DEVICE_TRIGGER_BASE_SCHEMA,
@@ -39,36 +36,32 @@ from homeassistant.const import (
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.helpers import (
     device_registry as dr,
+)
+from homeassistant.helpers import (
     entity_registry as er,
 )
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.trigger import TriggerActionType, TriggerInfo
 from homeassistant.helpers.typing import ConfigType
+import voluptuous as vol
 
 from .const import APP_VERSION, DOMAIN
-
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+from .event import EVENT_TYPES
 
 # EventEntity surfaces the last fired type under this state attribute; kept as
 # a literal so this module has no import-order dependency on the event
 # component being loaded first.
 ATTR_EVENT_TYPE = "event_type"
 
-# Activity-event trigger types — byte-identical to event.py's EVENT_TYPES.
-TRIGGER_TYPES_EVENT = (
-    "dividend_announced",
-    "dividend_paid",
-    "trade_confirmed",
-    "holding_opened",
-    "holding_closed",
-    "cash_transaction",
-    "daily_close",
-)
+# Activity-event trigger types, taken straight from the event platform so the
+# two cannot drift.
+TRIGGER_TYPES_EVENT = tuple(EVENT_TYPES)
 # Numeric-threshold trigger types.
 TRIGGER_TYPE_PORTFOLIO_VALUE = "portfolio_value"
 TRIGGER_TYPE_DAILY_CHANGE = "daily_change"
 TRIGGER_TYPES_NUMERIC = (TRIGGER_TYPE_PORTFOLIO_VALUE, TRIGGER_TYPE_DAILY_CHANGE)
 TRIGGER_TYPES = (*TRIGGER_TYPES_EVENT, *TRIGGER_TYPES_NUMERIC)
+
 
 def _require_bound_for_numeric(config: ConfigType) -> ConfigType:
     """Reject a numeric trigger that carries neither above nor below.
@@ -124,9 +117,7 @@ def _numeric_target_unique_id(portfolio_id: str, trigger_type: str) -> str:
     return f"{portfolio_id}_one-day_total_gain_{APP_VERSION}"
 
 
-async def async_get_triggers(
-    hass: HomeAssistant, device_id: str
-) -> list[dict[str, str]]:
+async def async_get_triggers(hass: HomeAssistant, device_id: str) -> list[dict[str, str]]:
     """List device triggers for a Sharesight portfolio device."""
     portfolio_id = _portfolio_id_for_device(hass, device_id)
     if portfolio_id is None:

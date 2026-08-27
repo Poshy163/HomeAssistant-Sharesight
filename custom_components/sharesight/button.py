@@ -6,9 +6,8 @@ Two buttons per portfolio:
   normally only runs once at startup, so users can recover the value history
   on demand (e.g. after the value-data endpoint becomes reachable).
 """
-from __future__ import annotations
 
-import logging
+from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
@@ -19,8 +18,6 @@ from .coordinator import SharesightCoordinator
 from .data import SharesightConfigEntry
 from .entity import SharesightBaseEntity
 from .statistics_import import async_backfill_value_statistics
-
-_LOGGER: logging.Logger = logging.getLogger(__package__)
 
 PARALLEL_UPDATES = 0
 
@@ -49,8 +46,8 @@ class SharesightRefreshButton(SharesightBaseEntity, ButtonEntity):
 
     def __init__(self, coordinator, portfolio_id, edge):
         super().__init__(coordinator, portfolio_id, edge)
-        self._attr_unique_id = f"{portfolio_id}_refresh_{APP_VERSION}"
-        self.entity_id = f"button.sharesight_refresh_{portfolio_id}"
+        self._attr_unique_id = f"{self._resource_id}_refresh_{APP_VERSION}"
+        self.entity_id = f"button.sharesight_refresh_{self._resource_id}"
         self._attr_device_info = self._service_device_info(
             "portfolio", f"Portfolio {portfolio_id}", "Portfolio"
         )
@@ -67,28 +64,21 @@ class SharesightRebuildValueHistoryButton(SharesightBaseEntity, ButtonEntity):
 
     def __init__(self, coordinator, portfolio_id, edge):
         super().__init__(coordinator, portfolio_id, edge)
-        self._attr_unique_id = f"{portfolio_id}_rebuild_lts_{APP_VERSION}"
-        self.entity_id = f"button.sharesight_rebuild_value_history_{portfolio_id}"
+        self._attr_unique_id = f"{self._resource_id}_rebuild_lts_{APP_VERSION}"
+        self.entity_id = f"button.sharesight_rebuild_value_history_{self._resource_id}"
         # Attach to the Account device (same identifiers as the account
         # sensors / subscription binary sensor).
-        self._attr_device_info = self._service_device_info(
-            "account", "Account", "Account"
-        )
+        self._attr_device_info = self._service_device_info("account", "Account", "Account")
 
     async def async_press(self) -> None:
-        """Schedule the idempotent value-history backfill in the background."""
-        # Resolve the portfolio currency defensively; the backfill upserts by
-        # (statistic_id, start) so re-running it is always safe.
-        currency = "USD"
-        portfolios = (self.coordinator.data or {}).get("portfolios", [])
-        if portfolios and isinstance(portfolios[0], dict):
-            currency = portfolios[0].get("currency_code", "USD")
-        # Entry-scoped so a reload/unload cancels an in-flight rebuild (matching
-        # the startup backfill in __init__.async_setup_entry).
+        """Schedule the idempotent value-history backfill in the background.
+
+        Entry-scoped so a reload/unload cancels an in-flight rebuild (matching
+        the startup backfill in ``__init__.async_setup_entry``).  The backfill
+        upserts by ``(statistic_id, start)``, so re-running it is always safe.
+        """
         self.coordinator.entry.async_create_background_task(
             self.hass,
-            async_backfill_value_statistics(
-                self.hass, self.coordinator, self._portfolio_id, currency
-            ),
+            async_backfill_value_statistics(self.hass, self.coordinator.entry, self.coordinator),
             "sharesight_lts_rebuild",
         )

@@ -6,9 +6,10 @@ own long-term statistics, so HA history/statistics cards show years of data
 instead of only the days since the integration was installed.
 
 Design notes / safety:
-- Imports into the sensor's OWN statistic_id (``sensor.portfolio_value_<id>``)
-  via ``async_import_statistics`` so the history lands on the real entity, not
-  a separate external statistic.
+- Imports into the sensor's OWN statistic_id, resolved from the entity
+  registry by unique_id, via ``async_import_statistics`` so the history
+  lands on the real entity even if the user has renamed it - not on a
+  separate external statistic.
 - Only imports days strictly BEFORE today, so it never overwrites the
   statistics the recorder compiles forward from the live sensor's state.
 - Idempotent: ``async_import_statistics`` upserts by (statistic_id, start), so
@@ -17,15 +18,27 @@ Design notes / safety:
   and may 403 for standard API tokens; on any failure this simply logs and
   returns, leaving the rest of the integration untouched.
 """
+
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import logging
 import math
-from datetime import datetime, timezone
 from typing import Any
 
+from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+
+from .const import (
+    APP_VERSION,
+    CONF_ACCOUNT_TYPE,
+    CONF_PORTFOLIO_ID,
+    DEFAULT_ACCOUNT_TYPE,
+    DOMAIN,
+    portfolio_resource_id,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,9 +85,13 @@ def _extract_points(response: Any) -> list[tuple[datetime, float]]:
             day = dt_util.parse_date(str(raw)[:10])
             if day is None:
                 continue
-            parsed = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+            # Anchor a date-only point to LOCAL midnight, not UTC midnight.
+            # The recorder buckets statistics by hour in local time, so
+            # pinning a Sydney or New York day to 00:00 UTC shifted the whole
+            # series onto the wrong calendar day for anyone not on UTC.
+            parsed = dt_util.start_of_local_day(day)
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.replace(tzinfo=UTC)
         parsed = dt_util.as_utc(parsed)
 
         try:
@@ -87,16 +104,46 @@ def _extract_points(response: Any) -> list[tuple[datetime, float]]:
     return points
 
 
+def _value_sensor_entity_id(hass: HomeAssistant, entry: Any, portfolio_id: Any) -> str | None:
+    """The live entity_id of this portfolio's value sensor.
+
+    Resolved from the entity registry by unique_id rather than reconstructed
+    from the display name.  The recorder renames a statistic_id along with its
+    entity, so a user who renamed the sensor (or a second portfolio whose
+    entity_id got a ``_2`` suffix) had every backfill land on a statistic_id
+    that belonged to nothing.
+    """
+    resource_id = portfolio_resource_id(
+        portfolio_id,
+        entry.data.get(CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE),
+    )
+    unique_id = f"{resource_id}_value_{APP_VERSION}"
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(SENSOR_DOMAIN, DOMAIN, unique_id)
+    if entity_id is None:
+        _LOGGER.debug(
+            "Portfolio value sensor (unique_id=%s) is not registered yet; "
+            "skipping the statistics backfill this time",
+            unique_id,
+        )
+    return entity_id
+
+
 async def async_backfill_value_statistics(
     hass: HomeAssistant,
+    entry: Any,
     coordinator: Any,
-    portfolio_id: Any,
-    currency: str,
 ) -> None:
     """Fetch the value history and import it as long-term statistics."""
     if "recorder" not in hass.config.components:
         _LOGGER.debug("Recorder not loaded; skipping value-history backfill")
         return
+
+    portfolio_id = entry.data.get(CONF_PORTFOLIO_ID)
+    statistic_id = _value_sensor_entity_id(hass, entry, portfolio_id)
+    if statistic_id is None:
+        return
+    currency = coordinator.portfolio_currency
 
     try:
         from homeassistant.components.recorder.models import StatisticData
@@ -117,12 +164,12 @@ async def async_backfill_value_statistics(
 
     try:
         response = await coordinator.async_get_value_history()
-    except Exception as err:  # noqa: BLE001 — never let backfill break setup
-        _LOGGER.info("Portfolio value history fetch failed, skipping backfill: %s", err)
+    except Exception as err:
+        _LOGGER.debug("Portfolio value history fetch failed, skipping backfill: %s", err)
         return
 
     if isinstance(response, dict) and "error" in response:
-        _LOGGER.info(
+        _LOGGER.debug(
             "Portfolio value history endpoint unavailable (%s); skipping "
             "long-term statistics backfill",
             response.get("error"),
@@ -131,7 +178,7 @@ async def async_backfill_value_statistics(
 
     points = _extract_points(response)
     if not points:
-        _LOGGER.info("No portfolio value history points returned; nothing to backfill")
+        _LOGGER.debug("No portfolio value history points returned; nothing to backfill")
         return
 
     today = dt_util.utcnow().date()
@@ -141,15 +188,12 @@ async def async_backfill_value_statistics(
             # Leave today/forward to the recorder's live compilation.
             continue
         hour = when.replace(minute=0, second=0, microsecond=0)
-        statistics.append(
-            StatisticData(start=hour, mean=value, min=value, max=value)
-        )
+        statistics.append(StatisticData(start=hour, mean=value, min=value, max=value))
 
     if not statistics:
         _LOGGER.debug("Value history had no pre-today points to backfill")
         return
 
-    statistic_id = f"sensor.portfolio_value_{portfolio_id}"
     metadata: dict[str, Any] = {
         "has_sum": False,
         "name": None,

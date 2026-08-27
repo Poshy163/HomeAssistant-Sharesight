@@ -42,7 +42,18 @@
             "oauth_error": "OAuth authentication failed. Please try again.",
             "oauth_unauthorized": "OAuth authorisation was denied. Please try again.",
             "missing_credentials": "No application credentials configured. Please add Sharesight credentials first via Settings → Devices & Services → Application Credentials.",
-            "reauth_successful": "Re-authentication was successful."
+            "reauth_successful": "Re-authentication was successful.",
+            "missing_configuration": "The Sharesight integration is not configured. Please follow the documentation to add an application credential.",
+            "oauth_implementation_unavailable": "The Sharesight application credential this entry was created with is no longer available.",
+            "authorize_url_timeout": "Timed out generating the Sharesight authorize URL.",
+            "no_url_available": "No URL available. Home Assistant needs a reachable external URL to complete the Sharesight OAuth flow.",
+            "oauth_timeout": "Timed out resolving the Sharesight OAuth token.",
+            "oauth_failed": "Sharesight rejected the credential. Check that the application credential you picked matches the account type you selected - a standard client ID is not valid on the developer sandbox, and vice versa.",
+            "user_rejected_authorize": "Sharesight authorization was declined.",
+            "wrong_account": "That Sharesight login cannot see this portfolio. Re-authenticate with the account the portfolio belongs to.",
+            "cannot_connect": "Could not verify the portfolio list with Sharesight. Try again when the service is reachable.",
+            "no_portfolios": "This Sharesight account has no portfolios available to the API.",
+            "portfolio_identity_immutable": "A portfolio is the identity of this entry and cannot be switched safely. Add the other portfolio as a new Sharesight entry."
         }
     },
     "options": {
@@ -53,12 +64,16 @@
                 "data": {
                     "scan_interval": "Poll interval (seconds)",
                     "enable_lts_backfill": "Backfill portfolio value history into long-term statistics",
-                    "auto_remove_stale_devices": "Automatically delete devices for sold holdings"
+                    "auto_remove_stale_devices": "Automatically delete devices for sold holdings",
+                    "enable_extended_performance": "Add 3 / 6 month and 1 / 3 / 5 year windows",
+                    "enable_holding_entities": "Create per-holding entities"
                 },
                 "data_description": {
                     "scan_interval": "How often Home Assistant polls the Sharesight API for this portfolio. Must be between 60 and 3600 seconds.",
                     "enable_lts_backfill": "On startup, import the full inception-to-today daily portfolio value series into the Portfolio value sensor's statistics. Requires the value-data endpoint to be available for your API access.",
-                    "auto_remove_stale_devices": "When a holding is sold, a market exited or a cash account closed, delete its device and entities automatically once it has been gone from your portfolio for three consecutive updates. This also deletes those entities' recorded history. Leave this off to delete them yourself from the device page's three-dot menu."
+                    "auto_remove_stale_devices": "When a holding is sold, a market exited or a cash account closed, delete its device and entities automatically once it has been gone from your portfolio for three consecutive updates. This also deletes those entities' recorded history. Leave this off to delete them yourself from the device page's three-dot menu.",
+                    "enable_extended_performance": "Fetch five extra performance windows on the slow poll tier and expose thirty entities on one Extended Performance device. Adds five requests per hour.",
+                    "enable_holding_entities": "Turn off to keep only portfolio-level figures. Existing per-holding entities are hidden rather than deleted, so turning it back on restores them with their history."
                 }
             }
         }
@@ -82,6 +97,9 @@
             },
             "annualised_return_percent": {
                 "name": "Annualised Return Percent"
+            },
+            "asset_type_count": {
+                "name": "Asset Type Count"
             },
             "average_buy_value": {
                 "name": "Average Buy Value"
@@ -116,8 +134,14 @@
             "benchmark_dividend_gain_percent": {
                 "name": "Benchmark Dividend Gain Percent"
             },
+            "benchmark_maximum_drawdown": {
+                "name": "Benchmark Maximum Drawdown"
+            },
             "benchmark_name": {
                 "name": "Benchmark Name"
+            },
+            "benchmark_return_over_drawdown": {
+                "name": "Benchmark Return Over Drawdown"
             },
             "benchmark_total_gain_percent": {
                 "name": "Benchmark Total Gain Percent"
@@ -143,14 +167,35 @@
             "cash_transactions_count": {
                 "name": "Cash Transactions Count"
             },
+            "cgt_claimable_loss_fy": {
+                "name": "CGT Claimable Loss FY"
+            },
             "cgt_concession_amount_fy": {
                 "name": "CGT Concession Amount FY"
+            },
+            "cgt_concession_rate": {
+                "name": "CGT Concession Rate"
             },
             "cgt_discounted_distributions_fy": {
                 "name": "CGT Discounted Distributions FY"
             },
+            "cgt_harvestable_loss": {
+                "name": "Harvestable Unrealised Loss"
+            },
+            "cgt_harvestable_parcel_count": {
+                "name": "Harvestable Loss Parcels"
+            },
+            "cgt_largest_loss_amount": {
+                "name": "Largest Unrealised Loss"
+            },
+            "cgt_largest_loss_symbol": {
+                "name": "Largest Unrealised Loss Symbol"
+            },
             "cgt_long_term_gains_fy": {
                 "name": "CGT Long Term Gains FY"
+            },
+            "cgt_long_term_losses_fy": {
+                "name": "CGT Long Term Losses FY"
             },
             "cgt_losses_fy": {
                 "name": "CGT Losses FY"
@@ -160,6 +205,9 @@
             },
             "cgt_short_term_gains_fy": {
                 "name": "CGT Short Term Gains FY"
+            },
+            "cgt_short_term_losses_fy": {
+                "name": "CGT Short Term Losses FY"
             },
             "cgt_taxable_gain_fy": {
                 "name": "CGT Taxable Gain FY"
@@ -172,6 +220,9 @@
             },
             "cost_basis": {
                 "name": "Cost Basis"
+            },
+            "currency_count": {
+                "name": "Currency Count"
             },
             "currency_gain": {
                 "name": "Currency gain"
@@ -251,6 +302,24 @@
             "endpoints_on_cooldown": {
                 "name": "Endpoints on Cooldown"
             },
+            "extended_capital_gain": {
+                "name": "{period} Capital Gain"
+            },
+            "extended_capital_gain_percent": {
+                "name": "{period} Capital Gain Percent"
+            },
+            "extended_payout_gain": {
+                "name": "{period} Dividend Gain"
+            },
+            "extended_payout_gain_percent": {
+                "name": "{period} Dividend Gain Percent"
+            },
+            "extended_total_gain": {
+                "name": "{period} Change Amount"
+            },
+            "extended_total_gain_percent": {
+                "name": "{period} Change Percent"
+            },
             "equity_allocation_percent": {
                 "name": "Equity Allocation Percent"
             },
@@ -302,9 +371,6 @@
             "forward_dividend_yield": {
                 "name": "Forward Dividend Yield"
             },
-            "fx_rate": {
-                "name": "{code} to {base} rate"
-            },
             "holding_annualised_return_percent": {
                 "name": "annualised return percent"
             },
@@ -319,6 +385,9 @@
             },
             "holding_cost_base": {
                 "name": "cost base"
+            },
+            "holding_currency": {
+                "name": "currency"
             },
             "holding_currency_gain": {
                 "name": "currency gain"
@@ -407,6 +476,9 @@
             "industry_count": {
                 "name": "Industry Count"
             },
+            "label_holding_count": {
+                "name": "{label} holdings"
+            },
             "label_percent": {
                 "name": "{label} percent"
             },
@@ -491,9 +563,6 @@
             "last_trade_value": {
                 "name": "Last Trade Value"
             },
-            "latest_news": {
-                "name": "Latest News"
-            },
             "market_annualised_return_percent": {
                 "name": "annualised return percent"
             },
@@ -517,15 +586,6 @@
             },
             "market_holding_count": {
                 "name": "holding count"
-            },
-            "market_hours_next_close": {
-                "name": "{market} next close"
-            },
-            "market_hours_next_open": {
-                "name": "{market} next open"
-            },
-            "market_hours_status": {
-                "name": "{market} status"
             },
             "market_payout_gain": {
                 "name": "payout gain"
@@ -614,6 +674,9 @@
             "number_of_holdings": {
                 "name": "Number of Holdings"
             },
+            "pe_coverage": {
+                "name": "P/E Coverage"
+            },
             "performance_calculation_method": {
                 "name": "Performance Calculation Method"
             },
@@ -626,14 +689,26 @@
             "portfolio_country": {
                 "name": "Portfolio Country"
             },
+            "portfolio_current_drawdown": {
+                "name": "Current Drawdown"
+            },
+            "portfolio_days_since_high": {
+                "name": "Days Since High"
+            },
             "portfolio_excess_return_vs_benchmark": {
                 "name": "Portfolio Excess Return vs Benchmark"
+            },
+            "portfolio_high_water_mark": {
+                "name": "High Water Mark"
             },
             "portfolio_id": {
                 "name": "Portfolio ID"
             },
             "portfolio_inception_date": {
                 "name": "Portfolio Inception Date"
+            },
+            "portfolio_max_drawdown": {
+                "name": "Maximum Drawdown"
             },
             "portfolio_name": {
                 "name": "Portfolio Name"
@@ -649,6 +724,9 @@
             },
             "portfolio_value": {
                 "name": "Portfolio value"
+            },
+            "portfolio_volatility": {
+                "name": "Volatility (annualised)"
             },
             "positive_holdings_count": {
                 "name": "Positive Holdings Count"
@@ -718,6 +796,42 @@
             },
             "top_5_sectors_percent": {
                 "name": "Top 5 Sectors Percent"
+            },
+            "top_asset_type_1_name": {
+                "name": "Top Asset Type 1 Name"
+            },
+            "top_asset_type_1_percent": {
+                "name": "Top Asset Type 1 Percent"
+            },
+            "top_asset_type_2_name": {
+                "name": "Top Asset Type 2 Name"
+            },
+            "top_asset_type_2_percent": {
+                "name": "Top Asset Type 2 Percent"
+            },
+            "top_asset_type_3_name": {
+                "name": "Top Asset Type 3 Name"
+            },
+            "top_asset_type_3_percent": {
+                "name": "Top Asset Type 3 Percent"
+            },
+            "top_currency_1_name": {
+                "name": "Top Currency 1 Name"
+            },
+            "top_currency_1_percent": {
+                "name": "Top Currency 1 Percent"
+            },
+            "top_currency_2_name": {
+                "name": "Top Currency 2 Name"
+            },
+            "top_currency_2_percent": {
+                "name": "Top Currency 2 Percent"
+            },
+            "top_currency_3_name": {
+                "name": "Top Currency 3 Name"
+            },
+            "top_currency_3_percent": {
+                "name": "Top Currency 3 Percent"
             },
             "top_gain_amount": {
                 "name": "Top Gain Amount"
@@ -953,6 +1067,9 @@
             "watchlist_down_today": {
                 "name": "Down Today"
             },
+            "watchlist_instrument_day_change": {
+                "name": "{code} day change"
+            },
             "watchlist_instrument_day_change_percent": {
                 "name": "{code} day change percent"
             },
@@ -1022,6 +1139,9 @@
             "worst_gain_symbol": {
                 "name": "Worst Gain Symbol"
             },
+            "yield_coverage": {
+                "name": "Dividend Yield Coverage"
+            },
             "ytd_annualised_return_percent": {
                 "name": "YTD Annualised Return Percent"
             },
@@ -1057,11 +1177,11 @@
             }
         },
         "binary_sensor": {
-            "any_market_open": {
-                "name": "Any Market Open"
-            },
             "api_degraded": {
                 "name": "API Degraded"
+            },
+            "data_stale": {
+                "name": "Data Stale"
             },
             "dividend_imminent": {
                 "name": "Dividend Imminent"
@@ -1253,6 +1373,18 @@
         },
         "numeric_trigger_needs_bound": {
             "message": "The Sharesight '{trigger_type}' trigger requires at least one of '{above}' or '{below}'."
+        },
+        "api_lockout": {
+            "message": "The Sharesight API has temporarily locked this application out. It will retry automatically in {seconds} seconds."
+        },
+        "portfolio_inaccessible": {
+            "message": "Sharesight portfolio {portfolio_id} is no longer accessible. It may have been deleted, or your access to it withdrawn."
+        },
+        "auth_error": {
+            "message": "Sharesight rejected the stored credentials: {detail}"
+        },
+        "credential_unavailable": {
+            "message": "No Sharesight {account_type} application credential is available."
         }
     }
 }

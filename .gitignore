@@ -8,3 +8,12 @@ __pycache__/
 
 # Downloaded HA diagnostics dumps — real portfolio data, never commit
 /diagnostics/
+
+# Test/venv artefacts
+/.pytest_cache/
+/.coverage
+/coverage.xml
+/htmlcov/
+/.venv/
+*.whl
+*.tar.gz

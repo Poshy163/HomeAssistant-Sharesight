@@ -1,0 +1,39 @@
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+exclude = [".ruff_cache", "diagnostics"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "W",     # pycodestyle warnings
+    "I",     # import sorting
+    "UP",    # pyupgrade
+    "B",     # bugbear
+    "SIM",   # simplifiable code
+    "RUF",
+]
+ignore = [
+    # The integration deliberately catches broad exceptions in a handful of
+    # places where a single bad payload must never take the whole poll (or an
+    # entity) down; each is annotated with noqa and a comment explaining why.
+    "B008",
+    # Long docstring lines in the API notes are more readable unwrapped.
+    "E501",
+    # contextlib.suppress reads worse than try/except/pass inside the
+    # per-sensor value paths, which run for every entity on every poll.
+    "SIM105",
+    # A nested if is often the clearer way to express "this shape, then
+    # this condition" in the payload guards.
+    "SIM102",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests reach into private coordinator state deliberately: they exercise the
+# backoff, carry-forward and degradation bookkeeping, which has no public API.
+"tests/*" = ["SLF001"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components"]

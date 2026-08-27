@@ -19,6 +19,9 @@
       "annualised_return_percent": {
         "default": "mdi:percent"
       },
+      "asset_type_count": {
+        "default": "mdi:shape-outline"
+      },
       "average_buy_value": {
         "default": "mdi:calculator"
       },
@@ -52,8 +55,14 @@
       "benchmark_dividend_gain_percent": {
         "default": "mdi:hand-coin"
       },
+      "benchmark_maximum_drawdown": {
+        "default": "mdi:trending-down"
+      },
       "benchmark_name": {
         "default": "mdi:speedometer"
+      },
+      "benchmark_return_over_drawdown": {
+        "default": "mdi:scale-balance"
       },
       "benchmark_total_gain_percent": {
         "default": "mdi:speedometer"
@@ -79,14 +88,35 @@
       "cash_transactions_count": {
         "default": "mdi:bank-transfer"
       },
+      "cgt_claimable_loss_fy": {
+        "default": "mdi:cash-minus"
+      },
       "cgt_concession_amount_fy": {
         "default": "mdi:cash-refund"
+      },
+      "cgt_concession_rate": {
+        "default": "mdi:sale"
       },
       "cgt_discounted_distributions_fy": {
         "default": "mdi:sack-percent"
       },
+      "cgt_harvestable_loss": {
+        "default": "mdi:content-cut"
+      },
+      "cgt_harvestable_parcel_count": {
+        "default": "mdi:package-variant"
+      },
+      "cgt_largest_loss_amount": {
+        "default": "mdi:cash-minus"
+      },
+      "cgt_largest_loss_symbol": {
+        "default": "mdi:trending-down"
+      },
       "cgt_long_term_gains_fy": {
         "default": "mdi:clock-outline"
+      },
+      "cgt_long_term_losses_fy": {
+        "default": "mdi:cash-minus"
       },
       "cgt_losses_fy": {
         "default": "mdi:cash-minus"
@@ -96,6 +126,9 @@
       },
       "cgt_short_term_gains_fy": {
         "default": "mdi:clock-fast"
+      },
+      "cgt_short_term_losses_fy": {
+        "default": "mdi:cash-minus"
       },
       "cgt_taxable_gain_fy": {
         "default": "mdi:bank"
@@ -108,6 +141,9 @@
       },
       "cost_basis": {
         "default": "mdi:cash-register"
+      },
+      "currency_count": {
+        "default": "mdi:currency-usd"
       },
       "currency_gain": {
         "default": "mdi:cash-plus"
@@ -187,6 +223,24 @@
       "endpoints_on_cooldown": {
         "default": "mdi:pause-circle-outline"
       },
+      "extended_capital_gain": {
+        "default": "mdi:chart-line"
+      },
+      "extended_capital_gain_percent": {
+        "default": "mdi:percent"
+      },
+      "extended_payout_gain": {
+        "default": "mdi:cash-plus"
+      },
+      "extended_payout_gain_percent": {
+        "default": "mdi:sack-percent"
+      },
+      "extended_total_gain": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "extended_total_gain_percent": {
+        "default": "mdi:percent"
+      },
       "equity_allocation_percent": {
         "default": "mdi:chart-pie"
       },
@@ -238,9 +292,6 @@
       "forward_dividend_yield": {
         "default": "mdi:percent"
       },
-      "fx_rate": {
-        "default": "mdi:currency-usd"
-      },
       "holding_annualised_return_percent": {
         "default": "mdi:percent"
       },
@@ -255,6 +306,9 @@
       },
       "holding_cost_base": {
         "default": "mdi:cash-register"
+      },
+      "holding_currency": {
+        "default": "mdi:currency-sign"
       },
       "holding_currency_gain": {
         "default": "mdi:currency-usd"
@@ -343,6 +397,9 @@
       "industry_count": {
         "default": "mdi:factory"
       },
+      "label_holding_count": {
+        "default": "mdi:tag-multiple"
+      },
       "label_percent": {
         "default": "mdi:tag-text-outline"
       },
@@ -427,9 +484,6 @@
       "last_trade_value": {
         "default": "mdi:cash-fast"
       },
-      "latest_news": {
-        "default": "mdi:newspaper-variant-outline"
-      },
       "market_annualised_return_percent": {
         "default": "mdi:percent"
       },
@@ -453,15 +507,6 @@
       },
       "market_holding_count": {
         "default": "mdi:format-list-numbered"
-      },
-      "market_hours_next_close": {
-        "default": "mdi:clock-end"
-      },
-      "market_hours_next_open": {
-        "default": "mdi:clock-start"
-      },
-      "market_hours_status": {
-        "default": "mdi:store-clock"
       },
       "market_payout_gain": {
         "default": "mdi:hand-coin"
@@ -550,6 +595,9 @@
       "number_of_holdings": {
         "default": "mdi:chart-box-multiple"
       },
+      "pe_coverage": {
+        "default": "mdi:percent-outline"
+      },
       "performance_calculation_method": {
         "default": "mdi:calculator-variant-outline"
       },
@@ -562,14 +610,26 @@
       "portfolio_country": {
         "default": "mdi:flag"
       },
+      "portfolio_current_drawdown": {
+        "default": "mdi:arrow-down-bold-box"
+      },
+      "portfolio_days_since_high": {
+        "default": "mdi:calendar-arrow-left"
+      },
       "portfolio_excess_return_vs_benchmark": {
         "default": "mdi:scale-balance"
+      },
+      "portfolio_high_water_mark": {
+        "default": "mdi:waves-arrow-up"
       },
       "portfolio_id": {
         "default": "mdi:identifier"
       },
       "portfolio_inception_date": {
         "default": "mdi:calendar-start"
+      },
+      "portfolio_max_drawdown": {
+        "default": "mdi:trending-down"
       },
       "portfolio_name": {
         "default": "mdi:briefcase"
@@ -585,6 +645,9 @@
       },
       "portfolio_value": {
         "default": "mdi:cash"
+      },
+      "portfolio_volatility": {
+        "default": "mdi:sine-wave"
       },
       "positive_holdings_count": {
         "default": "mdi:trending-up"
@@ -654,6 +717,42 @@
       },
       "top_5_sectors_percent": {
         "default": "mdi:chart-donut"
+      },
+      "top_asset_type_1_name": {
+        "default": "mdi:shape-outline"
+      },
+      "top_asset_type_1_percent": {
+        "default": "mdi:percent"
+      },
+      "top_asset_type_2_name": {
+        "default": "mdi:shape-outline"
+      },
+      "top_asset_type_2_percent": {
+        "default": "mdi:percent"
+      },
+      "top_asset_type_3_name": {
+        "default": "mdi:shape-outline"
+      },
+      "top_asset_type_3_percent": {
+        "default": "mdi:percent"
+      },
+      "top_currency_1_name": {
+        "default": "mdi:currency-usd"
+      },
+      "top_currency_1_percent": {
+        "default": "mdi:percent"
+      },
+      "top_currency_2_name": {
+        "default": "mdi:currency-usd"
+      },
+      "top_currency_2_percent": {
+        "default": "mdi:percent"
+      },
+      "top_currency_3_name": {
+        "default": "mdi:currency-usd"
+      },
+      "top_currency_3_percent": {
+        "default": "mdi:percent"
       },
       "top_gain_amount": {
         "default": "mdi:trending-up"
@@ -889,6 +988,9 @@
       "watchlist_down_today": {
         "default": "mdi:trending-down"
       },
+      "watchlist_instrument_day_change": {
+        "default": "mdi:cash-sync"
+      },
       "watchlist_instrument_day_change_percent": {
         "default": "mdi:percent"
       },
@@ -958,6 +1060,9 @@
       "worst_gain_symbol": {
         "default": "mdi:trending-down"
       },
+      "yield_coverage": {
+        "default": "mdi:percent-outline"
+      },
       "ytd_annualised_return_percent": {
         "default": "mdi:percent"
       },
@@ -993,11 +1098,11 @@
       }
     },
     "binary_sensor": {
-      "any_market_open": {
-        "default": "mdi:store-clock"
-      },
       "api_degraded": {
         "default": "mdi:cloud-alert"
+      },
+      "data_stale": {
+        "default": "mdi:clock-alert-outline"
       },
       "dividend_imminent": {
         "default": "mdi:calendar-alert"

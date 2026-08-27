@@ -20,6 +20,7 @@ Loading ``icons.json`` once at setup and handing the result to the entities
 for every consumer, while keeping ``icons.json`` the single source of truth so
 the frontend and the quality scale's icon-translations rule are unaffected.
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,7 +31,7 @@ from homeassistant.helpers.icon import async_get_icons
 
 from .const import DOMAIN
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # icons.json entries that vary the icon by state (``state``, ``range``) or that
 # describe an attribute rather than the entity itself (``state_attributes``)
@@ -50,9 +51,7 @@ async def async_load_entity_icons(hass: HomeAssistant) -> dict[str, dict[str, st
     Results come from HA's own icon cache, so calling this once per config
     entry costs a single dict lookup after the first load.
     """
-    icons: dict[str, Any] = await async_get_icons(
-        hass, "entity", integrations=[DOMAIN]
-    )
+    icons: dict[str, Any] = await async_get_icons(hass, "entity", integrations=[DOMAIN])
     entity_icons = icons.get(DOMAIN) or {}
 
     resolved: dict[str, dict[str, str]] = {}

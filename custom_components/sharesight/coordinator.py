@@ -1,47 +1,151 @@
-"""Data update coordinator for the Sharesight integration."""
+"""Data update coordinator for the Sharesight integration.
+
+One coordinator serves one portfolio.  Every entity in every platform reads
+from its ``data`` dict, so a poll is the only thing that ever talks to
+Sharesight - there is no per-entity I/O anywhere in the integration.
+
+The poll is organised in three tiers so the 360-requests-per-minute budget and
+the 3-concurrent-report cap are respected without starving the numbers users
+actually watch:
+
+* **frequent** - the combined V3 performance report, portfolio list and the
+  day/week windows. The first two are critical; a failed period window retains
+  its own last good value and does not freeze the otherwise-fresh portfolio.
+* **slow** - financial-year / month / YTD windows, the daily value series and
+  (opt-in) the 3m/6m/1y/3y/5y windows.  Re-fetched every
+  ``SLOW_PERIOD_REFRESH_EVERY`` polls, on a cold start, or when the financial
+  year rolls over.  Skipped windows are carried forward.
+* **optional** - everything a given API plan or token scope may simply not be
+  entitled to (payouts, cash accounts, instruments, benchmark,
+  watchlist and tax reports). Each backs off independently on failure, and its
+  last good payload is replayed for at most twelve hours.
+
+Degradation is bounded.  When a poll cannot produce fresh data the previous
+payload is served, but only for ``MAX_STALE_DATA_POLLS`` polls (with a
+``MIN_STALE_DATA_GRACE`` floor); past that the poll raises ``UpdateFailed`` so
+entities go unavailable rather than presenting stale numbers as current.
+``data_timestamp`` records when the data was really fetched, as distinct from
+``last_update_success_time``, which the base class re-stamps on every poll
+that returns without raising - including the degraded ones.
+"""
+
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
+from datetime import date, datetime, timedelta
 import itertools
 import logging
 import time
-from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
-
-from . import analytics
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, HomeAssistantError
 from homeassistant.helpers.update_coordinator import (
     TimestampDataUpdateCoordinator,
     UpdateFailed,
 )
 from homeassistant.util import dt as dt_util
 
+from . import analytics
+from .api import (
+    Endpoint,
+    SharesightApiError,
+    SharesightRequestGate,
+    async_request,
+    is_heavy_path,
+)
 from .const import (
+    CONF_ENABLE_EXTENDED_PERFORMANCE,
     CONF_SCAN_INTERVAL,
+    DEFAULT_ENABLE_EXTENDED_PERFORMANCE,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    MAX_CARRY_FORWARD_AGE,
     MAX_SCAN_INTERVAL_SECONDS,
+    MAX_STALE_DATA_POLLS,
     MIN_SCAN_INTERVAL_SECONDS,
+    MIN_STALE_DATA_GRACE,
     OPTIONAL_ENDPOINT_COOLDOWN,
     OPTIONAL_ENDPOINT_MAX_BACKOFF,
-    SHARESIGHT_HEAVY_CONCURRENCY,
     SHARESIGHT_LOCKOUT_COOLDOWN,
+    SHARESIGHT_RATE_LIMIT_COOLDOWN,
     SLOW_PERIOD_REFRESH_EVERY,
     VALUE_TREND_LOOKBACK_DAYS,
 )
+from .dates import (
+    financial_year_bounds,
+    months_ago,
+    trailing_window,
+    week_to_date_bounds,
+    year_to_date_bounds,
+    years_ago,
+)
+
+# Home Assistant grew dedicated OAuth token-request exceptions; they subclass
+# aiohttp.ClientResponseError, so they MUST be caught ahead of any ClientError
+# clause or a permanently revoked refresh token is mistaken for a network blip
+# and retried forever instead of prompting reauthentication.
+try:  # pragma: no cover - depends on the running core version
+    from homeassistant.exceptions import (
+        OAuth2TokenRequestError,
+        OAuth2TokenRequestReauthError,
+        OAuth2TokenRequestTransientError,
+    )
+except ImportError:  # pragma: no cover - older cores raise ClientResponseError
+
+    class OAuth2TokenRequestError(Exception):  # type: ignore[no-redef]
+        """Placeholder so the except clauses stay well-formed."""
+
+    class OAuth2TokenRequestReauthError(OAuth2TokenRequestError):  # type: ignore[no-redef]
+        """Placeholder."""
+
+    class OAuth2TokenRequestTransientError(OAuth2TokenRequestError):  # type: ignore[no-redef]
+        """Placeholder."""
+
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def oauth_response_requires_reauth(error: BaseException) -> bool:
+    """Whether an OAuth HTTP response is a permanent credential rejection.
+
+    Home Assistant versions before the dedicated token-request exceptions
+    expose these as bare ``aiohttp.ClientResponseError`` instances. Ordinary
+    OAuth 4xx responses are permanent, except the explicitly transient timeout
+    and rate-limit statuses.
+    """
+    status = getattr(error, "status", None)
+    return isinstance(status, int) and 400 <= status < 500 and status not in (408, 425, 429)
+
+
+#: Longer performance windows, as (data key, months back) or (key, years back).
+_EXTENDED_MONTH_WINDOWS = (("three-month", 3), ("six-month", 6))
+_EXTENDED_YEAR_WINDOWS = (("one-year", 1), ("three-year", 3), ("five-year", 5))
+
+#: Every performance window key, so consumers can enumerate them.
+PERIOD_KEYS = (
+    "one-day",
+    "one-week",
+    "one-month",
+    "ytd",
+    "financial-year",
+    "three-month",
+    "six-month",
+    "one-year",
+    "three-year",
+    "five-year",
+)
 
 
 def merge_dicts(d1: dict[Any, Any], d2: dict[Any, Any]) -> dict[Any, Any]:
     """Recursively merge d2 into d1, mutating d1 in-place and returning it.
 
     For overlapping keys with dict values the merge recurses; otherwise d2's
-    value wins.  Pure function — does not perform I/O, so it is synchronous.
+    value wins.  Pure function - does not perform I/O, so it is synchronous.
     """
     for key in set(itertools.chain(d1.keys(), d2.keys())):
         if key in d1 and key in d2 and isinstance(d1[key], dict) and isinstance(d2[key], dict):
@@ -51,19 +155,16 @@ def merge_dicts(d1: dict[Any, Any], d2: dict[Any, Any]) -> dict[Any, Any]:
     return d1
 
 
-def get_financial_year_dates(end_date_str: str | None) -> tuple[str, str]:
-    """Compute the current financial year start/end dates (YYYY-MM-DD)."""
-    today = dt_util.now()
+def get_financial_year_dates(
+    end_date_str: str | None, today: date | None = None
+) -> tuple[str, str]:
+    """The financial year containing today, as ``(start, end)`` ISO dates.
 
-    if not end_date_str:
-        end_year = today.year if today.month <= 6 else today.year + 1
-        return f"{end_year - 1}-07-01", f"{end_year}-06-30"
-
-    end_date = datetime.strptime(end_date_str, "%m-%d")
-    end_year = today.year if today.month <= 6 else today.year + 1
-    end_date = end_date.replace(year=end_year)
-    start_date = end_date.replace(year=end_year - 1) + timedelta(days=1)
-    return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+    Thin wrapper over :func:`.dates.financial_year_bounds` so the arithmetic
+    stays testable without Home Assistant.  ``today`` defaults to the local
+    date, which is what the portfolio's own timezone reports against.
+    """
+    return financial_year_bounds(end_date_str, today or dt_util.now().date())
 
 
 def _get_scan_interval(entry: ConfigEntry | None) -> timedelta:
@@ -82,39 +183,21 @@ def _get_scan_interval(entry: ConfigEntry | None) -> timedelta:
 
 
 class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
-    """Coordinate polling of the Sharesight API for a single portfolio.
-
-    Subclasses ``TimestampDataUpdateCoordinator`` rather than the plain
-    ``DataUpdateCoordinator`` purely for ``last_update_success_time``: the
-    "Last Successful Update" diagnostic sensor reads that attribute, and the
-    plain base class never defines it, so the sensor could only ever report
-    Unknown.  The timestamp variant stamps it in ``_async_refresh_finished``
-    after every successful poll and is otherwise identical.
-    """
+    """Coordinate polling of the Sharesight API for a single portfolio."""
 
     # Per-endpoint timeout (seconds).
     _ENDPOINT_TIMEOUT: int = 60
 
-    # Number of retries for token validation before giving up.
+    # Retries for a *transient* token refresh failure before giving up.  A
+    # permanent one (revoked grant, wrong client) is never retried.
     _TOKEN_RETRIES: int = 2
     _TOKEN_RETRY_DELAY: float = 3.0
 
-    # Proactively refresh the access token when it has this many seconds or
-    # fewer remaining before expiry.  Sharesight's OAuth token lifetime is
-    # ~30 minutes; refreshing early avoids racing a poll against expiry,
-    # which is what caused entities to flap "unavailable" for ~10s every
-    # ~31 minutes.
-    _TOKEN_REFRESH_MARGIN: float = 300.0
-
     # Cap on activity events emitted per type per poll, so the first poll
     # after a long outage (which sees a large backlog of "new" records) can
-    # never produce an unbounded event payload.
+    # never produce an unbounded event payload.  Records beyond the cap stay
+    # unseen and surface on a later poll rather than being lost.
     _ACTIVITY_EVENT_CAP: int = 20
-
-    # News (W2) comes from an optional, mobile-scoped endpoint that can appear
-    # mid-life after its backoff clears, so its first real diff may surface a
-    # large batch; cap it tighter than the general activity cap.
-    _NEWS_EVENT_CAP: int = 10
 
     def __init__(
         self,
@@ -123,6 +206,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         portfolio_id: Any,
         client: Any,
         oauth_session: Any,
+        request_gate: SharesightRequestGate | None = None,
     ) -> None:
         """Initialise the coordinator."""
         super().__init__(
@@ -137,395 +221,486 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         self.oauth_session = oauth_session
         self.data: dict[str, Any] = {}
         self.portfolio_id = portfolio_id
-        self.startup_endpoint = ["v3", f"portfolios/{self.portfolio_id}", None, False]
+        self.current_date: date = dt_util.now().date()
 
         # {platform: {translation_key: icon}} resolved from icons.json by
-        # __init__.async_setup_entry before the platforms are forwarded, so
-        # every entity can publish its icon in attributes.icon (see icons.py
-        # and SharesightBaseEntity.icon).  Empty until then, and harmlessly
-        # empty if the load fails — entities just fall back to no icon
-        # attribute, exactly as before.
+        # __init__.async_setup_entry before the platforms are forwarded (see
+        # icons.py).  Empty until then, and harmlessly empty if the load fails.
         self.entity_icons: dict[str, dict[str, str]] = {}
 
-        # Cooldowns (monotonic timestamps) for optional endpoints.  Each entry
-        # maps endpoint path -> { "next_retry": float, "backoff": timedelta }.
+        # Cooldowns (monotonic timestamps) for optional endpoints, keyed by
+        # Endpoint.cooldown_key.  {"next_retry": float, "backoff": timedelta}.
         self._optional_endpoint_cooldowns: dict[str, dict[str, Any]] = {}
         self._cash_tx_account_cooldowns: dict[int, dict[str, Any]] = {}
+        self._unsupported_endpoints: set[str] = set()
+        # V3 route -> equivalent V2 route, learned only from Sharesight's
+        # explicit "Version ... not supported" response. This avoids probing
+        # the same rejected version on every subsequent poll.
+        self._fallback_routes: set[str] = set()
 
-        # Global "don't hit the API" deadline, used when Sharesight returns a
-        # 10-minute brute-force lockout or a 403 parallel-request error.
-        self._lockout_until: float = 0.0
+        # Per-account transaction snapshots let one failed cash account retain
+        # its own last good rows while other accounts continue updating.
+        self._cash_transactions_by_account: dict[int, list[dict[str, Any]]] = {}
 
-        # Sharesight limits intensive report endpoints to 3 concurrent requests.
-        self._heavy_request_semaphore = asyncio.Semaphore(SHARESIGHT_HEAVY_CONCURRENCY)
-        # General cap to avoid request bursts across many portfolios.
-        self._request_semaphore = asyncio.Semaphore(8)
+        # Last good payload per optional key, so a parked endpoint's sensors
+        # hold their reading instead of dropping out.  {key: (payload, when)}.
+        self._carry_forward: dict[str, tuple[Any, float]] = {}
+
+        # Official concurrency/rate limits are scoped to the OAuth consumer
+        # app, so every portfolio using that credential shares this gate.
+        self._request_gate = request_gate or SharesightRequestGate()
+        self._heavy_request_semaphore = self._request_gate.heavy_semaphore
+        self._request_semaphore = self._request_gate.request_semaphore
 
         # Financial year caching - seeded on first successful startup fetch.
         self.start_financial_year: str = ""
         self.end_financial_year: str = ""
         self._portfolio_detail: dict[str, Any] = {}
 
-        # Tiered polling (Feature 4).  Incremented once per successful poll;
-        # the slow performance windows only re-fetch every
-        # SLOW_PERIOD_REFRESH_EVERY polls.  _slow_window_fy_bounds records the
-        # financial-year bounds used the last time they were fetched so a FY
-        # rollover forces an immediate refresh.
+        # Tiered polling.  Incremented once per genuinely successful poll.
         self._poll_count: int = 0
         self._slow_window_fy_bounds: tuple[str, str] | None = None
 
-        # Activity diff (Feature 2).  "Seen" keys per record type so only
-        # genuinely new records fire events; seeded silently on the first
-        # successful poll via the _activity_seeded guard.
+        # Degradation tracking.  ``data_timestamp`` is when the payload was
+        # really fetched; the base class's last_update_success_time is stamped
+        # on every non-raising poll, degraded ones included, so it cannot
+        # answer "how old is this number?".
+        self.data_timestamp: datetime | None = None
+        self._degraded_polls: int = 0
+        self.degraded_reason: str | None = None
+
+        # Log de-duplication: {key: last message}.  The first (or a changed)
+        # failure logs at WARNING, identical repeats at DEBUG, and recovery
+        # logs once at INFO.  Without this a sustained outage wrote ~20
+        # identical WARNING lines per poll, forever.
+        self._logged_failures: dict[str, str] = {}
+
+        # Activity diff.  "Seen" keys per record type so only genuinely new
+        # records fire events; seeded silently on the first successful poll.
         self._seen_trade_ids: set[Any] = set()
         self._seen_payout_ids: set[Any] = set()
         self._seen_upcoming_ids: set[Any] = set()
         self._seen_cash_tx_ids: set[Any] = set()
         self._seen_holding_symbols: set[str] = set()
+        self._holdings_snapshot_seeded: bool = False
         self._seen_daily_close_date: str | None = None
         self._activity_seeded: bool = False
         # Monotonic id stamped on every staged activity_events batch so the
         # event entity can distinguish a freshly-diffed poll from a
-        # keep-last-good cached return (which replays the same self.data and
-        # would otherwise re-fire the batch on every degraded cycle).
+        # keep-last-good cached return.
         self._activity_seq: int = 0
 
-        # News diff (W2) — instrument_news is an OPTIONAL, mobile-scoped
-        # endpoint that may only come online mid-life (after its backoff
-        # clears), long after poll 1 already seeded the other activity
-        # families.  It therefore gets its OWN seed-on-first-sight guard,
-        # tripped the first poll the instrument_news key actually appears in
-        # the merged data — seeding silently then rather than on poll 1 — so a
-        # mid-life arrival never replays its whole backlog as "new" events.
-        self._seen_news_ids: set[Any] = set()
-        self._news_seeded: bool = False
+    # ------------------------------------------------------------------
+    # Derived state
+    # ------------------------------------------------------------------
+
+    @property
+    def portfolio_currency(self) -> str:
+        """The currency this portfolio's figures are denominated in.
+
+        Single source of truth for every monetary unit in the integration.
+        Resolution order matters:
+
+        1. ``report.currency.code`` - the currency the numbers being published
+           are actually rendered in (it follows the user's report-currency
+           setting, which can differ from the portfolio's own currency).
+        2. The portfolio detail fetched for *this* entry.
+        3. The matching entry in the account-wide portfolio list.
+
+        The old code read ``portfolios[0].currency_code``, i.e. whichever
+        portfolio the account listed first - the wrong currency for every
+        entry but the first on a multi-portfolio account.
+        """
+        return self._portfolio_currency_for(self.data or {})
+
+    def _portfolio_currency_for(self, data: dict[str, Any]) -> str:
+        """Resolve the currency for a specific in-flight coordinator payload."""
+        report = data.get("report")
+        if isinstance(report, dict):
+            currency = report.get("currency")
+            if isinstance(currency, dict) and currency.get("code"):
+                return str(currency["code"])
+        if self._portfolio_detail.get("currency_code"):
+            return str(self._portfolio_detail["currency_code"])
+        entry = self._own_portfolio_entry(data.get("portfolios"))
+        if entry and entry.get("currency_code"):
+            return str(entry["currency_code"])
+        return "USD"
+
+    def _own_portfolio_entry(self, portfolios: Any) -> dict[str, Any] | None:
+        """This entry's row in the account-wide ``GET /portfolios`` list.
+
+        The list covers every portfolio the account can see, so indexing it at
+        [0] - as the financial-year refresh and the currency lookup both used
+        to - picks an arbitrary other portfolio's settings.
+        """
+        if not isinstance(portfolios, list):
+            return None
+        for portfolio in portfolios:
+            if isinstance(portfolio, dict) and str(portfolio.get("id")) == str(self.portfolio_id):
+                return portfolio
+        return None
+
+    def _portfolio_today(self) -> date:
+        """Current calendar day in the portfolio's reporting timezone."""
+        timezone_name = self._portfolio_detail.get("tz_name") or self._portfolio_detail.get(
+            "portfolio_tz_name"
+        )
+        if timezone_name:
+            try:
+                return dt_util.utcnow().astimezone(ZoneInfo(str(timezone_name))).date()
+            except (ZoneInfoNotFoundError, ValueError, TypeError):
+                self._log_failure(
+                    "portfolio_timezone",
+                    "Sharesight portfolio %s returned unknown timezone %r; using Home Assistant time",
+                    self.portfolio_id,
+                    timezone_name,
+                )
+        return dt_util.now().date()
+
+    @property
+    def data_age(self) -> timedelta | None:
+        """How long ago the current payload was actually fetched."""
+        if self.data_timestamp is None:
+            return None
+        return dt_util.utcnow() - self.data_timestamp
+
+    @property
+    def is_degraded(self) -> bool:
+        """Whether the last poll served carried-over rather than fresh data."""
+        return self._degraded_polls > 0
+
+    @property
+    def _lockout_until(self) -> float:
+        return self._request_gate.lockout_until
+
+    @_lockout_until.setter
+    def _lockout_until(self, value: float) -> None:
+        # Tests that construct with __new__ still get a complete local gate.
+        if not hasattr(self, "_request_gate"):
+            self._request_gate = SharesightRequestGate()
+        self._request_gate.lockout_until = value
+
+    @property
+    def _lockout_reason(self) -> str | None:
+        return self._request_gate.lockout_reason
+
+    @_lockout_reason.setter
+    def _lockout_reason(self, value: str | None) -> None:
+        if not hasattr(self, "_request_gate"):
+            self._request_gate = SharesightRequestGate()
+        self._request_gate.lockout_reason = value
+
+    @property
+    def lockout_seconds_remaining(self) -> int:
+        """Seconds left on the global API cooldown (0 when not in one)."""
+        return max(0, int(self._lockout_until - time.monotonic()))
+
+    def _stale_data_limit(self) -> timedelta:
+        """How long degraded operation may continue before giving up."""
+        interval = self.update_interval or DEFAULT_SCAN_INTERVAL
+        return max(interval * MAX_STALE_DATA_POLLS, MIN_STALE_DATA_GRACE)
+
+    # ------------------------------------------------------------------
+    # De-duplicated logging
+    # ------------------------------------------------------------------
+
+    def _log_failure(self, key: str, message: str, *args: Any) -> None:
+        """Log a failure once at WARNING; identical repeats go to DEBUG."""
+        rendered = message % args if args else message
+        if self._logged_failures.get(key) == rendered:
+            _LOGGER.debug(message, *args)
+            return
+        self._logged_failures[key] = rendered
+        _LOGGER.warning(message, *args)
+
+    def _log_recovery(self, key: str, message: str, *args: Any) -> None:
+        """Log a recovery at INFO, but only if a failure was logged for it."""
+        if self._logged_failures.pop(key, None) is not None:
+            _LOGGER.info(message, *args)
 
     # ------------------------------------------------------------------
     # OAuth token handling
     # ------------------------------------------------------------------
 
     async def _refresh_token_with_retries(self) -> str:
-        """Ensure a valid access token, retrying transient refresh failures.
+        """Ensure a valid access token, retrying only transient failures.
 
-        Home Assistant's ``OAuth2Session`` surfaces any failure from the OAuth
-        token endpoint as ``ConfigEntryAuthFailed``, even when the underlying
-        cause is a transient 5xx/400 from Sharesight's token service.  We
-        therefore retry a handful of times with backoff and only propagate
-        ``ConfigEntryAuthFailed`` once we're confident the credentials really
-        have been revoked.
-
-        Returns the access token string on success.
+        Home Assistant raises ``OAuth2TokenRequestReauthError`` for a 4xx from
+        the token endpoint (a revoked grant, a deleted application credential)
+        and ``OAuth2TokenRequestTransientError`` for a 429/5xx.  Both subclass
+        ``aiohttp.ClientResponseError``, so a generic ``except ClientError``
+        catches the permanent one too - which is exactly what used to happen,
+        retrying a revoked token forever and never prompting reauth.  The
+        permanent case is therefore matched first and converted straight to
+        ``ConfigEntryAuthFailed``.
         """
         last_error: Exception | None = None
         for attempt in range(self._TOKEN_RETRIES + 1):
             try:
+                await self.oauth_session.async_ensure_token_valid()
                 token = self.oauth_session.token or {}
-                expires_at = token.get("expires_at")
-                needs_refresh = True
-                if expires_at is not None:
-                    try:
-                        needs_refresh = (
-                            float(expires_at) - time.time()
-                        ) <= self._TOKEN_REFRESH_MARGIN
-                    except (TypeError, ValueError):
-                        needs_refresh = True
-
-                if needs_refresh:
+                access_token = token.get("access_token")
+                if not access_token:
+                    raise ConfigEntryAuthFailed(
+                        "Sharesight returned no access token; re-authentication is required"
+                    )
+                return str(access_token)
+            except ConfigEntryAuthFailed:
+                raise
+            except OAuth2TokenRequestReauthError as err:
+                raise ConfigEntryAuthFailed(
+                    f"Sharesight rejected the stored credentials: {err}"
+                ) from err
+            except OAuth2TokenRequestTransientError as err:
+                last_error = err
+                if attempt < self._TOKEN_RETRIES:
                     _LOGGER.debug(
-                        "Proactively refreshing Sharesight token (attempt %s/%s)",
+                        "Sharesight token refresh attempt %s/%s failed (%s: %s), retrying in %ss",
                         attempt + 1,
                         self._TOKEN_RETRIES + 1,
-                    )
-                await self.oauth_session.async_ensure_token_valid()
-                return self.oauth_session.token["access_token"]
-            except ConfigEntryAuthFailed as auth_err:
-                last_error = auth_err
-                if attempt < self._TOKEN_RETRIES:
-                    _LOGGER.debug(
-                        "Token refresh attempt %s failed (%s), retrying in %ss",
-                        attempt + 1,
-                        auth_err,
+                        type(err).__name__,
+                        err,
                         self._TOKEN_RETRY_DELAY,
                     )
                     await asyncio.sleep(self._TOKEN_RETRY_DELAY)
                     continue
                 raise
-            except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as transient_err:
-                last_error = transient_err
-                if attempt < self._TOKEN_RETRIES:
-                    _LOGGER.debug(
-                        "Token refresh transient error on attempt %s (%s: %s), retrying in %ss",
-                        attempt + 1,
-                        type(transient_err).__name__,
-                        transient_err,
-                        self._TOKEN_RETRY_DELAY,
-                    )
-                    await asyncio.sleep(self._TOKEN_RETRY_DELAY)
-                    continue
-                raise
-            except HomeAssistantError as ha_err:
-                last_error = ha_err
-                err_msg = str(ha_err).lower()
-                is_permanent_auth = any(
-                    kw in err_msg
-                    for kw in ("invalid_grant", "invalid_client", "access_denied")
-                )
-                if is_permanent_auth:
+            except (OAuth2TokenRequestError, aiohttp.ClientResponseError) as err:
+                if oauth_response_requires_reauth(err):
                     raise ConfigEntryAuthFailed(
-                        f"Sharesight authentication failed: {ha_err}"
-                    ) from ha_err
+                        f"Sharesight rejected the stored credentials: {err}"
+                    ) from err
+                last_error = err
                 if attempt < self._TOKEN_RETRIES:
-                    _LOGGER.debug(
-                        "Token refresh HA error on attempt %s (%s), retrying in %ss",
-                        attempt + 1,
-                        ha_err,
-                        self._TOKEN_RETRY_DELAY,
-                    )
+                    await asyncio.sleep(self._TOKEN_RETRY_DELAY)
+                    continue
+                raise
+            except (aiohttp.ClientError, OSError, TimeoutError) as err:
+                last_error = err
+                if attempt < self._TOKEN_RETRIES:
+                    await asyncio.sleep(self._TOKEN_RETRY_DELAY)
+                    continue
+                raise
+            except HomeAssistantError as err:
+                # Older cores surface everything as a bare HomeAssistantError,
+                # so fall back to recognising the permanent OAuth error codes
+                # in the message.
+                message = str(err).lower()
+                if any(
+                    marker in message
+                    for marker in ("invalid_grant", "invalid_client", "access_denied")
+                ):
+                    raise ConfigEntryAuthFailed(f"Sharesight authentication failed: {err}") from err
+                last_error = err
+                if attempt < self._TOKEN_RETRIES:
                     await asyncio.sleep(self._TOKEN_RETRY_DELAY)
                     continue
                 raise
 
-        raise UpdateFailed(f"Exhausted token refresh retries: {last_error}")
+        raise UpdateFailed(f"Exhausted Sharesight token refresh retries: {last_error}")
 
     # ------------------------------------------------------------------
     # Low-level request plumbing
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _is_heavy_endpoint(path: str) -> bool:
-        """Whether this endpoint is constrained by Sharesight's 3-concurrent limit."""
-        heavy_markers = ("/performance", "/diversity", "/valuation")
-        return any(marker in path for marker in heavy_markers)
-
-    @staticmethod
-    def _response_status(response: Any) -> int | None:
-        """Best-effort extraction of an HTTP status code from a response dict."""
-        if not isinstance(response, dict):
-            return None
-        status = response.get("status_code") or response.get("status")
-        try:
-            return int(status) if status is not None else None
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _is_rate_limited(response: Any) -> bool:
-        """Detect Sharesight's 'too many parallel requests' 403."""
-        if not isinstance(response, dict):
-            return False
-        status = SharesightCoordinator._response_status(response)
-        reason = str(response.get("reason") or response.get("error") or "").lower()
-        return status == 403 and ("parallel" in reason or "minute" in reason)
-
-    @staticmethod
-    def _is_lockout(response: Any) -> bool:
-        """Detect Sharesight's 10-minute brute-force lockout 401."""
-        if not isinstance(response, dict):
-            return False
-        status = SharesightCoordinator._response_status(response)
-        reason = str(response.get("reason") or response.get("error") or "").lower()
-        return status == 401 and "locked out" in reason
-
-    def _register_lockout(self, duration: timedelta) -> None:
+    def _register_lockout(self, duration: timedelta, reason: str) -> None:
         """Suppress further API calls until ``duration`` from now."""
-        self._lockout_until = max(self._lockout_until, time.monotonic() + duration.total_seconds())
-        _LOGGER.warning(
-            "Sharesight API cooldown active — suppressing requests for %s",
+        deadline = time.monotonic() + duration.total_seconds()
+        if deadline <= self._lockout_until:
+            return
+        self._lockout_until = deadline
+        self._lockout_reason = reason
+        self._log_failure(
+            "lockout",
+            "Sharesight API cooldown active for %s: %s",
             duration,
+            reason,
         )
 
     def _in_lockout(self) -> bool:
         """Whether we are currently inside a global cooldown window."""
-        return time.monotonic() < self._lockout_until
+        if time.monotonic() < self._lockout_until:
+            return True
+        if self._lockout_reason is not None:
+            self._lockout_reason = None
+            self._log_recovery("lockout", "Sharesight API cooldown has expired")
+        return False
 
-    async def _call_endpoint(self, endpoint: list[Any], access_token: str) -> Any:
-        """Call one API endpoint with concurrency controls and a timeout."""
-        version, path, params, _ = endpoint
+    def _note_api_error(self, err: SharesightApiError) -> None:
+        """Apply the global back-pressure an API error calls for."""
+        if err.is_rate_limited:
+            duration = SHARESIGHT_RATE_LIMIT_COOLDOWN
+            if err.retry_after:
+                duration = max(duration, timedelta(seconds=float(err.retry_after)))
+            self._register_lockout(duration, err.detail)
+        elif err.is_lockout:
+            # Sharesight reuses the plain 401 body for a merely-expired token,
+            # so only escalate to the ten-minute lockout once the token has
+            # already been refreshed this poll - which it always has, since
+            # every request path refreshes first.
+            self._register_lockout(SHARESIGHT_LOCKOUT_COOLDOWN, err.detail)
 
-        try:
-            async with self._request_semaphore:
-                if self._is_heavy_endpoint(path):
-                    async with self._heavy_request_semaphore:
-                        async with asyncio.timeout(self._ENDPOINT_TIMEOUT):
-                            return await self.sharesight.get_api_request(
-                                [version, path, params, False], access_token
-                            )
-                async with asyncio.timeout(self._ENDPOINT_TIMEOUT):
-                    return await self.sharesight.get_api_request(
-                        [version, path, params, False], access_token
-                    )
-        except asyncio.TimeoutError:
-            _LOGGER.warning(
-                "Endpoint %s timed out after %ss", path, self._ENDPOINT_TIMEOUT
+    async def _call(self, endpoint: Endpoint, access_token: str) -> Any:
+        """One request with the concurrency controls and lockout guard applied."""
+        async with self._request_semaphore:
+            if endpoint.heavy or is_heavy_path(endpoint.path):
+                async with self._heavy_request_semaphore:
+                    return await self._guarded_dispatch(endpoint, access_token)
+            return await self._guarded_dispatch(endpoint, access_token)
+
+    async def _guarded_dispatch(self, endpoint: Endpoint, access_token: str) -> Any:
+        """Re-check shared cooldown/budget after queued semaphore waits."""
+        if self._in_lockout():
+            raise SharesightApiError(
+                endpoint,
+                reason=(
+                    f"suppressed by shared cooldown, {self.lockout_seconds_remaining}s remaining"
+                ),
+                transport=True,
             )
-            raise
-        except (aiohttp.ClientError, OSError) as err:
-            _LOGGER.warning(
-                "Endpoint %s connection error: %s: %s",
-                path,
-                type(err).__name__,
-                err,
+        self._reserve_request(endpoint)
+        return await self._dispatch(endpoint, access_token)
+
+    def _reserve_request(self, endpoint: Endpoint) -> None:
+        """Reserve one real HTTP call against the shared minute budget."""
+        if retry_after := self._request_gate.reserve():
+            reason = "shared Sharesight request safety budget exhausted"
+            self._register_lockout(timedelta(seconds=retry_after), reason)
+            raise SharesightApiError(
+                endpoint,
+                status=429,
+                code="local_budget",
+                reason=reason,
+                retry_after=retry_after,
             )
-            raise
 
-    async def async_get_value_history(self) -> Any:
-        """Fetch the inception-to-today portfolio value series.
+    @staticmethod
+    def _fallback_route_key(endpoint: Endpoint) -> str:
+        """Stable identity for a version fallback, independent of parameters."""
+        return f"{endpoint.version}/{endpoint.path}->{endpoint.fallback_version}"
 
-        Used by the long-term statistics backfill.  Reuses the coordinator's
-        token refresh + concurrency/timeout controls.  Returns the raw API
-        response (or an ``{"error": ...}`` dict on failure) — the caller must
-        tolerate a gated/absent endpoint.
-        """
-        token = await self._refresh_token_with_retries()
-        params: dict[str, Any] | None = None
-        inception = self._portfolio_detail.get("inception_date")
-        if inception:
-            params = {"start_date": inception}
-        endpoint = [
-            "v3",
-            f"portfolios/{self.portfolio_id}/portfolio_value_data.json",
-            params,
-            False,
-        ]
-        return await self._call_endpoint(endpoint, token)
+    @staticmethod
+    def _is_version_mismatch(error: SharesightApiError) -> bool:
+        """Whether Sharesight explicitly rejected the requested API version."""
+        reason = (error.reason or "").lower()
+        return error.status == 406 and "version" in reason and "not supported" in reason
 
-    async def async_generate_performance_report(
-        self,
-        start_date: str,
-        end_date: str,
-        grouping: str | None = None,
-        consolidated: bool | None = None,
-        include_sales: bool | None = None,
-    ) -> Any:
-        """Generate an on-demand performance report for an arbitrary window.
-
-        Modelled on ``async_get_value_history``: refresh the token then call
-        the V3 performance endpoint directly, bypassing the poll cadence.
-        Returns the raw API response (including an ``{"error": ...}`` dict on
-        an API-level failure) — the caller must tolerate a gated/absent
-        endpoint and never assume success.
-        """
-        token = await self._refresh_token_with_retries()
-        params: dict[str, Any] = {
-            "start_date": start_date,
-            "end_date": end_date,
-        }
-        if grouping:
-            params["grouping"] = grouping
-        if consolidated is not None:
-            params["consolidated"] = "true" if consolidated else "false"
-        if include_sales is not None:
-            params["include_sales"] = "true" if include_sales else "false"
-        endpoint = [
-            "v3",
-            f"portfolios/{self.portfolio_id}/performance",
-            params,
-            False,
-        ]
-        return await self._call_endpoint(endpoint, token)
-
-    async def async_get_sharechecker(self, instrument_id: Any) -> Any:
-        """One-shot V3 sharechecker fetch for an instrument (W3 fundamentals).
-
-        Modelled on ``async_get_value_history``: refresh the token then call
-        the V3 sharechecker endpoint directly, bypassing the poll cadence.
-        Returns the raw API response (including an ``{"error": ...}`` dict on an
-        API-level failure) — the caller must tolerate a gated/absent endpoint
-        (this endpoint is mobile-scoped and may 403) and never assume success.
-        """
-        token = await self._refresh_token_with_retries()
-        endpoint = ["v3", f"instruments/{instrument_id}/sharechecker", None, False]
-        return await self._call_endpoint(endpoint, token)
-
-    async def async_get_official_costs(self, holding_id: Any) -> dict[str, Any]:
-        """One-shot fetch of a holding's official cost figures (W3 fundamentals).
-
-        Issues the two light V3 per-holding calls — average purchase price and
-        cost base — in parallel, each tolerant of a 403/error, and returns
-        ``{"average_purchase_price": <resp>, "cost_base": <resp>}`` where each
-        value is the raw API response (or an ``{"error": ...}`` dict on
-        failure).  Never raises for an API-level error, so the caller can
-        surface whichever leg succeeded.
-        """
-        token = await self._refresh_token_with_retries()
-        app_endpoint = [
-            "v3",
-            f"holdings/{holding_id}/average_purchase_price.json",
-            None,
-            False,
-        ]
-        cost_endpoint = [
-            "v3",
-            f"holdings/{holding_id}/cost_base.json",
-            None,
-            False,
-        ]
-        app_result, cost_result = await asyncio.gather(
-            self._call_endpoint(app_endpoint, token),
-            self._call_endpoint(cost_endpoint, token),
-            return_exceptions=True,
+    @staticmethod
+    def _fallback_endpoint(endpoint: Endpoint) -> Endpoint:
+        """Equivalent endpoint using the configured fallback API version."""
+        return Endpoint(
+            str(endpoint.fallback_version),
+            endpoint.path,
+            endpoint.params,
+            endpoint.key,
+            heavy=endpoint.heavy,
+            refresh_every=endpoint.refresh_every,
         )
 
-        def _normalise(result: Any) -> Any:
-            if isinstance(result, Exception):
-                return {"error": str(result)}
-            return result
+    async def _dispatch(self, endpoint: Endpoint, access_token: str) -> Any:
+        fallback_key = self._fallback_route_key(endpoint)
+        if endpoint.fallback_version and fallback_key in self._fallback_routes:
+            endpoint = self._fallback_endpoint(endpoint)
 
-        return {
-            "average_purchase_price": _normalise(app_result),
-            "cost_base": _normalise(cost_result),
-        }
+        try:
+            result = await async_request(
+                self.sharesight, endpoint, access_token, self._ENDPOINT_TIMEOUT
+            )
+        except SharesightApiError as err:
+            self._request_gate.observe_headers(err.headers)
+            if (
+                endpoint.fallback_version
+                and self._is_version_mismatch(err)
+                and endpoint.fallback_version != endpoint.version
+            ):
+                fallback = self._fallback_endpoint(endpoint)
+                # The fallback is a second real HTTP call and must count
+                # against the same application-scoped minute budget.
+                self._reserve_request(fallback)
+                try:
+                    fallback_result = await async_request(
+                        self.sharesight,
+                        fallback,
+                        access_token,
+                        self._ENDPOINT_TIMEOUT,
+                    )
+                except SharesightApiError as fallback_err:
+                    self._request_gate.observe_headers(fallback_err.headers)
+                    self._note_api_error(fallback_err)
+                    raise
+                self._request_gate.observe_headers(fallback_result.headers)
+                self._fallback_routes.add(fallback_key)
+                return fallback_result.data
+            self._note_api_error(err)
+            raise
+        self._request_gate.observe_headers(result.headers)
+        return result.data
 
-    async def async_get_sso_link(self) -> Any:
-        """One-shot Single Sign-On login-link fetch (W4).
-
-        SECURITY: the ``login_url`` this returns grants a logged-in Sharesight
-        session and must be treated like a password.  This method therefore
-        NEVER logs the URL (or the response) at any level, and the caller must
-        not either.  Returns the raw API response (an ``{"error": ...}`` dict on
-        failure); this endpoint is documented rate-limit exempt.
-        """
-        token = await self._refresh_token_with_retries()
-        endpoint = ["v2", "single_sign_on.json", None, False]
-        return await self._call_endpoint(endpoint, token)
+    async def _gather(
+        self, endpoints: Iterable[Endpoint], access_token: str
+    ) -> list[tuple[Endpoint, Any]]:
+        """Run endpoints concurrently, pairing each with its result or error."""
+        endpoints = list(endpoints)
+        results = await asyncio.gather(
+            *(self._call(endpoint, access_token) for endpoint in endpoints),
+            return_exceptions=True,
+        )
+        return list(zip(endpoints, results, strict=True))
 
     # ------------------------------------------------------------------
     # Optional endpoint cooldown bookkeeping
     # ------------------------------------------------------------------
 
-    def _endpoint_on_cooldown(self, path: str) -> bool:
-        info = self._optional_endpoint_cooldowns.get(path)
-        if not info:
-            return False
-        return time.monotonic() < info["next_retry"]
+    def _endpoint_on_cooldown(self, key: str) -> bool:
+        info = self._optional_endpoint_cooldowns.get(key)
+        return bool(info) and time.monotonic() < info["next_retry"]
 
-    def _note_optional_failure(self, path: str) -> None:
-        """Schedule exponential backoff before retrying this optional endpoint."""
-        info = self._optional_endpoint_cooldowns.get(path)
-        if info is None:
-            backoff = OPTIONAL_ENDPOINT_COOLDOWN
-        else:
-            backoff = min(info["backoff"] * 2, OPTIONAL_ENDPOINT_MAX_BACKOFF)
-        self._optional_endpoint_cooldowns[path] = {
+    def _note_optional_failure(self, key: str, error: SharesightApiError | None = None) -> None:
+        """Apply capability-aware retry policy to one optional endpoint."""
+        if error is not None:
+            reason = (error.reason or "").lower()
+            if error.status == 404 or (
+                error.status == 406 and "version" in reason and "not supported" in reason
+            ):
+                self._unsupported_endpoints.add(key)
+                self._optional_endpoint_cooldowns.pop(key, None)
+                self._log_failure(
+                    f"unsupported:{key}",
+                    "Sharesight endpoint permanently disabled for this entry: %s",
+                    error.detail,
+                )
+                return
+            # Rate limits use the shared gate. Transport and server failures
+            # should recover on the normal next poll, not be hidden for an hour.
+            if error.is_rate_limited or error.transport or error.is_retryable:
+                return
+        info = self._optional_endpoint_cooldowns.get(key)
+        backoff = (
+            OPTIONAL_ENDPOINT_COOLDOWN
+            if info is None
+            else min(info["backoff"] * 2, OPTIONAL_ENDPOINT_MAX_BACKOFF)
+        )
+        self._optional_endpoint_cooldowns[key] = {
             "next_retry": time.monotonic() + backoff.total_seconds(),
             "backoff": backoff,
         }
 
-    def _note_optional_success(self, path: str) -> None:
-        self._optional_endpoint_cooldowns.pop(path, None)
+    def _note_optional_success(self, key: str) -> None:
+        self._optional_endpoint_cooldowns.pop(key, None)
+        self._unsupported_endpoints.discard(key)
 
     def _cash_tx_on_cooldown(self, account_id: int) -> bool:
         info = self._cash_tx_account_cooldowns.get(account_id)
-        if not info:
-            return False
-        return time.monotonic() < info["next_retry"]
+        return bool(info) and time.monotonic() < info["next_retry"]
 
     def _note_cash_tx_failure(self, account_id: int) -> None:
         info = self._cash_tx_account_cooldowns.get(account_id)
-        if info is None:
-            backoff = OPTIONAL_ENDPOINT_COOLDOWN
-        else:
-            backoff = min(info["backoff"] * 2, OPTIONAL_ENDPOINT_MAX_BACKOFF)
+        backoff = (
+            OPTIONAL_ENDPOINT_COOLDOWN
+            if info is None
+            else min(info["backoff"] * 2, OPTIONAL_ENDPOINT_MAX_BACKOFF)
+        )
         self._cash_tx_account_cooldowns[account_id] = {
             "next_retry": time.monotonic() + backoff.total_seconds(),
             "backoff": backoff,
@@ -533,6 +708,33 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
 
     def _note_cash_tx_success(self, account_id: int) -> None:
         self._cash_tx_account_cooldowns.pop(account_id, None)
+
+    # ------------------------------------------------------------------
+    # Carry-forward of parked optional payloads
+    # ------------------------------------------------------------------
+
+    def _remember(self, key: str, payload: Any) -> None:
+        self._carry_forward[key] = (payload, time.monotonic())
+
+    def _replay_missing(self, combined: dict[str, Any]) -> list[str]:
+        """Restore any remembered payload the poll did not produce.
+
+        Without this, every optional endpoint's key simply vanished from the
+        payload the moment it parked on its 1-6 hour backoff, dropping its
+        sensors to Unknown while the integration reported a perfectly healthy
+        update. Cached values older than ``MAX_CARRY_FORWARD_AGE`` are dropped
+        instead; stale optional data is worse than an honest unknown.
+        """
+        now = time.monotonic()
+        replayed: list[str] = []
+        for key, (payload, when) in list(self._carry_forward.items()):
+            if now - when > MAX_CARRY_FORWARD_AGE.total_seconds():
+                del self._carry_forward[key]
+                continue
+            if key not in combined:
+                combined[key] = payload
+                replayed.append(key)
+        return replayed
 
     # ------------------------------------------------------------------
     # Holdings hygiene
@@ -545,14 +747,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         Sharesight asks the performance report for open positions only, but a
         sale that doesn't net to exactly zero leaves the holding behind as a
         dust row (a quantity like -4e-05, no value, ``valid_position: false``).
-        Left in, that row keeps a sold holding's device looking live —
-        entities publish zeros forever, the device can't be deleted from the
-        UI, and a $0 holding skews the smallest-holding, holding-count and
-        label-allocation sensors.
-
-        Filtering here, before anything reads the payload, makes a sold-out
-        holding behave the same whether Sharesight drops it or leaves dust
-        behind: its entities stop updating and its device becomes prunable.
+        Left in, that row keeps a sold holding's device looking live.
         """
         open_holdings: list[dict[str, Any]] = []
         closed: list[str] = []
@@ -572,42 +767,933 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         return open_holdings
 
     # ------------------------------------------------------------------
-    # Activity diff (Feature 2)
+    # Endpoint plan
+    # ------------------------------------------------------------------
+
+    def _performance_params(self, **extra: Any) -> dict[str, Any]:
+        """Shared parameters for every performance report.
+
+        ``grouping=market`` is pinned rather than left to the server, which
+        otherwise falls back to the account's saved report preference - so the
+        per-market devices this integration builds would silently become
+        per-industry devices if the user changed a setting in the Sharesight
+        web app.
+        """
+        params: dict[str, Any] = {"grouping": "market"}
+        params.update(extra)
+        return params
+
+    def _required_endpoints(self, today: date) -> list[Endpoint]:
+        """Endpoints whose failure degrades the poll."""
+        pid = self.portfolio_id
+        week_start, week_end = week_to_date_bounds(today)
+        return [
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/performance",
+                self._performance_params(
+                    start_date=today.isoformat(),
+                    end_date=today.isoformat(),
+                    include_sales="true",
+                ),
+                "one-day",
+                heavy=True,
+                fallback_version="v2",
+            ),
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/performance",
+                self._performance_params(
+                    start_date=week_start, end_date=week_end, include_sales="true"
+                ),
+                "one-week",
+                heavy=True,
+                fallback_version="v2",
+            ),
+            Endpoint("v3", "portfolios", None, None),
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/performance",
+                self._performance_params(include_limited="true", report_combined="true"),
+                None,
+                heavy=True,
+            ),
+        ]
+
+    def _slow_endpoints(self, today: date) -> list[Endpoint]:
+        """Windows and series that move slowly enough to refresh hourly."""
+        pid = self.portfolio_id
+        month_start, month_end = trailing_window(today, 30)
+        year_start, year_end = year_to_date_bounds(today)
+        inception = self._portfolio_detail.get("inception_date")
+
+        endpoints = [
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/performance",
+                self._performance_params(
+                    start_date=self.start_financial_year,
+                    end_date=min(self.end_financial_year, today.isoformat()),
+                    include_sales="true",
+                ),
+                "financial-year",
+                heavy=True,
+                fallback_version="v2",
+            ),
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/performance",
+                self._performance_params(
+                    start_date=month_start, end_date=month_end, include_sales="true"
+                ),
+                "one-month",
+                heavy=True,
+                fallback_version="v2",
+            ),
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/performance",
+                self._performance_params(
+                    start_date=year_start, end_date=year_end, include_sales="true"
+                ),
+                "ytd",
+                heavy=True,
+                fallback_version="v2",
+            ),
+            # Lifetime performance INCLUDING fully-sold positions.  The V3
+            # combined report omits include_sales, so realised gains from
+            # exited holdings are missing from it.  This is the public-tier
+            # replacement for the internal-scoped /totals endpoint, which a
+            # standard API token generally cannot reach at all.
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/performance",
+                self._performance_params(
+                    include_sales="true",
+                    include_limited="true",
+                    start_date=inception or year_start,
+                    end_date=today.isoformat(),
+                ),
+                "all_time",
+                heavy=True,
+                fallback_version="v2",
+            ),
+            # Daily portfolio value series feeding the trend, drawdown and
+            # volatility sensors.  One point per day, so 5-minute resolution
+            # would be wasted; bounded to keep the payload small.
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/portfolio_value_data.json",
+                {"start_date": trailing_window(today, VALUE_TREND_LOOKBACK_DAYS)[0]},
+                "value_series",
+            ),
+        ]
+
+        if self.entry.options.get(
+            CONF_ENABLE_EXTENDED_PERFORMANCE, DEFAULT_ENABLE_EXTENDED_PERFORMANCE
+        ):
+            for key, months in _EXTENDED_MONTH_WINDOWS:
+                endpoints.append(
+                    Endpoint(
+                        "v3",
+                        f"portfolios/{pid}/performance",
+                        self._performance_params(
+                            start_date=months_ago(today, months),
+                            end_date=today.isoformat(),
+                            include_sales="true",
+                        ),
+                        key,
+                        heavy=True,
+                        fallback_version="v2",
+                    )
+                )
+            for key, years in _EXTENDED_YEAR_WINDOWS:
+                start = years_ago(today, years)
+                if inception and start < str(inception):
+                    start = str(inception)
+                endpoints.append(
+                    Endpoint(
+                        "v3",
+                        f"portfolios/{pid}/performance",
+                        self._performance_params(
+                            start_date=start,
+                            end_date=today.isoformat(),
+                            include_sales="true",
+                        ),
+                        key,
+                        heavy=True,
+                        fallback_version="v2",
+                    )
+                )
+        return endpoints
+
+    def _optional_endpoints(self, today: date) -> list[Endpoint]:
+        """Endpoints a given plan or token scope may not be entitled to."""
+        pid = self.portfolio_id
+        inception = self._portfolio_detail.get("inception_date")
+        endpoints = [
+            Endpoint("v2", f"portfolios/{pid}/payouts", None, "payouts", refresh_every=12),
+            # Announced-but-not-yet-paid dividends.  The default payouts call
+            # only covers inception -> today, so future payouts never appear
+            # in it; this forward window feeds the next-dividend sensors and
+            # the dividend calendar.
+            Endpoint(
+                "v2",
+                f"portfolios/{pid}/payouts",
+                {
+                    "start_date": today.isoformat(),
+                    "end_date": (today + timedelta(days=365)).isoformat(),
+                    "use_date": "ex_date",
+                },
+                "upcoming_payouts",
+                refresh_every=12,
+            ),
+            Endpoint("v2", f"portfolios/{pid}/trades", None, "trades"),
+            Endpoint("v2", "cash_accounts", None, "cash_accounts_v2", refresh_every=12),
+            Endpoint(
+                "v3", f"portfolios/{pid}/user_setting", None, "user_setting", refresh_every=12
+            ),
+            Endpoint("v2", "user_instruments", None, "user_instruments", refresh_every=12),
+            # Benchmark performance.  Only returns data when the user has set a
+            # benchmark on the portfolio, and only this endpoint carries the
+            # maximum-drawdown figures.  interest_method is matched to the
+            # portfolio's own setting so the benchmark's percentages are
+            # computed on the same basis as the portfolio's.
+            Endpoint(
+                "v3",
+                f"portfolios/{pid}/benchmark",
+                {
+                    "start_date": inception or year_to_date_bounds(today)[0],
+                    "end_date": today.isoformat(),
+                    "interest_method": self._portfolio_detail.get("interest_method") or "simple",
+                },
+                None,
+                heavy=True,
+                refresh_every=12,
+            ),
+            Endpoint("v2", "my_user.json", None, "my_user", refresh_every=12),
+            # The mobile watchlist route is retained because the supplied token
+            # successfully served it. Markets/news/FX are intentionally absent:
+            # the same live token proved their advertised versions are rejected
+            # with a permanent 406 on every retry.
+            Endpoint("v3", "watchlist.json", None, "watchlist", refresh_every=12),
+        ]
+
+        # Capital gains tax reports are only available for Australian
+        # portfolios (the API rejects them otherwise).
+        if str(self._portfolio_detail.get("country_code", "")).upper() == "AU":
+            endpoints.extend(
+                [
+                    Endpoint(
+                        "v2",
+                        f"portfolios/{pid}/capital_gains",
+                        {
+                            "start_date": self.start_financial_year,
+                            "end_date": min(self.end_financial_year, today.isoformat()),
+                        },
+                        "capital_gains",
+                        refresh_every=12,
+                    ),
+                    Endpoint(
+                        "v2",
+                        f"portfolios/{pid}/unrealised_cgt",
+                        {"balance_date": today.isoformat()},
+                        "unrealised_cgt",
+                        refresh_every=12,
+                    ),
+                ]
+            )
+        return endpoints
+
+    # ------------------------------------------------------------------
+    # One-time setup
+    # ------------------------------------------------------------------
+
+    async def _async_setup(self) -> None:
+        """Seed portfolio detail and financial-year bounds once at setup.
+
+        DataUpdateCoordinator calls this exactly once, inside
+        ``async_config_entry_first_refresh`` and before the first
+        ``_async_update_data``.  A transient failure raises ``UpdateFailed`` so
+        the base surfaces a retriable ``ConfigEntryNotReady``; a 404 (portfolio
+        deleted or access lost) raises ``ConfigEntryAuthFailed`` to trigger a
+        reconfigure.
+        """
+        access_token = await self._refresh_token_with_retries()
+        endpoint = Endpoint("v3", f"portfolios/{self.portfolio_id}", None, None)
+        try:
+            local_data = await self._call(endpoint, access_token)
+        except SharesightApiError as err:
+            if err.is_not_found:
+                raise ConfigEntryError(
+                    f"Sharesight portfolio {self.portfolio_id} is no longer "
+                    "accessible. Add the replacement portfolio as a new entry."
+                ) from err
+            if err.is_unauthorised and not err.is_lockout:
+                raise ConfigEntryAuthFailed(
+                    f"Sharesight rejected the access token: {err.detail}"
+                ) from err
+            raise UpdateFailed(f"Sharesight startup fetch failed: {err.detail}") from err
+
+        if not isinstance(local_data, dict):
+            raise UpdateFailed(
+                f"Sharesight startup fetch returned {type(local_data).__name__}, expected an object"
+            )
+
+        detail = local_data.get("portfolio")
+        self._portfolio_detail = detail if isinstance(detail, dict) else {}
+        self.current_date = self._portfolio_today()
+        self.start_financial_year, self.end_financial_year = get_financial_year_dates(
+            self._portfolio_detail.get("financial_year_end"), self.current_date
+        )
+        _LOGGER.debug(
+            "Sharesight portfolio %s: currency=%s country=%s financial year %s..%s",
+            self.portfolio_id,
+            self._portfolio_detail.get("currency_code"),
+            self._portfolio_detail.get("country_code"),
+            self.start_financial_year,
+            self.end_financial_year,
+        )
+
+    # ------------------------------------------------------------------
+    # Main update loop
+    # ------------------------------------------------------------------
+
+    def _degrade(self, reason: str) -> dict[str, Any]:
+        """Serve the previous payload, or give up once it is too stale.
+
+        Returning stale data indefinitely is what let the integration look
+        healthy through a multi-hour outage.  Past the staleness limit this
+        raises so ``last_update_success`` finally flips and every entity goes
+        unavailable.
+        """
+        limit = self._stale_data_limit()
+        age = self.data_age
+        if self.data and (age is None or age <= limit):
+            self._degraded_polls += 1
+            self.degraded_reason = reason
+            self._log_failure(
+                "degraded",
+                "Sharesight poll degraded (%s); serving data fetched %s ago (giving up after %s)",
+                reason,
+                age or timedelta(0),
+                limit,
+            )
+            return self.data
+        raise UpdateFailed(reason)
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch the latest data from Sharesight."""
+        if self._in_lockout():
+            return self._degrade(
+                f"API cooldown active, {self.lockout_seconds_remaining}s remaining"
+            )
+
+        try:
+            access_token = await self._refresh_token_with_retries()
+        except ConfigEntryAuthFailed:
+            raise
+        except (
+            aiohttp.ClientError,
+            OSError,
+            TimeoutError,
+            HomeAssistantError,
+        ) as token_error:
+            return self._degrade(f"token refresh failed: {token_error}")
+
+        today = self._portfolio_today()
+        self.current_date = today
+        new_fy_bounds = get_financial_year_dates(
+            self._portfolio_detail.get("financial_year_end"), today
+        )
+        if new_fy_bounds != (self.start_financial_year, self.end_financial_year):
+            self.start_financial_year, self.end_financial_year = new_fy_bounds
+
+        combined: dict[str, Any] = {}
+        failures: list[str] = []
+        critical_failed = False
+        auth_failure: SharesightApiError | None = None
+
+        # --- Required tier --------------------------------------------
+        required = self._required_endpoints(today)
+        _LOGGER.debug("Requesting %s required Sharesight endpoints", len(required))
+        for endpoint, result in await self._gather(required, access_token):
+            is_critical = endpoint.key is None
+            if isinstance(result, SharesightApiError):
+                failures.append(result.detail)
+                if result.is_not_found and is_critical:
+                    raise ConfigEntryError(
+                        f"Sharesight portfolio {self.portfolio_id} is no longer "
+                        "accessible. Add the replacement portfolio as a new entry."
+                    )
+                if result.is_unauthorised and not result.is_lockout:
+                    auth_failure = result
+                self._log_failure(
+                    f"required:{endpoint.cooldown_key}",
+                    "Sharesight request failed: %s",
+                    result.detail,
+                )
+                critical_failed = critical_failed or is_critical
+                continue
+            if isinstance(result, BaseException):
+                failures.append(f"endpoint={endpoint}, error={result}")
+                critical_failed = critical_failed or is_critical
+                continue
+            self._log_recovery(
+                f"required:{endpoint.cooldown_key}",
+                "Sharesight endpoint %s recovered",
+                endpoint,
+            )
+            self._merge(combined, endpoint, result)
+
+        if auth_failure is not None:
+            raise ConfigEntryAuthFailed(
+                "Sharesight returned an authentication error "
+                f"({auth_failure.detail}) - re-authentication required"
+            )
+
+        if critical_failed:
+            return self._degrade(
+                f"{len(failures)} required endpoint(s) failed: {'; '.join(failures[:3])}"
+            )
+        if failures:
+            _LOGGER.debug(
+                "Sharesight poll continued with %s non-critical failure(s): %s",
+                len(failures),
+                "; ".join(failures[:3]),
+            )
+
+        # --- Slow tier -------------------------------------------------
+        current_fy_bounds = (self.start_financial_year, self.end_financial_year)
+        slow_endpoints = self._slow_endpoints(today)
+        refresh_slow = (
+            self._poll_count % SLOW_PERIOD_REFRESH_EVERY == 0
+            or self._slow_window_fy_bounds != current_fy_bounds
+        )
+        if refresh_slow:
+            self._slow_window_fy_bounds = current_fy_bounds
+            for endpoint, result in await self._gather(slow_endpoints, access_token):
+                if isinstance(result, BaseException):
+                    detail = (
+                        result.detail
+                        if isinstance(result, SharesightApiError)
+                        else f"endpoint={endpoint}, error={result}"
+                    )
+                    self._log_failure(
+                        f"slow:{endpoint.cooldown_key}",
+                        "Sharesight slow-tier request failed: %s",
+                        detail,
+                    )
+                    continue
+                self._log_recovery(
+                    f"slow:{endpoint.cooldown_key}",
+                    "Sharesight endpoint %s recovered",
+                    endpoint,
+                )
+                self._merge(combined, endpoint, result)
+
+        # --- Optional tier ---------------------------------------------
+        optional = self._optional_endpoints(today)
+        active = [
+            endpoint
+            for endpoint in optional
+            if endpoint.cooldown_key not in self._unsupported_endpoints
+            and not self._endpoint_on_cooldown(endpoint.cooldown_key)
+            and self._poll_count % max(1, endpoint.refresh_every) == 0
+        ]
+        parked = len(optional) - len(active)
+        _LOGGER.debug(
+            "Requesting %s optional Sharesight endpoints (%s parked)",
+            len(active),
+            parked,
+        )
+        for endpoint, result in await self._gather(active, access_token):
+            if isinstance(result, BaseException):
+                detail = (
+                    result.detail
+                    if isinstance(result, SharesightApiError)
+                    else f"endpoint={endpoint}, error={result}"
+                )
+                _LOGGER.debug("Optional Sharesight endpoint parked: %s (retrying later)", detail)
+                self._note_optional_failure(
+                    endpoint.cooldown_key,
+                    result if isinstance(result, SharesightApiError) else None,
+                )
+                continue
+            self._note_optional_success(endpoint.cooldown_key)
+            self._merge(combined, endpoint, result)
+
+        # --- Per-account cash transactions (optional) ------------------
+        await self._fetch_cash_transactions(combined, access_token)
+
+        # --- Replay anything the poll could not fetch ------------------
+        replayed = self._replay_missing(combined)
+        if replayed:
+            _LOGGER.debug(
+                "Serving carried-forward Sharesight data for: %s",
+                ", ".join(sorted(replayed)),
+            )
+
+        # --- Derive everything else ------------------------------------
+        try:
+            self._post_process(combined, today)
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            IndexError,
+            ZeroDivisionError,
+        ) as err:
+            _LOGGER.exception("Sharesight post-processing failed: %s", err)
+            return self._degrade(f"post-processing failed: {err}")
+
+        self._poll_count += 1
+        self.data = combined
+        self.data_timestamp = dt_util.utcnow()
+        if self._degraded_polls:
+            _LOGGER.info("Sharesight data is fresh again")
+        self._degraded_polls = 0
+        self.degraded_reason = None
+        self._logged_failures.pop("degraded", None)
+        return self.data
+
+    def _merge(self, combined: dict[str, Any], endpoint: Endpoint, response: Any) -> None:
+        """File a successful response under its key and remember it."""
+        payload = response
+        if (
+            endpoint.key
+            and endpoint.path.endswith("/performance")
+            and isinstance(payload, dict)
+            and isinstance(payload.get("report"), dict)
+        ):
+            # Public V3 performance wraps every window in {"report": {...}};
+            # sensors consume the keyed report itself.
+            payload = payload["report"]
+        if endpoint.key == "value_series" and isinstance(payload, list):
+            # The value-data series can answer with a bare top-level array.
+            payload = {"data": payload}
+        if endpoint.key:
+            merge_dicts(combined, {endpoint.key: payload})
+            self._remember(endpoint.key, payload)
+        elif isinstance(payload, dict):
+            merge_dicts(combined, payload)
+            # Un-keyed V3 responses namespace themselves; remember the parts
+            # that carry real data so they can be carried forward too.
+            for name in ("report", "portfolios", "benchmark"):
+                if name in payload:
+                    self._remember(name, payload[name])
+
+    async def _fetch_cash_transactions(self, combined: dict[str, Any], access_token: str) -> None:
+        """Fetch each cash account's transactions, tolerating a parked account.
+
+        Each account has its own snapshot, so one failed account retains its
+        rows while the others continue updating. Writing an empty list merely
+        because an endpoint is parked would publish $0 contributions and a
+        bogus net-investment gain, so no aggregate is emitted until at least
+        one account has supplied a valid list.
+        """
+        if not hasattr(self, "_cash_transactions_by_account"):
+            # Compatibility for unit tests and a coordinator instance restored
+            # across a hot reload while this release is being developed.
+            self._cash_transactions_by_account = {}
+
+        cash_accounts_fresh = "cash_accounts_v2" in combined
+        cash_accounts_data = combined.get("cash_accounts_v2") or self.data.get("cash_accounts_v2")
+        accounts = (
+            cash_accounts_data.get("cash_accounts") or []
+            if isinstance(cash_accounts_data, dict)
+            else []
+        )
+
+        work: list[tuple[int, Endpoint]] = []
+        active_account_ids: set[int] = set()
+        for account in accounts:
+            if not isinstance(account, dict):
+                continue
+            raw_account_id = account.get("id")
+            if raw_account_id is None or str(account.get("portfolio_id")) != str(self.portfolio_id):
+                continue
+            try:
+                account_id = int(raw_account_id)
+            except (TypeError, ValueError):
+                continue
+            active_account_ids.add(account_id)
+            if self._cash_tx_on_cooldown(account_id):
+                continue
+            work.append(
+                (
+                    account_id,
+                    Endpoint(
+                        "v2",
+                        f"cash_accounts/{account_id}/cash_account_transactions",
+                        None,
+                        None,
+                    ),
+                )
+            )
+
+        if cash_accounts_fresh:
+            for account_id in set(self._cash_transactions_by_account) - active_account_ids:
+                del self._cash_transactions_by_account[account_id]
+
+        if not work:
+            if self._cash_transactions_by_account and active_account_ids <= set(
+                self._cash_transactions_by_account
+            ):
+                transactions = [
+                    row
+                    for account_id in sorted(self._cash_transactions_by_account)
+                    for row in self._cash_transactions_by_account[account_id]
+                ]
+                payload = {"cash_account_transactions": transactions}
+                combined["cash_account_transactions"] = payload
+                self._remember("cash_account_transactions", payload)
+            elif "cash_account_transactions" not in combined:
+                cached = self.data.get("cash_account_transactions")
+                if cached is not None:
+                    combined["cash_account_transactions"] = cached
+            return
+
+        results = await asyncio.gather(
+            *(self._call(endpoint, access_token) for _, endpoint in work),
+            return_exceptions=True,
+        )
+        for (account_id, endpoint), result in zip(work, results, strict=True):
+            if isinstance(result, BaseException):
+                detail = (
+                    result.detail
+                    if isinstance(result, SharesightApiError)
+                    else f"endpoint={endpoint}, error={result}"
+                )
+                _LOGGER.debug("Cash-account transactions unavailable: %s", detail)
+                self._note_cash_tx_failure(account_id)
+                continue
+            rows = result.get("cash_account_transactions") if isinstance(result, dict) else None
+            if not isinstance(rows, list):
+                _LOGGER.debug(
+                    "Cash-account transactions returned an invalid payload: endpoint=%s",
+                    endpoint,
+                )
+                self._note_cash_tx_failure(account_id)
+                continue
+            self._note_cash_tx_success(account_id)
+            self._cash_transactions_by_account[account_id] = [
+                row for row in rows if isinstance(row, dict)
+            ]
+
+        complete_snapshot = active_account_ids <= set(self._cash_transactions_by_account)
+        if self._cash_transactions_by_account and complete_snapshot:
+            transactions = [
+                row
+                for account_id in sorted(self._cash_transactions_by_account)
+                for row in self._cash_transactions_by_account[account_id]
+            ]
+            payload = {"cash_account_transactions": transactions}
+            combined["cash_account_transactions"] = payload
+            self._remember("cash_account_transactions", payload)
+        elif "cash_account_transactions" not in combined:
+            cached = self.data.get("cash_account_transactions")
+            if cached is not None:
+                combined["cash_account_transactions"] = cached
+
+    # ------------------------------------------------------------------
+    # Post-processing
+    # ------------------------------------------------------------------
+
+    def _post_process(self, combined: dict[str, Any], today: date) -> None:
+        """Normalise the merged payload and derive everything computable."""
+        if self._portfolio_detail:
+            combined["portfolio_detail"] = self._portfolio_detail
+
+        report = combined.get("report")
+        if not isinstance(report, dict):
+            report = {}
+
+        raw_report_holdings = report.get("holdings")
+        holdings_field_valid = isinstance(raw_report_holdings, list)
+        report_holdings = self._open_positions(raw_report_holdings) if holdings_field_valid else []
+        if holdings_field_valid:
+            report["holdings"] = report_holdings
+
+        self._dedupe_named(report, "sub_totals", "group_name")
+        self._dedupe_named(report, "cash_accounts", "name")
+
+        # The report's holdings list is richer than the standalone /holdings
+        # endpoint's (which carries no quantity or value at all), so it is the
+        # only source used. A present empty list is authoritative (the final
+        # holding was sold); only a missing/malformed field retains old data.
+        if holdings_field_valid:
+            combined["holdings"] = {
+                "holdings": report_holdings,
+                "value": report.get("value", 0),
+            }
+        elif "holdings" in self.data:
+            combined["holdings"] = self.data["holdings"]
+        else:
+            combined["holdings"] = {"holdings": [], "value": 0}
+
+        holdings_list = combined["holdings"].get("holdings") or []
+        held_symbols = {
+            symbol for holding in holdings_list if (symbol := analytics.holding_symbol(holding))
+        }
+
+        # --- Income ----------------------------------------------------
+        payouts_data = combined.get("payouts")
+        payouts = payouts_data.get("payouts") or [] if isinstance(payouts_data, dict) else []
+        payouts = [
+            payout
+            for payout in payouts
+            if isinstance(payout, dict)
+            and str(payout.get("state") or payout.get("status") or "").lower() != "rejected"
+        ]
+
+        income_report: dict[str, Any] = {
+            "payouts": payouts,
+            "payouts_available": isinstance(payouts_data, dict),
+        }
+        if payouts:
+            # Amounts are converted with each payout's own exchange rate, so a
+            # portfolio holding both AUD and USD payers totals in one currency.
+            income_report["total_income"] = round(
+                sum(
+                    analytics.to_portfolio_currency(payout, payout.get("amount")) or 0.0
+                    for payout in payouts
+                ),
+                2,
+            )
+        else:
+            income_report["payout_gain"] = report.get("payout_gain")
+
+        upcoming_data = combined.get("upcoming_payouts")
+        upcoming = upcoming_data.get("payouts") or [] if isinstance(upcoming_data, dict) else []
+        income_report["upcoming_payouts"] = [
+            payout
+            for payout in upcoming
+            if isinstance(payout, dict)
+            and str(payout.get("state") or payout.get("status") or "").lower() != "rejected"
+        ]
+        income_report["upcoming_payouts_available"] = isinstance(upcoming_data, dict)
+        combined["income_report"] = income_report
+
+        # --- Diversity -------------------------------------------------
+        combined["diversity"] = self._build_diversity(combined, report)
+
+        if not isinstance(combined.get("trades"), dict):
+            combined["trades"] = self.data.get("trades") or {"trades": []}
+
+        # --- Activity events (no extra API calls) ----------------------
+        try:
+            self._build_activity_events(
+                combined,
+                today,
+                holdings_snapshot_valid=holdings_field_valid,
+            )
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError) as err:
+            _LOGGER.debug("Sharesight activity diff failed: %s", err)
+
+        # --- Derived analytics (no extra API calls) --------------------
+        instrument_lookup = analytics.build_instrument_lookup(
+            combined.get("user_instruments") or {}
+        )
+        combined["instrument_lookup"] = instrument_lookup
+
+        # Resolve against the payload being built, not ``self.data`` from the
+        # previous poll. Report-currency changes then affect every derivation
+        # and entity unit in the same update.
+        currency = self._portfolio_currency_for(combined)
+        combined["holding_income"] = analytics.build_holding_income(payouts, holdings_list, today)
+        combined["holding_trades"] = analytics.build_holding_trades(
+            (combined.get("trades") or {}).get("trades") or [],
+            holdings_list,
+            currency,
+        )
+        combined["sector_allocation"] = analytics.build_sector_allocation(
+            holdings_list, instrument_lookup, axis="sector"
+        )
+        combined["industry_allocation"] = analytics.build_sector_allocation(
+            holdings_list, instrument_lookup, axis="industry"
+        )
+        combined["type_allocation"] = analytics.build_sector_allocation(
+            holdings_list, instrument_lookup, axis="instrument_type"
+        )
+        combined["currency_allocation"] = analytics.build_currency_allocation(
+            holdings_list, currency
+        )
+        combined["portfolio_analytics"] = analytics.build_portfolio_analytics(
+            holdings_list,
+            instrument_lookup,
+            report,
+            today,
+            combined.get("holding_income"),
+            currency,
+        )
+        if "value_series" in combined:
+            combined["value_trend"] = analytics.build_value_trend(combined["value_series"])
+            combined["value_analytics"] = analytics.build_value_analytics(combined["value_series"])
+        combined["label_allocation"] = analytics.build_label_allocation(holdings_list)
+        combined["cgt_analytics"] = analytics.build_cgt_analytics(
+            combined.get("capital_gains"), combined.get("unrealised_cgt")
+        )
+
+        forecast = analytics.build_income_forecast(
+            income_report.get("upcoming_payouts"),
+            combined.get("holding_income") or {},
+            report.get("value"),
+            today,
+            held_symbols,
+        )
+        for key, value in forecast.items():
+            income_report.setdefault(key, value)
+
+        # --- Financial-year rollover -----------------------------------
+        own = self._own_portfolio_entry(combined.get("portfolios"))
+        if own:
+            # Keep the cached detail current so country/inception/currency
+            # follow a change made in the Sharesight web app.
+            for field in (
+                "financial_year_end",
+                "country_code",
+                "currency_code",
+                "inception_date",
+                "interest_method",
+                "tz_name",
+            ):
+                if own.get(field) is not None:
+                    self._portfolio_detail[field] = own[field]
+            start, end = get_financial_year_dates(own.get("financial_year_end"), today)
+            if (start, end) != (self.start_financial_year, self.end_financial_year):
+                _LOGGER.info(
+                    "Sharesight financial year for portfolio %s is now %s..%s",
+                    self.portfolio_id,
+                    start,
+                    end,
+                )
+                self.start_financial_year, self.end_financial_year = start, end
+
+    @staticmethod
+    def _dedupe_named(report: dict[str, Any], field: str, name_key: str) -> None:
+        """Drop duplicate rows from a report list, keeping the first of each."""
+        rows = report.get(field)
+        if not isinstance(rows, list) or not rows:
+            return
+        seen: set[Any] = set()
+        deduped: list[Any] = []
+        for row in rows:
+            name = row.get(name_key) if isinstance(row, dict) else None
+            if name in seen:
+                continue
+            seen.add(name)
+            deduped.append(row)
+        if len(deduped) < len(rows):
+            report[field] = deduped
+
+    def _build_diversity(self, combined: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+        """Build the market ranking from the market-grouped performance report.
+
+        The V2 diversity endpoint defaults to industry classification. Polling
+        it and labelling the result "Top Market" was both wrong and one extra
+        heavy API call. ``_performance_params`` pins the combined report to
+        ``grouping=market``, making its subtotals the authoritative source.
+        A present empty list is authoritative (the portfolio has no market
+        positions); only a missing/malformed field retains the prior result.
+        """
+        breakdown: list[dict[str, Any]] = []
+        sub_totals = report.get("sub_totals")
+        if isinstance(sub_totals, list):
+            total_value = analytics._f(report.get("value")) or 0.0
+            for sub_total in sub_totals:
+                if not isinstance(sub_total, dict):
+                    continue
+                value = analytics._f(sub_total.get("value")) or 0.0
+                breakdown.append(
+                    {
+                        "group_name": sub_total.get("group_name", ""),
+                        "percentage": round(value / total_value * 100, 2) if total_value else 0,
+                        "value": value,
+                    }
+                )
+            return {"breakdown": breakdown}
+        previous = self.data.get("diversity")
+        if isinstance(previous, dict) and previous.get("breakdown"):
+            return previous
+        return {"breakdown": []}
+
+    # ------------------------------------------------------------------
+    # Activity diff
     # ------------------------------------------------------------------
 
     @staticmethod
     def _activity_key(record: dict[str, Any], *fallback_fields: str) -> Any:
-        """Stable key for an activity record: the record id when present,
-        else a synthetic tuple over the given fields."""
+        """Stable key for an activity record.
+
+        The record id when present, else a synthetic tuple over the given
+        fields.  Announced payouts carry a null id until they are confirmed,
+        so the fallback fields have to be ones that really exist on the
+        payload - which is why the ex-date is read through
+        ``analytics.payout_ex_date`` rather than a literal ``ex_date`` key
+        that no live payout has ever had.
+        """
         record_id = record.get("id")
         if record_id is not None:
             return f"id:{record_id}"
         return tuple(str(record.get(field)) for field in fallback_fields)
 
+    @staticmethod
+    def _upcoming_key(payout: dict[str, Any]) -> Any:
+        """De-duplication key for an announced (id-less) payout."""
+        payout_id = payout.get("id")
+        if payout_id is not None:
+            return f"id:{payout_id}"
+        return (
+            str(payout.get("symbol")),
+            str(analytics.payout_ex_date(payout)),
+            str(payout.get("amount")),
+        )
+
+    @staticmethod
+    def _cash_transaction_type(txn: dict[str, Any]) -> str | None:
+        """The transaction type name, from wherever Sharesight put it.
+
+        The live payload nests it as ``cash_account_transaction_type.name``;
+        the flat ``trade_type`` / ``type`` keys the diff used to read do not
+        exist, so every emitted cash event carried ``type: None``.
+        """
+        type_obj = txn.get("cash_account_transaction_type")
+        if isinstance(type_obj, dict) and type_obj.get("name"):
+            return str(type_obj["name"])
+        for field in ("type_name", "trade_type", "type"):
+            if txn.get(field):
+                return str(txn[field])
+        return None
+
     def _build_activity_events(
-        self, combined_dict: dict[str, Any], today: date
+        self,
+        combined_dict: dict[str, Any],
+        today: date,
+        *,
+        holdings_snapshot_valid: bool,
     ) -> None:
         """Diff this poll's records against the last poll and stage HA events.
 
-        Maintains per-record-type "seen" sets so only genuinely new
-        trades/payouts/holdings/cash transactions fire.  The first successful
-        poll seeds the baselines silently (no fire); every later poll writes
-        ``combined_dict["activity_events"]`` as ``{event_type: [compact attr
-        dicts]}`` for the event platform to emit.  Each list is capped so a
-        large first-poll backlog can never balloon the event payload.
+        The first successful poll seeds the baselines silently; every later
+        poll writes ``activity_events`` as ``{event_type: [compact dicts]}``
+        for the event platform to emit.  Each list is capped, and only the
+        records actually emitted are marked as seen - marking the whole batch
+        (as this used to) silently discarded everything past the cap forever.
         """
         holdings_list = (combined_dict.get("holdings") or {}).get("holdings") or []
         income_report = combined_dict.get("income_report") or {}
         payouts = income_report.get("payouts") or []
         upcoming = income_report.get("upcoming_payouts") or []
         trades = (combined_dict.get("trades") or {}).get("trades") or []
-        cash_txns = (
-            combined_dict.get("cash_account_transactions") or {}
-        ).get("cash_account_transactions") or []
+        cash_txns = (combined_dict.get("cash_account_transactions") or {}).get(
+            "cash_account_transactions"
+        ) or []
+        portfolio_currency = self._portfolio_currency_for(combined_dict)
 
-        # holding_id -> symbol so payout/trade compact dicts can show a symbol
-        # even when the record only carries a holding_id.
         id_to_symbol: dict[str, str] = {}
+        holding_id_to_currency: dict[str, str] = {}
         symbol_to_value: dict[str, Any] = {}
         current_symbols: set[str] = set()
         for holding in holdings_list:
@@ -621,182 +1707,226 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             holding_id = holding.get("id")
             if holding_id is not None:
                 id_to_symbol[str(holding_id)] = symbol
+                if currency := analytics.holding_currency(holding):
+                    holding_id_to_currency[str(holding_id)] = currency
 
-        def _payout_symbol(record: dict[str, Any]) -> str | None:
-            symbol = record.get("symbol")
-            if symbol:
-                return symbol
+        cash_currency_by_id: dict[str, str] = {}
+        cash_accounts = combined_dict.get("cash_accounts_v2")
+        if isinstance(cash_accounts, dict):
+            for account in cash_accounts.get("cash_accounts") or []:
+                if not isinstance(account, dict) or account.get("id") is None:
+                    continue
+                if currency := analytics.record_currency_code(account):
+                    cash_currency_by_id[str(account["id"])] = currency
+
+        def _symbol_of(record: dict[str, Any]) -> str | None:
+            if symbol := record.get("symbol"):
+                return str(symbol)
             holding_id = record.get("holding_id")
             if holding_id is not None:
                 return id_to_symbol.get(str(holding_id))
             return None
 
-        # The one-day report's date drives the daily_close signal; fall back
-        # to today when the report doesn't expose a usable date field.
         one_day = combined_dict.get("one-day") or {}
         daily_close_date = None
         if isinstance(one_day, dict):
             daily_close_date = (
-                one_day.get("end_date")
-                or one_day.get("date")
-                or one_day.get("as_at")
+                one_day.get("end_date") or one_day.get("date") or one_day.get("as_at")
             )
-        daily_close_date = (
-            str(daily_close_date)[:10] if daily_close_date else today.isoformat()
-        )
+        daily_close_date = str(daily_close_date)[:10] if daily_close_date else today.isoformat()
 
-        # News (W2).  The instrument_news key is only present on polls where the
-        # optional endpoint actually returned data; its absence (parked/backed
-        # off) must leave the news seed set untouched.  Presence is the signal
-        # that drives per-family seed-on-first-sight below.
-        news_container = combined_dict.get("instrument_news")
-        news_present = isinstance(news_container, dict)
-        news_items: list[dict[str, Any]] = []
-        if news_present:
-            raw_news = news_container.get("instrument_news")
-            if isinstance(raw_news, list):
-                news_items = [item for item in raw_news if isinstance(item, dict)]
+        def _trade_key(trade: dict[str, Any]) -> Any:
+            return self._activity_key(trade, "symbol", "transaction_date", "quantity")
 
-        def _news_key(article: dict[str, Any]) -> Any:
-            return self._activity_key(article, "instrument_id", "published_at", "title")
+        def _payout_key(payout: dict[str, Any]) -> Any:
+            return self._activity_key(payout, "symbol", "paid_on", "amount")
 
-        # Seed silently on the first successful poll — no events fire.
+        def _cash_key(txn: dict[str, Any]) -> Any:
+            return self._activity_key(txn, "date_time", "amount", "description")
+
+        def _trade_event(trade: dict[str, Any]) -> dict[str, Any]:
+            holding_id = trade.get("holding_id")
+            price_currency = trade.get("price_currency_code")
+            if not price_currency and holding_id is not None:
+                price_currency = holding_id_to_currency.get(str(holding_id))
+            return {
+                "symbol": _symbol_of(trade),
+                "market": trade.get("market"),
+                "type": trade.get("transaction_type"),
+                "quantity": trade.get("quantity"),
+                "price": trade.get("price"),
+                "price_currency": price_currency,
+                # Sharesight documents trades[].value in portfolio currency.
+                "value": trade.get("value"),
+                "value_currency": portfolio_currency,
+                "currency": portfolio_currency,
+                "date": trade.get("transaction_date") or trade.get("date"),
+            }
+
+        def _payout_event(payout: dict[str, Any], *, announced: bool) -> dict[str, Any]:
+            details = analytics.monetary_amount_details(
+                payout,
+                payout.get("amount") or payout.get("gross_amount"),
+                portfolio_currency,
+            )
+            payload: dict[str, Any] = {
+                "symbol": _symbol_of(payout),
+                **details,
+            }
+            if announced:
+                payload.update(
+                    {
+                        "ex_date": analytics.payout_ex_date(payout),
+                        "pay_date": analytics.payout_pay_date(payout),
+                        "date": analytics.payout_ex_date(payout)
+                        or analytics.payout_pay_date(payout),
+                        "reinvested": bool(
+                            (payout.get("drp_trade_attributes") or {}).get("dividend_reinvested")
+                        ),
+                    }
+                )
+            else:
+                payload.update(
+                    {
+                        "date": analytics.payout_pay_date(payout),
+                        "franking_credits": payout.get("franking_credits"),
+                        "franking_credits_currency": portfolio_currency,
+                    }
+                )
+            return payload
+
+        def _cash_event(txn: dict[str, Any]) -> dict[str, Any]:
+            account_id = txn.get("cash_account_id")
+            native_currency = analytics.record_currency_code(txn)
+            if not native_currency and account_id is not None:
+                native_currency = cash_currency_by_id.get(str(account_id))
+            native_amount = analytics._f(txn.get("amount"))
+            native_balance = analytics._f(txn.get("balance"))
+            same_currency = (
+                native_currency is not None
+                and native_currency.upper() == portfolio_currency.upper()
+            )
+            return {
+                # There is no historical FX rate on a cash transaction. Only
+                # expose a portfolio amount when its account already uses the
+                # portfolio currency; otherwise fail closed and retain native.
+                "amount": native_amount if same_currency else None,
+                "currency": portfolio_currency,
+                "native_amount": native_amount,
+                "native_currency": native_currency,
+                "date": txn.get("date_time") or txn.get("date"),
+                "description": txn.get("description"),
+                "type": self._cash_transaction_type(txn),
+                "balance": native_balance if same_currency else None,
+                "balance_currency": portfolio_currency,
+                "native_balance": native_balance,
+            }
+
         if not self._activity_seeded:
-            for trade in trades:
-                if isinstance(trade, dict):
-                    self._seen_trade_ids.add(
-                        self._activity_key(trade, "symbol", "transaction_date", "quantity")
-                    )
-            for payout in payouts:
-                if isinstance(payout, dict):
-                    self._seen_payout_ids.add(
-                        self._activity_key(payout, "symbol", "paid_on", "amount")
-                    )
-            for payout in upcoming:
-                if isinstance(payout, dict):
-                    self._seen_upcoming_ids.add(
-                        self._activity_key(payout, "symbol", "ex_date", "amount")
-                    )
-            for txn in cash_txns:
-                if isinstance(txn, dict):
-                    self._seen_cash_tx_ids.add(
-                        self._activity_key(txn, "date_time", "amount", "description")
-                    )
-            self._seen_holding_symbols = set(current_symbols)
+            self._seen_trade_ids.update(_trade_key(t) for t in trades if isinstance(t, dict))
+            self._seen_payout_ids.update(_payout_key(p) for p in payouts if isinstance(p, dict))
+            self._seen_upcoming_ids.update(
+                self._upcoming_key(p) for p in upcoming if isinstance(p, dict)
+            )
+            self._seen_cash_tx_ids.update(_cash_key(t) for t in cash_txns if isinstance(t, dict))
+            if holdings_snapshot_valid:
+                self._seen_holding_symbols = set(current_symbols)
+                self._holdings_snapshot_seeded = True
             self._seen_daily_close_date = daily_close_date
-            # Seed news too, but only if the endpoint was reachable this poll;
-            # otherwise leave _news_seeded False so its own first-sight seed
-            # (below) fires whenever the key later appears mid-life.
-            if news_present:
-                for article in news_items:
-                    self._seen_news_ids.add(_news_key(article))
-                self._news_seeded = True
             self._activity_seeded = True
+            # Stage an empty batch rather than leaving the key absent, so the
+            # sequence number is monotonic from the very first poll and
+            # consumers never have to distinguish "no events" from "the diff
+            # did not run".
+            self._activity_seq += 1
+            combined_dict["activity_events"] = {}
+            combined_dict["activity_events_seq"] = self._activity_seq
             return
 
         cap = self._ACTIVITY_EVENT_CAP
         events: dict[str, list[dict[str, Any]]] = {}
 
-        new_trades: list[dict[str, Any]] = []
-        for trade in trades:
-            if not isinstance(trade, dict):
-                continue
-            key = self._activity_key(trade, "symbol", "transaction_date", "quantity")
-            if key in self._seen_trade_ids:
-                continue
-            self._seen_trade_ids.add(key)
-            new_trades.append(
-                {
-                    "symbol": _payout_symbol(trade),
-                    "market": trade.get("market"),
-                    "type": trade.get("transaction_type"),
-                    "quantity": trade.get("quantity"),
-                    "price": trade.get("price"),
-                    "value": trade.get("value"),
-                    "date": trade.get("transaction_date") or trade.get("date"),
-                }
-            )
-        if new_trades:
-            events["trade_confirmed"] = new_trades[:cap]
+        def _stage(
+            event_type: str,
+            records: list[dict[str, Any]],
+            seen: set[Any],
+            key_of: Any,
+            compact: Any,
+            limit: int,
+        ) -> None:
+            """Emit up to ``limit`` unseen records, marking only those seen."""
+            fresh: list[tuple[Any, dict[str, Any]]] = []
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                key = key_of(record)
+                if key in seen:
+                    continue
+                fresh.append((key, compact(record)))
+            if not fresh:
+                return
+            events[event_type] = [payload for _, payload in fresh[:limit]]
+            for key, _ in fresh[:limit]:
+                seen.add(key)
 
-        new_payouts: list[dict[str, Any]] = []
-        for payout in payouts:
-            if not isinstance(payout, dict):
-                continue
-            key = self._activity_key(payout, "symbol", "paid_on", "amount")
-            if key in self._seen_payout_ids:
-                continue
-            self._seen_payout_ids.add(key)
-            new_payouts.append(
-                {
-                    "symbol": _payout_symbol(payout),
-                    "amount": payout.get("amount"),
-                    "date": payout.get("paid_on") or payout.get("date"),
-                    "franking_credits": payout.get("franking_credits"),
-                }
-            )
-        if new_payouts:
-            events["dividend_paid"] = new_payouts[:cap]
+        _stage(
+            "trade_confirmed",
+            trades,
+            self._seen_trade_ids,
+            _trade_key,
+            _trade_event,
+            cap,
+        )
+        _stage(
+            "dividend_paid",
+            payouts,
+            self._seen_payout_ids,
+            _payout_key,
+            lambda payout: _payout_event(payout, announced=False),
+            cap,
+        )
+        _stage(
+            "dividend_announced",
+            upcoming,
+            self._seen_upcoming_ids,
+            self._upcoming_key,
+            lambda payout: _payout_event(payout, announced=True),
+            cap,
+        )
+        _stage(
+            "cash_transaction",
+            cash_txns,
+            self._seen_cash_tx_ids,
+            _cash_key,
+            _cash_event,
+            cap,
+        )
 
-        new_upcoming: list[dict[str, Any]] = []
-        for payout in upcoming:
-            if not isinstance(payout, dict):
-                continue
-            key = self._activity_key(payout, "symbol", "ex_date", "amount")
-            if key in self._seen_upcoming_ids:
-                continue
-            self._seen_upcoming_ids.add(key)
-            new_upcoming.append(
-                {
-                    "symbol": _payout_symbol(payout),
-                    "amount": payout.get("amount") or payout.get("gross_amount"),
-                    "ex_date": payout.get("ex_date"),
-                    "pay_date": payout.get("pay_date") or payout.get("paid_on"),
-                    "date": payout.get("ex_date")
-                    or payout.get("pay_date")
-                    or payout.get("paid_on"),
-                }
-            )
-        if new_upcoming:
-            events["dividend_announced"] = new_upcoming[:cap]
-
-        new_cash: list[dict[str, Any]] = []
-        for txn in cash_txns:
-            if not isinstance(txn, dict):
-                continue
-            key = self._activity_key(txn, "date_time", "amount", "description")
-            if key in self._seen_cash_tx_ids:
-                continue
-            self._seen_cash_tx_ids.add(key)
-            new_cash.append(
-                {
-                    "amount": txn.get("amount"),
-                    "date": txn.get("date_time") or txn.get("date"),
-                    "description": txn.get("description"),
-                    "type": txn.get("trade_type") or txn.get("type"),
-                }
-            )
-        if new_cash:
-            events["cash_transaction"] = new_cash[:cap]
-
-        # holding_opened / holding_closed — only diff against a non-empty
-        # snapshot so a transient empty holdings payload can't fire spurious
-        # "closed" events for the entire portfolio.
-        if current_symbols:
+        # holding_opened / holding_closed. A valid empty holdings list is an
+        # authoritative "the final position was sold" snapshot; a missing or
+        # malformed list is carried forward by _post_process and must not be
+        # mistaken for every holding closing at once.
+        if holdings_snapshot_valid and getattr(self, "_holdings_snapshot_seeded", False):
             opened = current_symbols - self._seen_holding_symbols
             closed = self._seen_holding_symbols - current_symbols
             if opened:
                 events["holding_opened"] = [
-                    {"symbol": symbol, "value": symbol_to_value.get(symbol)}
+                    {
+                        "symbol": symbol,
+                        "value": symbol_to_value.get(symbol),
+                        "currency": portfolio_currency,
+                    }
                     for symbol in sorted(opened)
                 ][:cap]
             if closed:
-                events["holding_closed"] = [
-                    {"symbol": symbol} for symbol in sorted(closed)
-                ][:cap]
+                events["holding_closed"] = [{"symbol": symbol} for symbol in sorted(closed)][:cap]
             self._seen_holding_symbols = set(current_symbols)
+        elif holdings_snapshot_valid:
+            # If activity was first seeded from a partial report, silently
+            # establish the holdings baseline on the first valid snapshot.
+            self._seen_holding_symbols = set(current_symbols)
+            self._holdings_snapshot_seeded = True
 
-        # daily_close — fires when the one-day report's date advances.
         if (
             daily_close_date
             and self._seen_daily_close_date
@@ -806,880 +1936,151 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 {
                     "date": daily_close_date,
                     "value": one_day.get("value") if isinstance(one_day, dict) else None,
-                    "change": one_day.get("value_change")
-                    if isinstance(one_day, dict)
-                    else None,
+                    "change": one_day.get("total_gain") if isinstance(one_day, dict) else None,
                     "change_percent": one_day.get("total_gain_percent")
                     if isinstance(one_day, dict)
                     else None,
+                    "currency": portfolio_currency,
                 }
             ]
         self._seen_daily_close_date = daily_close_date
 
-        # news_published (W2) — only when the endpoint returned data this poll.
-        # The FIRST poll its key appears (which may be well after poll 1, once
-        # the optional-endpoint backoff clears) seeds the baseline silently so a
-        # backlog never fires; every later poll diffs by stable article id and
-        # stages the genuinely-new items into the SAME events dict, so they ride
-        # the single activity_events_seq bump below (never a separate one).
-        if news_present:
-            if not self._news_seeded:
-                for article in news_items:
-                    self._seen_news_ids.add(_news_key(article))
-                self._news_seeded = True
-            else:
-                inst_id_to_symbol: dict[str, str] = {}
-                user_instruments = combined_dict.get("user_instruments") or {}
-                if isinstance(user_instruments, dict):
-                    for inst in user_instruments.get("instruments", []) or []:
-                        if not isinstance(inst, dict):
-                            continue
-                        inst_id = inst.get("id")
-                        code = inst.get("code")
-                        if inst_id is not None and code:
-                            inst_id_to_symbol[str(inst_id)] = code
-                for holding in holdings_list:
-                    if not isinstance(holding, dict):
-                        continue
-                    instrument = holding.get("instrument") or {}
-                    inst_id = instrument.get("id") or holding.get("instrument_id")
-                    symbol = analytics.holding_symbol(holding)
-                    if inst_id is not None and symbol:
-                        inst_id_to_symbol.setdefault(str(inst_id), symbol)
-
-                new_news: list[dict[str, Any]] = []
-                new_news_keys: list[str] = []
-                for article in news_items:
-                    key = _news_key(article)
-                    if key in self._seen_news_ids:
-                        continue
-                    article_instrument = article.get("instrument_id")
-                    new_news.append(
-                        {
-                            # Headline/link/source/timestamp/symbol only — never
-                            # the article body or HTML.
-                            "title": article.get("title"),
-                            "url": article.get("link"),
-                            "source": article.get("source"),
-                            "published_at": article.get("published_at"),
-                            "symbol": inst_id_to_symbol.get(str(article_instrument))
-                            if article_instrument is not None
-                            else None,
-                        }
-                    )
-                    new_news_keys.append(key)
-                if new_news:
-                    # Only mark as seen the articles we actually emit this poll;
-                    # any beyond the cap stay unseen so a later poll can fire
-                    # them, rather than silently dropping them forever.
-                    events["news_published"] = new_news[: self._NEWS_EVENT_CAP]
-                    for emitted_key in new_news_keys[: self._NEWS_EVENT_CAP]:
-                        self._seen_news_ids.add(emitted_key)
-
-        # Stamp a fresh sequence id for this diff.  Cached "keep last good"
-        # returns reuse an old combined_dict (and its seq), so the event
-        # entity can skip re-firing a batch it has already emitted.
         self._activity_seq += 1
         combined_dict["activity_events"] = events
         combined_dict["activity_events_seq"] = self._activity_seq
 
     # ------------------------------------------------------------------
-    # One-time setup
+    # On-demand (service / button) calls
     # ------------------------------------------------------------------
 
-    async def _async_setup(self) -> None:
-        """Seed portfolio detail and financial-year bounds once at setup.
+    async def _one_shot(self, endpoint: Endpoint) -> Any:
+        """Run a single off-cadence request, normalising failure to a dict.
 
-        DataUpdateCoordinator calls this exactly once, inside
-        ``async_config_entry_first_refresh`` and before the first
-        ``_async_update_data``, which replaces the old per-poll
-        ``started_up`` gate.  A transient failure raises ``UpdateFailed`` so the
-        base surfaces a retriable ``ConfigEntryNotReady``; a 404 (portfolio
-        deleted or access lost) raises ``ConfigEntryAuthFailed`` to trigger a
-        reauth/reconfigure.
+        Service handlers surface whichever leg succeeded rather than raising,
+        so an endpoint the token's scope cannot reach degrades to an
+        ``{"error": ...}`` block the caller can report.
         """
+        token = await self._refresh_token_with_retries()
         try:
-            access_token = await self._refresh_token_with_retries()
-        except ConfigEntryAuthFailed:
-            raise
-        except (
-            aiohttp.ClientError,
-            OSError,
-            asyncio.TimeoutError,
-            HomeAssistantError,
-        ) as token_error:
-            raise UpdateFailed(
-                f"Error validating Sharesight token during setup: {token_error}"
-            ) from token_error
+            return await self._call(endpoint, token)
+        except SharesightApiError as err:
+            return {"error": err.detail, "status": err.status}
 
-        try:
-            local_data = await self._call_endpoint(self.startup_endpoint, access_token)
-        except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as startup_error:
-            raise UpdateFailed(
-                f"Error during Sharesight startup fetch: {startup_error}"
-            ) from startup_error
-
-        if not isinstance(local_data, dict) or "error" in local_data:
-            status = self._response_status(local_data)
-            if status == 404:
-                raise ConfigEntryAuthFailed(
-                    f"Portfolio {self.portfolio_id} is no longer accessible. "
-                    "Please reconfigure the integration."
-                )
-            raise UpdateFailed(f"Invalid startup response: {local_data}")
-
-        self.start_financial_year, self.end_financial_year = get_financial_year_dates(
-            local_data.get("portfolio", {}).get("financial_year_end")
-        )
-        self._portfolio_detail = local_data.get("portfolio", {}) or {}
-
-    # ------------------------------------------------------------------
-    # Main update loop
-    # ------------------------------------------------------------------
-
-    async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch the latest data from Sharesight."""
-        if self._in_lockout():
-            remaining = int(self._lockout_until - time.monotonic())
-            _LOGGER.info(
-                "Skipping Sharesight poll — %ss remaining in cooldown", remaining
-            )
-            if self.data:
-                return self.data
-            raise UpdateFailed(
-                f"Sharesight API is on cooldown for {remaining}s"
-            )
-
-        combined_dict: dict[str, Any] = {}
-
-        try:
-            access_token = await self._refresh_token_with_retries()
-        except ConfigEntryAuthFailed:
-            raise
-        except (aiohttp.ClientError, OSError, asyncio.TimeoutError, HomeAssistantError) as token_error:
-            if self.data:
-                _LOGGER.warning(
-                    "Token validation failed (%s), keeping last good data", token_error
-                )
-                return self.data
-            raise UpdateFailed(
-                f"Error validating Sharesight token: {token_error}"
-            ) from token_error
-
-        today = dt_util.now().date()
-        self.current_date = today
-        self.start_of_week = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
-        self.end_of_week = (today + timedelta(days=6 - today.weekday())).strftime("%Y-%m-%d")
-        self.start_of_month = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-        self.start_of_year = f"{today.year}-01-01"
-
-        performance_params: dict[str, Any] = {
-            "include_limited": "true",
-            "report_combined": "true",
-        }
-
-        # Fast windows + the V3 combined report refresh on every poll.
-        endpoint_list: list[list[Any]] = [
-            [
-                "v2",
-                f"portfolios/{self.portfolio_id}/performance",
-                {"start_date": f"{today}", "end_date": f"{today}"},
-                "one-day",
-            ],
-            [
-                "v2",
-                f"portfolios/{self.portfolio_id}/performance",
-                {"start_date": self.start_of_week, "end_date": self.end_of_week},
-                "one-week",
-            ],
-            ["v3", "portfolios", None, False],
-            [
+    async def async_get_value_history(self) -> Any:
+        """Fetch the inception-to-today portfolio value series."""
+        params: dict[str, Any] | None = None
+        if inception := self._portfolio_detail.get("inception_date"):
+            params = {"start_date": inception}
+        return await self._one_shot(
+            Endpoint(
                 "v3",
-                f"portfolios/{self.portfolio_id}/performance",
-                performance_params,
-                False,
-            ],
-        ]
-
-        # Feature 4 — tiered polling.  The financial-year / one-month / YTD
-        # windows move slowly, so only re-fetch them every
-        # SLOW_PERIOD_REFRESH_EVERY polls (≈hourly at the 5-min default), on a
-        # cold start (their key is absent from self.data), or when the
-        # financial-year bounds roll over.  Skipped windows are carried
-        # forward from self.data below so their period sensors never flap.
-        slow_windows: list[list[Any]] = [
-            [
-                "v2",
-                f"portfolios/{self.portfolio_id}/performance",
-                {
-                    "start_date": self.start_financial_year,
-                    "end_date": self.end_financial_year,
-                },
-                "financial-year",
-            ],
-            [
-                "v2",
-                f"portfolios/{self.portfolio_id}/performance",
-                {"start_date": self.start_of_month, "end_date": f"{today}"},
-                "one-month",
-            ],
-            [
-                "v2",
-                f"portfolios/{self.portfolio_id}/performance",
-                {"start_date": self.start_of_year, "end_date": f"{today}"},
-                "ytd",
-            ],
-        ]
-        current_fy_bounds = (self.start_financial_year, self.end_financial_year)
-        refresh_slow_windows = (
-            self._poll_count % SLOW_PERIOD_REFRESH_EVERY == 0
-            or self._slow_window_fy_bounds != current_fy_bounds
-            or any(endpoint[3] not in self.data for endpoint in slow_windows)
-        )
-        if refresh_slow_windows:
-            endpoint_list.extend(slow_windows)
-            self._slow_window_fy_bounds = current_fy_bounds
-
-        optional_endpoint_list: list[list[Any]] = [
-            ["v3", f"portfolios/{self.portfolio_id}/holdings", None, "holdings"],
-            ["v2", f"portfolios/{self.portfolio_id}/payouts", None, "payouts"],
-            # Announced-but-not-yet-paid dividends.  The default payouts call
-            # only covers inception→today, so future payouts never show up in
-            # it; this second window feeds the next-dividend sensors and the
-            # dividend calendar.
-            [
-                "v2",
-                f"portfolios/{self.portfolio_id}/payouts",
-                {
-                    "start_date": f"{today}",
-                    "end_date": f"{today + timedelta(days=365)}",
-                },
-                "upcoming_payouts",
-            ],
-            ["v2", f"portfolios/{self.portfolio_id}/diversity", None, "diversity_v2"],
-            ["v2", f"portfolios/{self.portfolio_id}/trades", None, "trades"],
-            ["v2", "cash_accounts", None, "cash_accounts_v2"],
-            ["v3", f"portfolios/{self.portfolio_id}/user_setting", None, "user_setting"],
-            ["v2", "user_instruments", None, "user_instruments"],
-            # Benchmark performance (only returns data when the user has set a
-            # benchmark on the portfolio; otherwise the optional-endpoint
-            # backoff quietly parks it).  start_date is required — use the
-            # portfolio inception date so the percentages line up with the
-            # since-inception V3 performance report.
-            [
-                "v3",
-                f"portfolios/{self.portfolio_id}/benchmark",
-                {
-                    "start_date": self._portfolio_detail.get("inception_date")
-                    or self.start_of_year,
-                    "end_date": f"{today}",
-                },
-                False,
-            ],
-            # Account/subscription info (near-static; one light V2 request).
-            ["v2", "my_user.json", None, "my_user"],
-            # Watchlist summary + market trading-hours metadata.  Both are V3
-            # "mobile"/"internal"-scoped endpoints; if a standard API token
-            # can't reach them they simply park in the backoff tier.
-            ["v3", "watchlist.json", None, "watchlist"],
-            ["v3", "markets", None, "markets"],
-            # All-time totals INCLUDING fully-sold positions.  The V3
-            # performance report omits include_sales, so realised gains from
-            # exited holdings are missing there; this restores true lifetime
-            # P&L.  Light endpoint (path matches no heavy marker); parks via
-            # backoff for tokens whose scope can't reach it.
-            [
-                "v3",
-                f"portfolios/{self.portfolio_id}/totals",
-                {"include_sales": "true", "consolidated": "false"},
-                "totals",
-            ],
-            # Instrument news (W2) — a light V2 "mobile"-scoped feed of recent
-            # articles for the portfolio's instruments.  A standard API token
-            # may not reach it, so it parks via the optional-endpoint backoff.
-            [
-                "v2",
-                f"portfolios/{self.portfolio_id}/instrument_news.json",
+                f"portfolios/{self.portfolio_id}/portfolio_value_data.json",
+                params,
                 None,
-                "instrument_news",
-            ],
-        ]
-
-        # Portfolio value series (W6) feeding the value-trend sensors.
-        #
-        # NOT the V3 ``/value`` endpoint: its only parameters are
-        # consolidated/currency_code and it answers with a single
-        # point-in-time balance ({"values": {"in_portfolio_currency": ...}}),
-        # so it can never produce a trend — it was wired up on a misreading of
-        # the API docs and left the sensors permanently unknown.
-        # ``portfolio_value_data.json`` is the daily series, the same feed the
-        # long-term-statistics backfill uses; it is V3 "mobile"-scoped and
-        # parks via backoff for tokens that can't reach it.
-        #
-        # One point per day and a trend nobody needs at 5-minute resolution, so
-        # fetch it on the slow tier (like the FY/month/YTD windows) and carry
-        # the last series forward on the polls that skip it.  The window is
-        # bounded to keep the payload small while still spanning 30 days with
-        # weekend/holiday slack.
-        if refresh_slow_windows or "value_series" not in self.data:
-            optional_endpoint_list.append(
-                [
-                    "v3",
-                    f"portfolios/{self.portfolio_id}/portfolio_value_data.json",
-                    {
-                        "start_date": (
-                            f"{today - timedelta(days=VALUE_TREND_LOOKBACK_DAYS)}"
-                        )
-                    },
-                    "value_series",
-                ]
             )
+        )
 
-        # Live FX rates — only worth requesting for multi-currency portfolios.
-        # Codes are derived from the previous poll's holdings/instruments (the
-        # current poll's holdings aren't built yet), so this comes online on
-        # the second poll.  exchange_rates is a V3 "internal" endpoint and may
-        # not be reachable by all tokens; it parks via backoff if so.
-        fx_codes = analytics.portfolio_currency_codes(self.data)
-        if len(fx_codes) >= 2:
-            optional_endpoint_list.append(
-                [
-                    "v3",
-                    "exchange_rates",
-                    {"codes": ",".join(fx_codes), "date": f"{today}"},
-                    "exchange_rates",
-                ]
+    async def async_generate_performance_report(
+        self,
+        start_date: str,
+        end_date: str,
+        grouping: str | None = None,
+        consolidated: bool | None = None,
+        include_sales: bool | None = None,
+    ) -> Any:
+        """Generate an on-demand performance report for an arbitrary window."""
+        params: dict[str, Any] = {"start_date": start_date, "end_date": end_date}
+        if grouping:
+            params["grouping"] = grouping
+        if consolidated is not None:
+            params["consolidated"] = "true" if consolidated else "false"
+        if include_sales is not None:
+            params["include_sales"] = "true" if include_sales else "false"
+        return await self._one_shot(
+            Endpoint(
+                "v3",
+                f"portfolios/{self.portfolio_id}/performance",
+                params,
+                None,
+                heavy=True,
             )
+        )
 
-        # Capital gains tax reports are only available for Australian
-        # portfolios (the API rejects them otherwise).
-        if str(self._portfolio_detail.get("country_code", "")).upper() == "AU":
-            optional_endpoint_list.extend(
-                [
-                    [
-                        "v2",
-                        f"portfolios/{self.portfolio_id}/capital_gains",
-                        {
-                            "start_date": self.start_financial_year,
-                            "end_date": self.end_financial_year,
-                        },
-                        "capital_gains",
-                    ],
-                    [
-                        "v2",
-                        f"portfolios/{self.portfolio_id}/unrealised_cgt",
-                        {"balance_date": f"{today}"},
-                        "unrealised_cgt",
-                    ],
-                ]
+    async def async_get_sharechecker(self, instrument_id: Any) -> Any:
+        """One-shot V3 sharechecker fetch for an instrument."""
+        return await self._one_shot(
+            Endpoint("v3", f"instruments/{instrument_id}/sharechecker", None, None)
+        )
+
+    async def async_get_official_costs(self, holding_id: Any) -> dict[str, Any]:
+        """A holding's official average purchase price and cost base.
+
+        Uses the public-tier ``GET /v3/holdings/{id}`` with both expansion
+        flags, which returns everything the two separate mobile-scoped
+        ``average_purchase_price.json`` / ``cost_base.json`` calls did (and
+        more) in one request that a standard token can actually reach.  Those
+        two remain the fallback for accounts where the combined call is
+        rejected.
+        """
+        combined = await self._one_shot(
+            Endpoint(
+                "v3",
+                f"holdings/{holding_id}",
+                {"average_purchase_price": "true", "cost_base": "true"},
+                None,
             )
-
-        try:
-            _LOGGER.debug(
-                "Calling %s required endpoints in parallel", len(endpoint_list)
-            )
-            required_tasks = [
-                self._call_endpoint(endpoint, access_token) for endpoint in endpoint_list
-            ]
-            required_results = await asyncio.gather(*required_tasks, return_exceptions=True)
-
-            required_failures: list[str] = []
-            critical_failed = False
-            auth_failure_detected = False
-            for endpoint, response in zip(endpoint_list, required_results):
-                endpoint_path = endpoint[1]
-                is_critical = (
-                    "performance" in endpoint_path and endpoint[0] == "v3"
-                ) or endpoint_path == "portfolios"
-
-                if isinstance(response, Exception):
-                    required_failures.append(f"{endpoint_path}: {response}")
-                    if is_critical:
-                        critical_failed = True
-                    continue
-
-                if response is None:
-                    required_failures.append(f"{endpoint_path}: returned None")
-                    if is_critical:
-                        critical_failed = True
-                    continue
-
-                if not isinstance(response, dict):
-                    required_failures.append(
-                        f"{endpoint_path}: unexpected type {type(response)}"
-                    )
-                    if is_critical:
-                        critical_failed = True
-                    continue
-
-                if "error" in response:
-                    # Detect global cooldown conditions before marking failure
-                    if self._is_lockout(response):
-                        self._register_lockout(SHARESIGHT_LOCKOUT_COOLDOWN)
-                        raise ConfigEntryAuthFailed(
-                            "Sharesight API reported a brute-force lockout — "
-                            "credentials may have been invalidated."
-                        )
-                    if self._is_rate_limited(response):
-                        # Back off for a minute when we hit the parallel limit.
-                        self._register_lockout(timedelta(minutes=1))
-
-                    error_msg = str(response.get("error", "")).lower()
-                    status_code = self._response_status(response)
-                    required_failures.append(
-                        f"{endpoint_path}: {response.get('error')}"
-                    )
-                    if status_code == 404 and is_critical:
-                        raise ConfigEntryAuthFailed(
-                            f"Portfolio {self.portfolio_id} is no longer "
-                            "accessible. Please reconfigure the integration."
-                        )
-                    if status_code in (401, 403) or (
-                        status_code is None and "invalid_grant" in error_msg
-                    ):
-                        auth_failure_detected = True
-                    if is_critical:
-                        critical_failed = True
-                    continue
-
-                _LOGGER.debug(
-                    "Response for %s: %s",
-                    endpoint_path,
-                    list(response.keys()) if isinstance(response, dict) else type(response),
-                )
-                extension = endpoint[3]
-                if extension:
-                    response = {extension: response}
-                combined_dict = merge_dicts(combined_dict, response)
-
-            if auth_failure_detected:
-                raise ConfigEntryAuthFailed(
-                    "Sharesight API returned an authentication error — "
-                    "re-authentication required"
-                )
-
-            if required_failures:
-                failure_preview = "; ".join(required_failures[:3])
-                if critical_failed:
-                    if self.data:
-                        _LOGGER.warning(
-                            "Critical Sharesight endpoint(s) failed (%s total): %s. "
-                            "Keeping last good data.",
-                            len(required_failures),
-                            failure_preview,
-                        )
-                        return self.data
-                    raise UpdateFailed(
-                        f"Required Sharesight endpoints failed: {failure_preview}"
-                    )
-                _LOGGER.warning(
-                    "Some Sharesight endpoints failed (%s): %s. "
-                    "Continuing with available data.",
-                    len(required_failures),
-                    failure_preview,
-                )
-
-            # Carry forward slow-cadence performance windows that were skipped
-            # this poll (Feature 4) or failed to fetch, using the proven
-            # diversity carry-forward idiom so period sensors never flap.
-            for slow_key in ("financial-year", "one-month", "ytd"):
-                if slow_key not in combined_dict and slow_key in self.data:
-                    combined_dict[slow_key] = self.data[slow_key]
-
-            # --- Optional endpoints (with per-endpoint cooldown) ----------
-            # Cooldowns are keyed on path + extension because the same path
-            # can be polled twice with different params (e.g. past vs
-            # upcoming payouts) and must back off independently.
-            active_optional = [
-                endpoint
-                for endpoint in optional_endpoint_list
-                if not self._endpoint_on_cooldown(f"{endpoint[1]}#{endpoint[3]}")
-            ]
-            _LOGGER.debug(
-                "Calling %s optional endpoints in parallel (%s on cooldown)",
-                len(active_optional),
-                len(optional_endpoint_list) - len(active_optional),
-            )
-            optional_tasks = [
-                self._call_endpoint(endpoint, access_token) for endpoint in active_optional
-            ]
-            optional_results = await asyncio.gather(*optional_tasks, return_exceptions=True)
-
-            for endpoint, result in zip(active_optional, optional_results):
-                endpoint_path = endpoint[1]
-                extension = endpoint[3]
-                cooldown_key = f"{endpoint_path}#{extension}"
-
-                if isinstance(result, Exception):
-                    _LOGGER.info(
-                        "Optional endpoint %s failed: %s, backing off",
-                        endpoint_path,
-                        result,
-                    )
-                    self._note_optional_failure(cooldown_key)
-                    continue
-
-                response = result
-                # The value-data series can answer with a bare top-level array.
-                # Wrap it under a "data" key so it clears the dict-shape guard
-                # below and its normaliser (_value_series_points) can peel it
-                # like the nested-list shapes; otherwise a valid list response
-                # would be discarded here and the value-trend sensors would
-                # never come online.
-                if extension == "value_series" and isinstance(response, list):
-                    response = {"data": response}
-                if response is None or not isinstance(response, dict):
-                    _LOGGER.info(
-                        "Optional endpoint %s returned %s, backing off",
-                        endpoint_path,
-                        type(response).__name__,
-                    )
-                    self._note_optional_failure(cooldown_key)
-                    continue
-                if "error" in response:
-                    if self._is_lockout(response):
-                        self._register_lockout(SHARESIGHT_LOCKOUT_COOLDOWN)
-                    elif self._is_rate_limited(response):
-                        self._register_lockout(timedelta(minutes=1))
-                    _LOGGER.info(
-                        "Optional endpoint %s returned error %s, backing off",
-                        endpoint_path,
-                        response.get("error"),
-                    )
-                    self._note_optional_failure(cooldown_key)
-                    continue
-
-                self._note_optional_success(cooldown_key)
-                if extension:
-                    response = {extension: response}
-                combined_dict = merge_dicts(combined_dict, response)
-
-            # Carry the slow-cadence value series forward on the polls that
-            # skip it (see the tiered fetch above) or where it failed, so the
-            # value-trend sensors hold their reading instead of flapping to
-            # unknown between refreshes.  Same idiom as the FY/month/YTD
-            # windows; the derived-analytics block below gates on this key.
-            if "value_series" not in combined_dict and "value_series" in self.data:
-                combined_dict["value_series"] = self.data["value_series"]
-
-            # --- Per-account cash transactions (optional) ----------------
-            cash_accounts_data = combined_dict.get("cash_accounts_v2", {})
-            cash_accounts: list[dict[str, Any]] = []
-            if isinstance(cash_accounts_data, dict):
-                cash_accounts = cash_accounts_data.get("cash_accounts", []) or []
-
-            cash_account_transactions: list[dict[str, Any]] = []
-            if cash_accounts:
-                tx_work: list[tuple[int, list[Any]]] = []
-                for account in cash_accounts:
-                    account_id = account.get("id")
-                    account_portfolio_id = account.get("portfolio_id")
-                    if (
-                        account_id is None
-                        or str(account_portfolio_id) != str(self.portfolio_id)
-                    ):
-                        continue
-                    if self._cash_tx_on_cooldown(account_id):
-                        continue
-                    endpoint = [
-                        "v2",
-                        f"cash_accounts/{account_id}/cash_account_transactions",
-                        None,
-                        False,
-                    ]
-                    tx_work.append((account_id, endpoint))
-
-                if tx_work:
-                    tx_tasks = [
-                        self._call_endpoint(endpoint, access_token)
-                        for _, endpoint in tx_work
-                    ]
-                    tx_results = await asyncio.gather(*tx_tasks, return_exceptions=True)
-
-                    for (account_id, endpoint), tx_result in zip(tx_work, tx_results):
-                        tx_endpoint_path = endpoint[1]
-                        if isinstance(tx_result, Exception):
-                            _LOGGER.info(
-                                "Optional cash account transactions endpoint %s failed: %s",
-                                tx_endpoint_path,
-                                tx_result,
-                            )
-                            self._note_cash_tx_failure(account_id)
-                            continue
-
-                        tx_response = tx_result
-                        if not isinstance(tx_response, dict) or "error" in tx_response:
-                            self._note_cash_tx_failure(account_id)
-                            continue
-                        tx_list = tx_response.get("cash_account_transactions", [])
-                        if isinstance(tx_list, list):
-                            cash_account_transactions.extend(tx_list)
-                        self._note_cash_tx_success(account_id)
-
-            combined_dict["cash_account_transactions"] = {
-                "cash_account_transactions": cash_account_transactions
+        )
+        if isinstance(combined, dict) and "error" in combined:
+            # A token/rate/network failure affects both mobile fallbacks too;
+            # multiplying requests only worsens it. Retry split routes solely
+            # for a genuine route/version mismatch.
+            if combined.get("status") not in (404, 406):
+                return {
+                    "average_purchase_price": combined,
+                    "cost_base": combined,
+                }
+        holding: Any = None
+        if isinstance(combined, dict) and "error" not in combined:
+            holding = combined.get("holding")
+            if not isinstance(holding, dict):
+                holding = combined
+        if isinstance(holding, dict) and holding.get("cost_base") is not None:
+            # Normalise to the shape the two split endpoints return, so the
+            # service's extractors do not need to know which route answered.
+            # ``holding.average_purchase_price`` is a bare number in the
+            # instrument's currency; ``holding.cost_base`` is already an object.
+            currency = (holding.get("instrument_currency") or {}).get("code") or (
+                holding.get("instrument") or {}
+            ).get("currency_code")
+            return {
+                "average_purchase_price": {
+                    "average_purchase_price": {
+                        "value": holding.get("average_purchase_price"),
+                        "currency": currency,
+                    }
+                },
+                "cost_base": {"cost_base": holding.get("cost_base")},
             }
 
-            # --- Post-process merged data --------------------------------
-            _LOGGER.debug("Data keys available: %s", list(combined_dict.keys()))
-
-            if self._portfolio_detail:
-                combined_dict["portfolio_detail"] = self._portfolio_detail
-
-            report_data = combined_dict.get("report", {})
-            report_holdings = self._open_positions(report_data.get("holdings", []))
-            # Write the pruned list back so the handful of consumers that read
-            # report.holdings directly (per-market holding counts, unconfirmed
-            # transactions) agree with the holdings key derived below.
-            if isinstance(report_data, dict) and "holdings" in report_data:
-                report_data["holdings"] = report_holdings
-
-            sub_totals = report_data.get("sub_totals", [])
-            if sub_totals:
-                seen_groups: set[str] = set()
-                deduped_sub_totals: list[dict[str, Any]] = []
-                for st in sub_totals:
-                    gn = st.get("group_name", "")
-                    if gn not in seen_groups:
-                        seen_groups.add(gn)
-                        deduped_sub_totals.append(st)
-                if len(deduped_sub_totals) < len(sub_totals):
-                    combined_dict["report"]["sub_totals"] = deduped_sub_totals
-
-            report_cash_accounts = report_data.get("cash_accounts", [])
-            if report_cash_accounts:
-                seen_cash_names: set[str] = set()
-                deduped_cash: list[dict[str, Any]] = []
-                for ca in report_cash_accounts:
-                    cn = ca.get("name", "")
-                    if cn not in seen_cash_names:
-                        seen_cash_names.add(cn)
-                        deduped_cash.append(ca)
-                if len(deduped_cash) < len(report_cash_accounts):
-                    combined_dict["report"]["cash_accounts"] = deduped_cash
-
-            holdings_from_api = combined_dict.get("holdings", {})
-            if report_holdings:
-                combined_dict["holdings"] = {
-                    "holdings": report_holdings,
-                    "value": report_data.get("value", 0),
-                }
-            elif isinstance(holdings_from_api, dict) and "error" not in holdings_from_api:
-                api_holdings_list = self._open_positions(
-                    holdings_from_api.get("holdings", [])
+        app_result, cost_result = await asyncio.gather(
+            self._one_shot(
+                Endpoint(
+                    "v3",
+                    f"holdings/{holding_id}/average_purchase_price.json",
+                    None,
+                    None,
                 )
-                if api_holdings_list:
-                    total_val = sum(
-                        float(h.get("value", 0) or h.get("market_value", 0) or 0)
-                        for h in api_holdings_list
-                    )
-                    combined_dict["holdings"] = {
-                        "holdings": api_holdings_list,
-                        "value": total_val or report_data.get("value", 0),
-                    }
-                else:
-                    combined_dict["holdings"] = {"holdings": [], "value": 0}
-            else:
-                combined_dict["holdings"] = {"holdings": [], "value": 0}
+            ),
+            self._one_shot(Endpoint("v3", f"holdings/{holding_id}/cost_base.json", None, None)),
+        )
+        return {"average_purchase_price": app_result, "cost_base": cost_result}
 
-            # Build income_report from payouts when available; else fallback.
-            payouts_data = combined_dict.get("payouts", {})
-            payouts: list[dict[str, Any]] = []
-            if isinstance(payouts_data, dict):
-                payouts = payouts_data.get("payouts", []) or []
+    async def async_get_sso_link(self) -> Any:
+        """One-shot Single Sign-On login-link fetch.
 
-            if payouts:
-                combined_dict["income_report"] = {
-                    "payouts": payouts,
-                    "total_income": sum(
-                        float(p.get("amount", 0) or 0)
-                        for p in payouts
-                        if isinstance(p, dict)
-                    ),
-                }
-            else:
-                combined_dict["income_report"] = {
-                    "payout_gain": report_data.get("payout_gain"),
-                    "payouts": [],
-                }
-
-            # Announced-but-unpaid dividends from the forward payouts window.
-            upcoming_data = combined_dict.get("upcoming_payouts", {})
-            upcoming_list: list[dict[str, Any]] = []
-            if isinstance(upcoming_data, dict):
-                upcoming_list = upcoming_data.get("payouts", []) or []
-            combined_dict["income_report"]["upcoming_payouts"] = [
-                p for p in upcoming_list if isinstance(p, dict)
-            ]
-
-            # Build diversity breakdown.  Sharesight's diversity_v2 endpoint
-            # occasionally returns an empty/partial payload (especially when
-            # a poll coincides with a token refresh), which would otherwise
-            # collapse the breakdown to [] and flap dependent sensors to
-            # "unavailable" for one cycle.  Carry the previous breakdown
-            # forward whenever the freshly built one is empty.
-            breakdown: list[dict[str, Any]] = []
-            diversity_v2 = combined_dict.get("diversity_v2", {})
-            if isinstance(diversity_v2, dict) and "groups" in diversity_v2:
-                for group_entry in diversity_v2.get("groups", []):
-                    if not isinstance(group_entry, dict):
-                        continue
-                    for group_name, group_payload in group_entry.items():
-                        if not isinstance(group_payload, dict):
-                            continue
-                        breakdown.append(
-                            {
-                                "group_name": group_name,
-                                "percentage": group_payload.get("percentage"),
-                                "value": group_payload.get("value"),
-                            }
-                        )
-
-            if not breakdown:
-                sub_totals = report_data.get("sub_totals", [])
-                if sub_totals:
-                    total_value = float(report_data.get("value", 1) or 1)
-                    for st in sub_totals:
-                        st_value = float(st.get("value", 0) or 0)
-                        pct = (st_value / total_value * 100) if total_value else 0
-                        breakdown.append(
-                            {
-                                "group_name": st.get("group_name", ""),
-                                "percentage": round(pct, 2),
-                                "value": st_value,
-                            }
-                        )
-
-            if not breakdown:
-                previous_diversity = self.data.get("diversity") if self.data else None
-                if (
-                    isinstance(previous_diversity, dict)
-                    and previous_diversity.get("breakdown")
-                ):
-                    _LOGGER.debug(
-                        "Diversity breakdown empty this poll — preserving "
-                        "previous breakdown (%s entries) to avoid sensor flap",
-                        len(previous_diversity["breakdown"]),
-                    )
-                    combined_dict["diversity"] = previous_diversity
-                else:
-                    combined_dict["diversity"] = {"breakdown": []}
-            else:
-                combined_dict["diversity"] = {"breakdown": breakdown}
-
-            trades_data = combined_dict.get("trades", {})
-            if not (
-                trades_data
-                and isinstance(trades_data, dict)
-                and "error" not in trades_data
-            ):
-                combined_dict["trades"] = {"trades": []}
-
-            # --- Activity events (Feature 2, no extra API calls) ---------
-            # Diff this poll's records against the previous poll and stage HA
-            # events for the event platform to emit.  A diff error must never
-            # sink the poll, so guard it defensively.
-            try:
-                self._build_activity_events(combined_dict, today)
-            except (ValueError, TypeError, KeyError, AttributeError) as activity_err:
-                _LOGGER.debug("Activity event diff failed: %s", activity_err)
-
-            # --- Derived analytics (no extra API calls) ------------------
-            # These mine data already fetched this poll into per-holding and
-            # portfolio-level maps that many sensors consume.  Failures here
-            # must never sink the whole poll, so guard defensively.
-            try:
-                holdings_list = combined_dict.get("holdings", {}).get("holdings", [])
-
-                instrument_lookup = analytics.build_instrument_lookup(
-                    combined_dict.get("user_instruments", {})
-                )
-                combined_dict["instrument_lookup"] = instrument_lookup
-
-                combined_dict["holding_income"] = analytics.build_holding_income(
-                    combined_dict.get("income_report", {}).get("payouts", []),
-                    holdings_list,
-                    today,
-                )
-                combined_dict["holding_trades"] = analytics.build_holding_trades(
-                    combined_dict.get("trades", {}).get("trades", []),
-                    holdings_list,
-                )
-                combined_dict["sector_allocation"] = analytics.build_sector_allocation(
-                    holdings_list, instrument_lookup, axis="sector"
-                )
-                combined_dict["industry_allocation"] = analytics.build_sector_allocation(
-                    holdings_list, instrument_lookup, axis="industry"
-                )
-                combined_dict["portfolio_analytics"] = analytics.build_portfolio_analytics(
-                    holdings_list,
-                    instrument_lookup,
-                    combined_dict.get("report", {}),
-                    today,
-                    # No Sharesight payload carries a per-holding yield, so the
-                    # weighted yield is derived from the TTM income built above.
-                    combined_dict.get("holding_income"),
-                )
-                # 30-day value trend (W6).  Gate on the optional endpoint's key
-                # (like totals) so a parked token that never fetches the series
-                # sees no value_trend rather than an empty/misleading one.
-                if "value_series" in combined_dict:
-                    combined_dict["value_trend"] = analytics.build_value_trend(
-                        combined_dict.get("value_series")
-                    )
-                # Label allocation (W7).  An empty list is still published so
-                # existing label entities can tell "no holding carries this
-                # label any more" (go unavailable) from "the analytics never
-                # ran this poll" (stay put).  Stage 3 iterates the list to
-                # create entities, so an empty one still creates none.
-                combined_dict["label_allocation"] = analytics.build_label_allocation(
-                    holdings_list
-                )
-                # Merge the forward-income forecast into income_report without
-                # clobbering the payouts/totals already assembled above.
-                forecast = analytics.build_income_forecast(
-                    combined_dict.get("income_report", {}).get("upcoming_payouts", []),
-                    combined_dict.get("holding_income", {}),
-                    combined_dict.get("report", {}).get("value"),
-                    today,
-                )
-                income_report = combined_dict.setdefault("income_report", {})
-                for forecast_key, forecast_value in forecast.items():
-                    income_report.setdefault(forecast_key, forecast_value)
-            except (ValueError, TypeError, KeyError, AttributeError) as analytics_err:
-                _LOGGER.debug("Derived analytics failed: %s", analytics_err)
-
-            # Refresh the financial year bounds if the portfolio list has it.
-            portfolios_list = combined_dict.get("portfolios", [])
-            if isinstance(portfolios_list, list) and portfolios_list:
-                fy_end = (portfolios_list[0] or {}).get("financial_year_end")
-                sofy_date, eofy_date = get_financial_year_dates(fy_end)
-                if self.end_financial_year != eofy_date:
-                    self.end_financial_year = eofy_date
-                    self.start_financial_year = sofy_date
-
-            # Count only genuinely successful polls so the slow-window cadence
-            # (Feature 4) advances once per fetch, never on kept-last-good paths.
-            self._poll_count += 1
-            self.data = combined_dict
-            return self.data
-
-        except ConfigEntryAuthFailed:
-            raise
-        except (
-            aiohttp.ClientError,
-            OSError,
-            asyncio.TimeoutError,
-            ValueError,
-            TypeError,
-            KeyError,
-        ) as err:
-            if self.data:
-                _LOGGER.warning(
-                    "Error in coordinator update (%s), keeping last good data",
-                    err,
-                    exc_info=True,
-                )
-                return self.data
-            _LOGGER.error("Error in coordinator update: %s", err, exc_info=True)
-            raise UpdateFailed(f"Error fetching Sharesight data: {err}") from err
+        SECURITY: the ``login_url`` this returns grants a logged-in Sharesight
+        session and must be treated like a password.  This method therefore
+        NEVER logs the URL (or the response) at any level, and the caller must
+        not either.  The endpoint is documented rate-limit exempt.
+        """
+        return await self._one_shot(Endpoint("v2", "single_sign_on.json", None, None))

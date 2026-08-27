@@ -1,4 +1,5 @@
 """Application credentials platform for the Sharesight integration."""
+
 from __future__ import annotations
 
 from collections.abc import Generator

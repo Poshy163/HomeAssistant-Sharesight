@@ -1,17 +1,19 @@
 """Config flow for the Sharesight integration."""
+
 from __future__ import annotations
 
 import logging
 from typing import Any
 
 import aiohttp
-import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from SharesightAPI.SharesightAPI import SharesightAPI
+import voluptuous as vol
 
+from .api import Endpoint, SharesightApiError, async_request
 from .application_credentials import account_type_context
 from .const import (
     ACCOUNT_DEVELOPER,
@@ -19,11 +21,15 @@ from .const import (
     API_URL_BASE,
     CONF_ACCOUNT_TYPE,
     CONF_AUTO_REMOVE_STALE_DEVICES,
+    CONF_ENABLE_EXTENDED_PERFORMANCE,
+    CONF_ENABLE_HOLDING_ENTITIES,
     CONF_ENABLE_LTS_BACKFILL,
     CONF_PORTFOLIO_ID,
     CONF_SCAN_INTERVAL,
     DEFAULT_ACCOUNT_TYPE,
     DEFAULT_AUTO_REMOVE_STALE_DEVICES,
+    DEFAULT_ENABLE_EXTENDED_PERFORMANCE,
+    DEFAULT_ENABLE_HOLDING_ENTITIES,
     DEFAULT_ENABLE_LTS_BACKFILL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -35,9 +41,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class SharesightConfigFlow(
-    config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN
-):
+class SharesightConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN):
     """Handle the Sharesight config flow."""
 
     VERSION = 3
@@ -66,17 +70,18 @@ class SharesightConfigFlow(
         """
         return SharesightOptionsFlow()
 
-    async def _fetch_portfolios(self) -> dict[str, str]:
+    async def _fetch_portfolios(self, access_token: str | None = None) -> dict[str, str] | None:
         """Fetch the portfolio list using the token just minted.
 
         The token is only valid on the deployment that issued it, so the list
         is implicitly scoped to ``self._account_type`` — there is nothing to
         pass in, and no way for the two to disagree.
         """
-        access_token = self._oauth_data.get("token", {}).get("access_token")
+        if access_token is None:
+            access_token = self._oauth_data.get("token", {}).get("access_token")
         if not access_token:
             _LOGGER.error("No access token available to fetch portfolios")
-            return {}
+            return None
 
         client = SharesightAPI(
             client_id="",
@@ -87,18 +92,30 @@ class SharesightConfigFlow(
             api_url_base=API_URL_BASE[self._account_type],
             use_token_file=False,
             session=async_get_clientsession(self.hass),
+            raise_for_status=True,
+            max_retries=0,
         )
 
         try:
-            response = await client.get_api_request(
-                ["v3", "portfolios", None, False], access_token
+            result = await async_request(
+                client,
+                Endpoint("v3", "portfolios"),
+                access_token,
+                30,
             )
-            _LOGGER.debug("Portfolios response: %s", response)
-
+            response = result.data
             if not isinstance(response, dict):
-                return {}
+                return None
 
             portfolios_list = response.get("portfolios", []) or []
+            # Shape only.  The full payload carries the account holder's
+            # legal name, user id, tax entity type and trader status for
+            # every portfolio on the account - and debug logging is on
+            # exactly when a user is about to paste the log into an issue.
+            _LOGGER.debug(
+                "Sharesight returned %s portfolio(s)",
+                len(portfolios_list),
+            )
             result: dict[str, str] = {}
             for p in portfolios_list:
                 pid = str(p.get("id", ""))
@@ -106,9 +123,9 @@ class SharesightConfigFlow(
                 if pid:
                     result[pid] = f"{pname} ({pid})"
             return result
-        except (aiohttp.ClientError, OSError, ValueError) as err:
+        except (SharesightApiError, aiohttp.ClientError, OSError, ValueError) as err:
             _LOGGER.warning("Failed to fetch portfolio list: %s", err)
-            return {}
+            return None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         # Skip domain-level unique_id (which would block multiple portfolios)
@@ -134,9 +151,7 @@ class SharesightConfigFlow(
             step_id="pick_account_type",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_ACCOUNT_TYPE, default=DEFAULT_ACCOUNT_TYPE
-                    ): vol.In(
+                    vol.Required(CONF_ACCOUNT_TYPE, default=DEFAULT_ACCOUNT_TYPE): vol.In(
                         {
                             ACCOUNT_STANDARD: "Standard",
                             ACCOUNT_DEVELOPER: "Developer (sandbox)",
@@ -162,9 +177,18 @@ class SharesightConfigFlow(
         """Handle a successful OAuth flow."""
         self._oauth_data = data
 
-        # If this was a reauth flow, just update the existing entry's token data
-        # and don't prompt the user to re-select the portfolio.
+        # Reauth: keep the existing portfolio selection, but first prove the
+        # new token actually belongs to an account that can see it.  Nothing
+        # in the OAuth flow stops a user with two Sharesight logins from
+        # authorising the wrong one, and silently accepting that token left
+        # the entry "reauth_successful" while every poll 403d afterwards.
         if self._reauth_entry is not None:
+            portfolio_id = str(self._reauth_entry.data.get(CONF_PORTFOLIO_ID, ""))
+            visible = await self._fetch_portfolios()
+            if visible is None:
+                return self.async_abort(reason="cannot_connect")
+            if portfolio_id not in visible:
+                return self.async_abort(reason="wrong_account")
             new_data = {**self._reauth_entry.data, **self._oauth_data}
             return self.async_update_reload_and_abort(
                 self._reauth_entry,
@@ -172,10 +196,17 @@ class SharesightConfigFlow(
                 reason="reauth_successful",
             )
 
-        self._portfolios = await self._fetch_portfolios()
+        portfolios = await self._fetch_portfolios()
+        if portfolios is None:
+            return self.async_abort(reason="cannot_connect")
+        if not portfolios:
+            return self.async_abort(reason="no_portfolios")
+        self._portfolios = portfolios
         return await self.async_step_portfolio()
 
-    async def async_step_portfolio(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_portfolio(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -228,9 +259,7 @@ class SharesightConfigFlow(
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Kick off a reauth flow — remember the original entry so we can update it."""
-        self._reauth_entry = self.hass.config_entries.async_get_entry(
-            self.context["entry_id"]
-        )
+        self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if self._reauth_entry is not None:
             # Re-auth has to target the account type the entry was created
             # against — its credential does not exist in the other deployment's
@@ -240,7 +269,15 @@ class SharesightConfigFlow(
             )
         return await self.async_step_reauth_confirm()
 
-    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Portfolio selection is immutable because it is the registry identity."""
+        return self.async_abort(reason="portfolio_identity_immutable")
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is None:
             return self.async_show_form(
                 step_id="reauth_confirm",
@@ -274,6 +311,13 @@ class SharesightOptionsFlow(OptionsFlow):
         current_auto_remove = self.config_entry.options.get(
             CONF_AUTO_REMOVE_STALE_DEVICES, DEFAULT_AUTO_REMOVE_STALE_DEVICES
         )
+        current_extended = self.config_entry.options.get(
+            CONF_ENABLE_EXTENDED_PERFORMANCE,
+            DEFAULT_ENABLE_EXTENDED_PERFORMANCE,
+        )
+        current_holdings = self.config_entry.options.get(
+            CONF_ENABLE_HOLDING_ENTITIES, DEFAULT_ENABLE_HOLDING_ENTITIES
+        )
 
         schema = vol.Schema(
             {
@@ -294,6 +338,14 @@ class SharesightOptionsFlow(OptionsFlow):
                 vol.Required(
                     CONF_AUTO_REMOVE_STALE_DEVICES,
                     default=current_auto_remove,
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_HOLDING_ENTITIES,
+                    default=current_holdings,
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_EXTENDED_PERFORMANCE,
+                    default=current_extended,
                 ): bool,
             }
         )

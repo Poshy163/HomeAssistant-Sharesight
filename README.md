@@ -8,24 +8,111 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 **Key features:**
 - OAuth2 authentication — no API keys stored in YAML
 - Automatic portfolio discovery — select your portfolio from a dropdown during setup
-- Per-market devices — each exchange (ASX, NYSE, LSE, etc.) gets its own HA device
+- Per-market devices — each exchange in the performance report's market
+  sub-totals (ASX, NYSE, LSE, etc.) gets its own HA device
 - Cash account tracking — including Xero-linked accounts
-- Auto-discovery of new markets and cash accounts — picked up automatically on the next poll cycle (every 5 minutes by default)
+- Auto-discovery of new market-allocation groups and cash accounts from refreshed portfolio data
 - Dividend calendar — received and announced dividends as a native HA calendar entity
 - Capital gains tax (CGT) sensors for Australian portfolios — realised FY + unrealised positions
 - Benchmark comparison — track your excess return against the benchmark configured in Sharesight
 - Per-holding fundamentals (P/E, EPS, NTA, sector, industry), dividend income, yield-on-cost and average buy price
 - Sector & industry allocation breakdown — a diversification lens beyond markets
 - Account device — plan tier, member-since, and a subscription-lapse alert (binary sensor)
-- Watchlist (overview plus per-instrument live price and day-change), live FX rates and market trading-hours sensors (where your Sharesight API access exposes them)
+- Watchlist overview plus per-instrument live price and day-change, where your Sharesight API access exposes it
 - Long-term statistics backfill — imports your full portfolio value history so HA charts show years, not just days since install (opt-out in options)
 - Response services — pull a portfolio summary, holdings or income into scripts/templates, generate an on-demand performance report, fetch per-instrument fundamentals, or mint a one-minute single-sign-on login link
-- Activity events & device triggers — automate on new trades, dividends, holdings opened/closed, cash transactions, published instrument news and the daily-close rollover
+- Activity events & device triggers — automate on new trades, dividends, holdings opened/closed, cash transactions and the daily-close rollover
 - Portfolio analytics — concentration (HHI), effective number of holdings, weighted yield/PE, foreign-currency exposure, cash drag and stale-price count
-- All-time totals & forward income — lifetime value/return including sold positions, plus projected forward dividend income and yield
-- Value-trend, Latest News & label sensors — 7-day / 30-day portfolio value change (with a sparkline series), a latest-headline sensor, plus value and portfolio share per Sharesight label (where your API access and labels expose them)
+- All-time performance & forward income — lifetime value/return including sold positions, plus projected forward dividend income and yield
+- Value-trend & label sensors — 7-day / 30-day portfolio value change (with a sparkline series), plus value and portfolio share per Sharesight label
 - Supports both standard and Edge (developer) API accounts
+- Risk metrics — portfolio maximum drawdown, current drawdown, high-water mark, days since high and annualised volatility, all derived locally from the daily value series
+- Allocation by currency and by asset type, alongside the existing market, sector, industry and label breakdowns
+- Tax-loss harvesting figures for Australian portfolios — harvestable unrealised loss, loss-parcel count, claimable loss and the CGT concession rate
+- Optional longer performance windows — 3 month, 6 month, 1 / 3 / 5 year
+- Honest staleness reporting — a **Data Stale** binary sensor and an accurate "Last Successful Update", so you can tell held-over numbers from live ones
 - Multiple portfolio support — add the integration once per portfolio
+
+---
+
+## Upgrading to 2.1
+
+**2.1 is a correctness and resilience release. No entity IDs change and no
+reconfiguration is needed — but several sensors will start reporting different
+(correct) numbers, and a few that were permanently Unknown will come alive.**
+
+### Numbers that change because they were wrong
+
+| Sensor | Was | Now |
+|--------|-----|-----|
+| Financial Year * | Only correct for a 30 June financial year. A calendar-year (`12-31`) portfolio got a window **entirely in the future** for seven months of every year | The window containing today, for any financial year end |
+| Total Sell Value, Average Sell Value | Negative — Sharesight signs a sale's value negatively and it was summed as-is | The magnitude |
+| Net Trade Flow | Buys **plus** sells | Buys **minus** sells |
+| Largest Trade Value / Symbol | Could never be a sale | Ranks by magnitude, so a sale can win |
+| Total Brokerage, per-holding Brokerage Paid | Mixed AUD/USD/GBP/… added together and labelled as one currency | Converted with each trade's own exchange rate |
+| Total Dividend Income and every payout total | Same problem: foreign dividends summed unconverted | Converted with each payout's own exchange rate |
+| Total Tax Credits | Always Unknown — read a field the API has never returned | Franking credits |
+| Total Capital Gains Distributions | Always Unknown — same reason | Discounted + non-discounted distributions |
+| Benchmark Capital Gain % | Always Unknown — read the *documented* field name, not the one the API returns | The live field |
+| Total / Net Contributions | Silently dropped broker-synced deposits whose type is null | Classified by the sign of the amount when untyped, and trade/dividend settlements excluded |
+| Dividends Received (Cash) | Always $0 — matched a transaction type Sharesight does not emit | Rows linked to a payout |
+| Forward Annual Income, Income Next 30/90 Days | Projected income from positions **sold years ago**, and an announced payer lost the rest of its year | Only currently-held payers, and an announcement no longer cancels the remaining run rate |
+| Weighted Dividend Yield | Non-payers dropped from the denominator, inflating the figure | Non-payers count as 0% |
+| Weighted P/E | Arithmetic mean, often over a sliver of the portfolio | Harmonic mean, suppressed below 50% coverage (with a P/E Coverage diagnostic) |
+| Foreign Currency Exposure | 0% whenever an optional endpoint was unavailable | Read from the holding rows, which always carry the currency |
+| Stale Price Count | A confident 0 when there was no price data at all | Unknown, with a coverage diagnostic |
+| Holding price / average buy price | Labelled in the *portfolio* currency | Labelled in the *instrument's* currency |
+| Every monetary sensor, on a multi-portfolio account | Took the currency of whichever portfolio the API listed first | This portfolio's currency |
+| Top Market 1–5 | Actually reported **industry** groups — the diversity call omitted `grouping`, whose API default is industry | Market groups |
+| Last Successful Update | Stamped "now" even on polls that served held-over data | When the data was really fetched |
+
+### New
+
+- **Risk:** Maximum Drawdown, Current Drawdown, High Water Mark, Days Since
+  High, Volatility (annualised), plus Benchmark Maximum Drawdown and Benchmark
+  Return Over Drawdown — the last two were arriving on every poll and being
+  thrown away.
+- **Allocation:** Top Currency 1–3 and Top Asset Type 1–3 (name + percent) with
+  counts, on the existing Sector Allocation device.
+- **Tax (AU):** Harvestable Unrealised Loss, Harvestable Loss Parcels, CGT
+  Claimable Loss, CGT Short/Long Term Losses, CGT Concession Rate.
+- **Diagnostics:** Dividend Yield Coverage, P/E Coverage, and a **Data Stale**
+  binary sensor.
+- **Per item:** holding currency, watchlist absolute day change, per-label
+  holding count.
+- **All-Time (incl. sold)** no longer depends on Sharesight's internal totals
+  route. The four sensors use a public performance report with
+  `include_sales=true`, preferring V3 and falling back to the equivalent V2
+  route only for a route/version mismatch.
+- **Options:** *Create per-holding entities* (on by default — turn it off to
+  keep only portfolio-level figures) and *Add 3/6 month and 1/3/5 year windows*
+  (off by default).
+- **Portfolio identity is protected:** switching an existing entry to another
+  portfolio would mint different device/entity identities and risk duplicate
+  history, so Reconfigure explains that the other portfolio must be added as a
+  separate Sharesight entry.
+
+### Behaviour
+
+- **Failures are now bounded.** The integration still holds the last good
+  numbers through a blip, but after roughly 30 minutes (or four poll intervals,
+  whichever is longer) it gives up and marks entities unavailable rather than
+  presenting hours-old figures as current. The **Data Stale** binary sensor
+  says which is happening, and carries `fetched_at` / `age_seconds`.
+- **Reauthentication actually fires.** A revoked token was previously mistaken
+  for a network blip and retried forever. It now prompts you to re-authenticate
+  — and reauthentication refuses a token from a Sharesight account that cannot
+  see the portfolio.
+- **Logs are bounded and actionable.** A failure is logged once at WARNING with
+  `endpoint=…, status=…`; identical repeats drop to DEBUG until it recovers,
+  which is then logged once at INFO. Per-row sensor calculation traces are not
+  emitted on every refresh.
+- **Diagnostics are compact and actually redacted.** The download used to
+  reproduce the entire payload, including the account holder's name; it now
+  reports bounded summaries instead of copying raw financial records.
+
+**Minimum Home Assistant version is now 2025.3.0** (it was declared as 2024.8.0,
+which the code has not actually supported for some time).
 
 ---
 
@@ -35,7 +122,7 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 
 - **Entity IDs are unchanged.** Every `sensor.…`, `binary_sensor.…`, `button.…`, `event.…` and `calendar.…` entity keeps the exact ID it had on 1.9.x, so dashboards, automations, templates and long-term statistics keep working with no edits. Only the human-readable *friendly names* change.
 - **Names now derive from device + entity.** Entities use Home Assistant's modern naming: the displayed name is the **device name plus the entity name** (e.g. the *Sharesight Portfolio 123* device's value sensor now reads as "Sharesight Portfolio 123 Portfolio value"). This makes names consistent and translatable, and is why friendly names look different after upgrading even though the entity IDs did not move.
-- **Nested device tree.** The per-category devices (Daily Performance, Holdings, Income, each market, each holding, Watchlist, Analytics, …) now nest **under the portfolio hub device** via Home Assistant's *via_device* link. Open the portfolio device and you'll see the whole fleet as a tree instead of ~25 flat, separately-listed devices.
+- **Nested device tree.** The per-category devices (Daily Performance, Holdings, Income, each market, each holding, Watchlist, Analytics, …) now nest **under the portfolio hub device** using Home Assistant's device-parent link. Open the portfolio device and you'll see the whole fleet as a tree instead of ~25 flat, separately-listed devices.
 - **Diagnostics categorisation.** Low-signal metadata sensors (portfolio ID, update interval, access level, price-updated timestamps, "return is annualised", …) are now tagged as **Diagnostic**. They move into the *Diagnostic* section of their device and out of the main sensor list — they remain fully available and recordable.
 - **A few niche entities ship disabled by default.** To cut first-run clutter, a handful of rarely-needed entities are now **disabled by default**. Nothing you already rely on is switched off — this only affects new/niche entities. To enable one: **Settings → Devices & Services → Sharesight → the device → the entity → the gear (Settings) icon → toggle _Enabled_ → Update** (or use the device page's "_+N entities not shown_" link). The entity keeps its stable ID once enabled.
 
@@ -102,9 +189,11 @@ After installation and restart:
 2. Click **Add Application Credentials** and select **Sharesight**
 3. Enter the **Client ID** and **Client Secret** from the [Prerequisites](#prerequisites) step
 4. Go to **Settings** → **Devices & Services** → click **+ Add Integration** → search for **Sharesight**
-5. You'll be redirected to Sharesight to **authorize** the connection — log in and click **Allow**
-6. After returning to Home Assistant, **select your portfolio** from the dropdown list
-7. Optionally enable **Use Edge API** if you have a Sharesight developer account
+5. Choose the account type before authorising: **Standard** is correct for most
+   users; choose **Developer** only if Sharesight has provisioned a sandbox
+   account and you added its separate Edge application credential
+6. You'll be redirected to the matching Sharesight host to **authorise** the connection — log in and click **Allow**
+7. After returning to Home Assistant, **select your portfolio** from the dropdown list
 8. Click **Submit** — the integration will create devices and sensors for your portfolio
 
 > **Adding multiple portfolios:** Repeat steps 4–8 for each portfolio you want to monitor. Each portfolio gets its own set of devices.
@@ -130,7 +219,6 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Annualised Return Percent | Annualised total return |
 | Portfolio Start Value | Portfolio value at inception |
 | Value Change 7d / 30d | Portfolio value change over the last 7 / 30 days; the 30-day sensor carries the daily value series as a `series` attribute for ApexCharts / sparkline cards |
-| Latest News | Most recent instrument-news headline; up to 25 recent articles (title, source, link, published time) in attributes — mobile-scoped, appears only where your API access exposes the feed |
 | Portfolio ID, User ID, Primary Currency, Portfolio Name, Financial Year End | Diagnostic info |
 
 ### Daily Performance
@@ -163,6 +251,10 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Cost Basis | Total invested in this market |
 | Annualised Return Percent | Annualised return for this market |
 | Holding Count | Number of holdings on this exchange |
+
+These devices and the market-allocation figures come from the combined
+performance report's market-grouped `sub_totals`; the integration does not call
+the separate market-metadata endpoint.
 
 ### Holdings
 | Sensor | Description |
@@ -237,15 +329,27 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Sector Count / Top 3 / Top 5 Sectors Percent | Sector diversification and concentration |
 | Top Industry 1–2 (Name / Percent) / Industry Count | Finer industry breakdown |
 
+### Currency & Asset-Type Allocation
+| Sensor | Description |
+|--------|-------------|
+| Top Currency 1–3 Name / Percent | Value-weighted share of the portfolio priced in each currency |
+| Currency Count | Distinct currencies held |
+| Top Asset Type 1–3 Name / Percent | Share by instrument type (ordinary share, ETF, managed fund, …) |
+| Asset Type Count | Distinct instrument types held |
+
+> Both are derived from the holdings rows, so they work regardless of which
+> optional endpoints your API access can reach. They live on the **Sector
+> Allocation** device.
+
 ### Labels (only when your holdings carry Sharesight labels)
 | Sensor | Description |
 |--------|-------------|
 | `<Label>` value | Total portfolio value carrying this label |
 | `<Label>` percent | That value as a share of the whole portfolio |
 
-> Labels are **non-exclusive** — a holding can carry several — so these percentages can sum to **more than 100%**. Each figure is the share of portfolio value carrying that label, not a slice of a mutually-exclusive pie. The Labels device (and its sensors) appear only when at least one holding has a label; if none do, nothing is created. Derived in-memory from the already-fetched holdings, so they add no API cost.
+> Labels are **non-exclusive** — a holding can carry several — so these percentages can sum to **more than 100%**. Each figure is the share of portfolio value carrying that label, not a slice of a mutually-exclusive pie. The Labels device (and its sensors) appear only when at least one holding has a label; if none do, nothing is created. The figures are derived in memory from already-fetched holdings.
 
-### Analytics (concentration & quality — zero extra API cost)
+### Analytics (concentration & quality, derived locally)
 | Sensor | Description |
 |--------|-------------|
 | Concentration (HHI) | Herfindahl-Hirschman index of holding weights (higher = more concentrated) |
@@ -256,15 +360,31 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Cash Drag | Cash as a percent of total portfolio value |
 | Stale Price Count | Holdings whose Sharesight price hasn't refreshed recently |
 
-### Portfolio Totals (all-time, including sold positions)
+### Risk (derived locally from the daily value series)
 | Sensor | Description |
 |--------|-------------|
-| All-Time Value (incl. sold) | Lifetime portfolio value from the V3 `totals` endpoint |
+| Maximum Drawdown | Largest peak-to-trough fall in the window (%) |
+| Current Drawdown | How far below the peak the portfolio sits right now (0% at a new high) |
+| High Water Mark | The peak value in the window |
+| Days Since High | Days since that peak was set |
+| Volatility (annualised) | Standard deviation of the period returns, annualised from the series' own spacing. Disabled by default |
+
+> The window is whatever the value series covers — about 45 days by default.
+> The **Benchmark** device carries Sharesight's own *Benchmark Maximum
+> Drawdown* and *Benchmark Return Over Drawdown* alongside these, so you can
+> compare like for like.
+
+### All-Time Performance (including sold positions)
+| Sensor | Description |
+|--------|-------------|
+| All-Time Value (incl. sold) | Lifetime portfolio value from a V3 performance report requested from inception with sold positions included |
 | All-Time Return (incl. sold) | Lifetime return including realised gains from exited holdings |
 | All-Time Return Percent (incl. sold) | Lifetime return as a percentage |
 | Return Is Annualised | Whether Sharesight annualised the above percentage (diagnostic) |
 
-> The main performance report omits fully-sold positions, so this device restores true lifetime P&L. It appears only once the V3 `totals` endpoint returns data for your token.
+> The headline performance report omits fully-sold positions. This device uses
+> a separate inception-to-today public performance window with
+> `include_sales=true` to restore lifetime P&L.
 
 ### Account (from `my_user.json`)
 | Sensor | Description |
@@ -275,11 +395,10 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Subscription Problem (binary sensor) | **Turns on if your subscription lapses** — data silently goes stale otherwise; alert on this |
 
 ### Status Flags (binary sensors)
-Derived from already-fetched data, so they add no API cost and give you something concrete to automate against.
+Derived from already-fetched data, these flags give you something concrete to automate against.
 
 | Binary sensor | On when | Device |
 |--------------|---------|--------|
-| Any Market Open | Any market you hold in is currently within trading hours (weekends closed; holidays not modelled) | Market Hours |
 | Has Unconfirmed Transactions | The portfolio has trades awaiting confirmation | Portfolio |
 | Dividend Imminent | A held instrument goes ex-dividend within the next 3 days | Income |
 | API Degraded | The Sharesight API is in a rate-limit / lockout cooldown (diagnostic — stays available during failures) | Portfolio |
@@ -297,18 +416,16 @@ Derived from already-fetched data, so they add no API cost and give you somethin
 | Average Buy Price / Brokerage Paid / Net Shares Traded | Volume-weighted cost and trade activity |
 | Last Trade Date / Trade Count | Per-holding trade activity |
 
-### Watchlist / FX / Market Hours (availability depends on your Sharesight API access)
+### Watchlist (availability depends on your Sharesight API access)
 | Sensor | Description |
 |--------|-------------|
 | Watchlist Count / Up Today / Down Today / Average Change | Overview of instruments you watch but don't hold |
 | Watchlist Top Gainer / Top Loser (+ percent) | Biggest daily movers on your watchlist |
 | Watchlist `<CODE>` price / day change percent | Live price and today's percent change for each instrument on your watchlist (up to 50, all on the single Watchlist device; auto-discovered on each poll) |
-| `<CUR>` to `<BASE>` rate | Live FX rate per foreign currency you hold (multi-currency portfolios) |
-| `<MARKET>` status / next open / next close | Trading-hours state per market you hold in |
 
-> These last three groups rely on Sharesight's mobile/internal API surface. If
-> your API token can't reach them they simply never appear (the integration
-> parks the endpoint) — everything else keeps working.
+> The watchlist uses a mobile-scoped Sharesight route. If the loaded account
+> cannot reach it, the endpoint is parked without affecting the portfolio's
+> public performance data.
 
 ### Diversity
 | Sensor | Description |
@@ -316,6 +433,9 @@ Derived from already-fetched data, so they add no API cost and give you somethin
 | Top Market 1–5 (Name / Percent / Value) | Your five largest market exposures |
 | Diversity Group Count | Number of distinct market groups |
 | Top 3 / Top 5 Markets Percent | Concentration of portfolio in largest markets |
+
+These rankings use the same market-grouped performance `sub_totals` as the
+per-market devices; they do not depend on the internal market-metadata route.
 
 ### Trades
 | Sensor | Description |
@@ -346,12 +466,78 @@ Derived from already-fetched data, so they add no API cost and give you somethin
 ### Diagnostics
 | Sensor | Description |
 |--------|-------------|
-| Last Successful Update | Timestamp of the last successful poll |
+| Last Successful Update | When the data currently being served was actually fetched (not when a poll last returned) |
 | Update Interval (s) | Current coordinator polling interval |
-| Optional Endpoints On Cooldown | Count of endpoints temporarily skipped due to rate limits |
+| Optional Endpoints On Cooldown | Count of endpoints temporarily parked after a failure |
+| Dividend Yield Coverage / P/E Coverage | How much of the portfolio's value backs the weighted yield / P&nbsp;E figure |
 | Portfolio Inception Date / Country / Owner / Access Level | Portfolio metadata |
 | Portfolio Age (days) | Days since portfolio inception |
 | Performance Calculation Method | How returns are calculated |
+
+---
+
+## Options
+
+**Settings → Devices & Services → Sharesight → Configure.** Defaults suit most
+installations; nothing here needs to be understood to use the integration.
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| **Poll interval (seconds)** | 300 | How often the portfolio is refreshed. Clamped to 60–3600; the shared request gate coordinates loaded portfolios against Sharesight's documented rate and concurrency limits |
+| **Backfill portfolio value history** | On | On startup, imports your whole inception-to-today daily value series into the Portfolio Value sensor's long-term statistics, so charts show years rather than days-since-install. Needs the value-data endpoint to be reachable for your API access |
+| **Automatically delete devices for sold holdings** | Off | See [Deleting stale devices](#deleting-stale-devices) |
+| **Create per-holding entities** | On | Per-holding entities dominate the entity count. Turning this off keeps only portfolio-level figures; existing entities are hidden rather than deleted, so turning it back on restores them with their history |
+| **Add 3/6 month and 1/3/5 year windows** | Off | Adds locally named performance sensors for five additional windows on the slow tier |
+
+### Extended performance windows
+
+With the option on, five more devices appear. Each carries change amount and
+percent, capital gain and percent, and dividend gain and percent.
+
+| Device | Window |
+|--------|--------|
+| 3 Month / 6 Month | Calendar months back from today, day-clamped |
+| 1 / 3 / 5 Year | Calendar years back, clamped to the portfolio's inception date so you never ask for data that cannot exist |
+
+---
+
+## Which API version is used, and why
+
+The integration deliberately mixes V2 and V3 rather than preferring the newer
+one. What decides it is not the version number but the **access tier**: many
+V3 endpoints are scoped to Sharesight's own web or mobile apps and may return
+`403`, `404` or `406` for an ordinary API token or an unsupported version
+prefix.
+
+| Data | Source | Why |
+|------|--------|-----|
+| The combined report (value, gains, holdings, market sub-totals, cash) | **V3** `portfolios/{id}/performance` | Public tier; its response combines holdings with quantity, value and the full gain family |
+| Period windows (day, week, month, YTD, FY) | **V3** `portfolios/{id}/performance`, with V2 fallback for a route/version mismatch | Keeps one response shape where V3 is available while retaining a public V2 equivalent |
+| All-time including sold positions | **V3** `performance` with `include_sales=true`, with V2 fallback for a route/version mismatch | Public User API routes that include realised gains from exited positions |
+| Payouts, trades, cash accounts, instruments, user | **V2** | No V3 equivalent at the portfolio level |
+| Benchmark | **V3** | V2 has none — and this is the only source of the drawdown figures |
+| Value series and watchlist | **V3** | The watchlist route is mobile-scoped and parks quietly when unavailable |
+| Per-market allocation | Combined performance `sub_totals` | No separate markets or exchange-rates route is polled |
+
+**Fallbacks.** Only where the two sources are genuinely equivalent:
+
+- All-time figures use the public inception-to-today performance window. The
+  internal totals route is deliberately not called.
+- Per-instrument cost figures prefer the public `holdings/{id}` route and fall back
+  to the two mobile-scoped `average_purchase_price.json` / `cost_base.json`
+  calls only when the combined route is missing or version-incompatible.
+- Every optional endpoint falls back to **its own last good payload** while it
+  is parked, for up to 12 hours, after which its sensors go unavailable rather
+  than reporting something stale as current. A permanent `406` version mismatch
+  is capability-gated for the loaded entry instead of being retried forever.
+
+Fallbacks never hide an authentication or configuration error. A `401` or
+revoked grant starts re-authentication; a permanently missing portfolio stops
+setup and asks you to add its replacement as a new entry.
+
+Full detail, including the exact parameters and the documented-vs-actual field
+discrepancies, is in
+[docs/sharesight-api-reference.md](docs/sharesight-api-reference.md).
 
 ---
 
@@ -361,7 +547,8 @@ The integration registers six **response services** — they return data rather 
 
 ### `sharesight.get_portfolio_summary`
 
-Headline value, period gains, top/worst movers, cash and trailing dividend income — read from already-held data (no extra API call).
+Headline value, period gains, top/worst movers, cash and trailing dividend
+income, read from the coordinator's existing data.
 
 ```yaml
 action: sharesight.get_portfolio_summary
@@ -389,7 +576,8 @@ currency: AUD
 
 ### `sharesight.get_holdings`
 
-The portfolio's holdings as a sortable, limitable list (no extra API call).
+The portfolio's holdings as a sortable, limitable list, read from the
+coordinator's existing data.
 
 ```yaml
 action: sharesight.get_holdings
@@ -415,7 +603,8 @@ count: 5
 
 ### `sharesight.get_income`
 
-Trailing-twelve-month, calendar-year-to-date and next-30-day dividend income, plus announced upcoming payouts (no extra API call).
+Trailing-twelve-month, calendar-year-to-date and next-30-day dividend income,
+plus announced upcoming payouts, derived from the coordinator's existing data.
 
 ```yaml
 action: sharesight.get_income
@@ -428,16 +617,28 @@ Response:
 ttm: 4380.22
 ytd: 2110.00
 next_30d: 305.40
+currency: AUD
 upcoming:
   - symbol: VAS.ASX
     amount: 142.10
+    currency: AUD
+    native_amount: 142.10
+    native_currency: AUD
+    exchange_rate: 1.0
     ex_date: "2026-07-25"
     pay_date: "2026-08-14"
 ```
 
+The aggregate values and each upcoming `amount` are denominated in the
+portfolio `currency`. Upcoming rows also retain the API's `native_amount`,
+`native_currency` and `exchange_rate`. If a foreign payout has no usable
+exchange rate, `amount` is `null` rather than being silently relabelled as the
+portfolio currency.
+
 ### `sharesight.generate_performance_report`
 
-The only service that hits the API — one request per call. Fetches an on-demand performance report for an arbitrary date range and grouping.
+Fetches an on-demand performance report for an arbitrary date range and
+grouping.
 
 ```yaml
 action: sharesight.generate_performance_report
@@ -454,7 +655,11 @@ Response: the raw Sharesight performance report — `value`, `capital_gain(_perc
 
 ### `sharesight.get_instrument_fundamentals`
 
-Sharechecker fundamentals plus the official average purchase price and cost base for one held instrument, identified by its symbol. Makes a few on-demand API requests each time it is called (some are mobile-scoped and may be unavailable to standard API tokens).
+Sharechecker fundamentals plus the official average purchase price and cost
+base for one held instrument, identified by its symbol. The service prefers the
+public combined holding route and uses split mobile fallbacks only for a
+route/version mismatch; some results may therefore be unavailable to a standard
+token.
 
 ```yaml
 action: sharesight.get_instrument_fundamentals
@@ -500,13 +705,21 @@ login_url: "https://api.sharesight.com/users/sign_in?signon-token=..."
 
 ## Activity events & device triggers
 
-Each portfolio gets an **activity event entity** — `event.sharesight_activity_<portfolio_id>` ("Sharesight Activity", on the Portfolio device). Every poll the coordinator diffs the new data against the previous poll (zero extra API cost) and fires an event when something changes. Event types:
+Each portfolio gets an **activity event entity** — `event.sharesight_activity_<portfolio_id>` ("Sharesight Activity", on the Portfolio device). The coordinator diffs refreshed data against the previous poll and fires an event when something changes. Event types:
 
-`dividend_announced`, `dividend_paid`, `trade_confirmed`, `holding_opened`, `holding_closed`, `cash_transaction`, `daily_close`, `news_published`
+`dividend_announced`, `dividend_paid`, `trade_confirmed`, `holding_opened`, `holding_closed`, `cash_transaction`, `daily_close`
 
 The fired `event_type`, the triggering record's fields, and the full same-poll batch (under `items`) are all carried on the event's attributes.
 
-`news_published` fires when Sharesight's instrument-news feed surfaces a new headline for one of your instruments (only the title, link, source, published time and symbol — never the article body). That feed is mobile-scoped, so it starts firing once the optional endpoint becomes reachable for your token; the same headlines also populate the **Latest News** sensor on the Portfolio device. The remaining event types are also exposed as pick-from-the-UI device triggers below; `news_published` is available as a state trigger on the event entity only.
+Monetary event fields are explicit about denomination. Dividend events expose
+`amount` in portfolio `currency` plus the native amount/currency and exchange
+rate. Trade `value` is in `value_currency` (the portfolio currency), while
+`price` is in `price_currency` (the instrument currency). Cash-account events
+retain `native_amount`, `native_currency` and `native_balance`; when the cash
+account is foreign, the portfolio `amount` and `balance` are `null` because the
+transaction feed has no historical FX rate with which to convert them safely.
+
+The event types are also exposed as pick-from-the-UI device triggers below.
 
 Example automation (state trigger on the event entity):
 
@@ -554,10 +767,39 @@ Entity IDs: `button.sharesight_refresh_<portfolio_id>` and `button.sharesight_re
 
 ---
 
-## Polling, performance & the recorder
+## Polling, resilience & the recorder
 
-- **Tiered polling.** The headline value and the day/week windows refresh on **every** poll; the slower financial-year, year-to-date and one-month performance windows only re-fetch **every 12th poll** (≈ hourly at the 5-minute default), on a cold start, or when the financial-year bounds roll over. Skipped windows are carried forward so their sensors never flap. This keeps the integration comfortably inside Sharesight's 360-requests/minute budget.
-- **Recorder exclude (optional).** The activity event entity carries the whole same-poll batch under its `items` attribute, and a few anchor sensors (e.g. Portfolio Value) expose capped rich-list attributes (top holdings / movers, ≤ 25 items) that are handy in templates but verbose in history. If you want to keep the recorder database lean, exclude the entities whose attribute history you don't need — the event entity is safe to drop entirely as it has no meaningful numeric history:
+- **One coordinator, three tiers.** Every entity reads from a single shared
+  poll — no sensor ever talks to Sharesight on its own. The headline value and
+  the day/week windows refresh on **every** poll; the financial-year,
+  year-to-date, one-month, all-time and value-series requests refresh **every
+  12th poll** (≈ hourly at the 5-minute default), on a cold start, or when the
+  financial year rolls over; and optional endpoints back off independently.
+  A shared application-level gate coordinates the documented request and
+  report-concurrency budgets across loaded portfolios.
+- **Nothing is fetched twice.** The performance report already carries the
+  holdings with quantity, value and gains, so the separate holdings endpoint is
+  not part of the polling plan.
+- **Failures are bounded, and visible.** A failed poll serves the previous
+  payload so sensors hold rather than flap, but only for four poll intervals (a
+  30-minute floor). Past that the entities go unavailable. The **Data Stale**
+  binary sensor is on for the whole degraded window and carries `fetched_at`,
+  `age_seconds` and `reason`.
+- **Parked endpoints keep their last value.** When an optional endpoint backs
+  off, its last good payload is replayed for up to 12 hours so its sensors hold;
+  after that they go unavailable rather than reporting a stale number as
+  current.
+- **Logs do not flood.** Each distinct failure logs once at WARNING with
+  `endpoint=…, status=…`; identical repeats go to DEBUG until it recovers, and
+  recovery logs once at INFO.
+- **Recorder-friendly attributes.** The bulky, fast-changing attributes (ranked
+  holdings, top movers, the value sparkline series, allocation
+  breakdowns) are declared *unrecorded*: they are live in the state machine for
+  templates and dashboards, but are no longer written to the database on every
+  state change. The activity event entity still carries the whole same-poll
+  batch under `items`, so if you want to keep the database leaner still,
+  exclude the entities whose history you don't need — the event entity is safe
+  to drop entirely as it has no meaningful numeric history:
   ```yaml
   recorder:
     exclude:
@@ -569,15 +811,164 @@ Entity IDs: `button.sharesight_refresh_<portfolio_id>` and `button.sharesight_re
 
 ## Troubleshooting
 
-- **Sensors showing "Unknown"** — Some sensors (Trades, Contributions, Income details) depend on optional API endpoints that may not be available on all Sharesight plans. These will show as `unknown` if the API returns an error.
-- **"OAuth authentication failed"** — Double-check your Redirect URI matches exactly what's configured in your Sharesight API application. The most common issue is a trailing slash mismatch.
-- **Missing markets or cash accounts** — New markets and cash accounts are auto-discovered on the next poll cycle (every 5 minutes by default, or whatever you set in Options). If you've just added a new holding on a new exchange, give it a refresh cycle or two.
-- **Debug logging** — To see detailed API response data, enable debug logging for the integration:
+**Start with diagnostics.** *Settings → Devices & Services → Sharesight → the
+three-dot menu → **Download diagnostics***. The file is deliberately small and
+answers most questions directly: how old the data is, whether the API is in a
+cooldown, how many endpoint families are parked or unsupported, and whether a
+token is present. It contains no tokens, account identifiers, email address or
+account-holder name. Financial payloads are represented only by redacted
+structural summaries, never raw rows.
+
+- **Entities are unavailable and the *Data Stale* sensor is on** — the last few
+  polls could not fetch fresh data and the grace period has run out. The
+  `degraded_reason` in diagnostics says why. It recovers on its own once
+  Sharesight responds.
+- **Watchlist sensors show "Unknown"** — the watchlist comes from a
+  mobile-scoped route that an ordinary API token may not be entitled to. A
+  temporary entitlement failure parks with exponential backoff; a permanent
+  version mismatch is not retried every hour. Diagnostics reports the parked
+  and unsupported counts without reproducing the endpoint payload.
+- **"Re-authentication required"** — the stored grant has been revoked or the
+  application credential was deleted. Follow the prompt; the portfolio
+  selection, entities and history are all preserved. If reauthentication aborts
+  with *wrong account*, you authorised a Sharesight login that cannot see this
+  portfolio — sign out of Sharesight in your browser and try again.
+- **"OAuth authentication failed"** — the Redirect URI must match your
+  Sharesight API application exactly. A trailing slash is the usual culprit.
+  Also check that the application credential you picked matches the account
+  type you chose: a standard client ID is not valid on the developer sandbox.
+- **Missing a new market-allocation group or cash account** — dynamic entities
+  are discovered from refreshed portfolio data, so give it a poll after adding
+  a holding on a new exchange or changing cash accounts.
+- **Debug logging** — per module, so you can turn on just the part you are
+  chasing:
   ```yaml
   logger:
     logs:
-      custom_components.sharesight: debug
+      custom_components.sharesight: debug            # everything
+      custom_components.sharesight.coordinator: debug # requests and tiers only
+      custom_components.sharesight.sensor: debug      # entity value resolution
   ```
+  Or use *Enable debug logging* on the integration page, which covers all of it.
+
+---
+
+## Known limitations
+
+- **Rate-limit observations are response-based.** When Sharesight supplies
+  remaining-budget headers, the shared request gate and diagnostics consume
+  them; between responses they are not a live server-side counter.
+- **The watchlist is plan/scoped.** Whether a token can reach Sharesight's
+  mobile watchlist route is decided by Sharesight, not by this integration.
+- **No live FX-rate, market-hours or instrument-news feed.** Their advertised
+  internal/mobile routes were rejected by the supplied standard token, so the
+  integration does not poll them or create entities/events from them. Market
+  allocation still comes from performance `sub_totals`, and foreign-currency
+  exposure comes from the currencies on holding rows.
+- **Volatility is indicative.** The value series is thinned by Sharesight
+  (points can be several days apart), so the annualisation scales by the
+  observed spacing rather than assuming trading days. It is a dashboard figure,
+  not a risk-model input.
+- **"1 week" is week-to-date**, Monday through today — not a trailing seven
+  days. On a Monday it is therefore close to zero.
+- **Per-holding average buy price is an approximation.** It is a
+  volume-weighted average of purchases in the instrument's currency, replayed
+  through splits, consolidations and capital returns. Sharesight's own official
+  average purchase price (which restates historic buys at the exchange rate of
+  the day) is available on demand via the `get_instrument_fundamentals` service.
+- **Consolidated portfolio views are not supported.** Sharesight allocates
+  consolidated portfolios their own ids in a separate namespace, and the
+  integration does not list or address them.
+
+---
+
+## Removing the integration
+
+1. **Settings → Devices & Services → Sharesight → the three-dot menu →
+   Delete.** This removes the config entry, all its devices and all its
+   entities. Repeat for each configured portfolio.
+2. **Remove the application credential** (optional):
+   **Settings → Devices & Services → the three-dot menu at the top right →
+   Application Credentials → Sharesight → Delete.**
+3. **Long-term statistics.** The value-history backfill writes into the
+   Portfolio Value sensor's own statistics, so deleting the entity removes them
+   with it. If any orphaned statistics remain, clear them in
+   **Developer Tools → Statistics** (they are listed with a "no longer being
+   recorded" warning and a *Delete* action).
+4. **Uninstall** via HACS, or delete `custom_components/sharesight/`, and
+   restart Home Assistant.
+5. Optionally revoke the integration's access in your Sharesight account
+   settings.
+
+---
+
+## Diagnostics
+
+*Settings → Devices & Services → Sharesight → the three-dot menu →
+**Download diagnostics***. The compact, redacted file contains:
+
+| Block | What is in it |
+|-------|---------------|
+| `entry` | Version, source, state, and the entry data with the token redacted |
+| `auth` | Account type, whether an OAuth implementation and access/refresh tokens are present, and token timing metadata — never the credential or tokens themselves |
+| `coordinator` | Whether it is loaded, when the data was really fetched and how old it is, whether it is degraded and why, the poll interval, the resolved portfolio currency and the financial-year bounds |
+| `api` | Base URL, versions in use, whether a cooldown is active and why, and the documented rate limits |
+| `endpoints` | Parked/unsupported counts, carried-forward cache ages and a logged-failure count |
+| `options_effective` | Every option with its effective value, defaults filled in |
+| `entities` | Entity counts per platform and how many you have disabled |
+| `data_summary` | Each top-level payload described by type, field/list counts, item field names and serialized size rather than reproduced |
+
+**Redacted or omitted:** access and refresh tokens, client id and secret, the
+authorization code, OAuth implementation, redirect URI, portfolio/config-entry
+identifiers, email addresses, the account holder's name and the portfolio name
+in the entry title. Raw holdings, trades, payouts/payments, tax records and news
+payloads are never copied; summaries expose their structure and row counts, not
+symbols, arbitrary mapping keys, amounts, comments or attachment filenames.
+
+There is also a **System Health** entry (*Settings → System → Repairs →
+three-dot menu → System information*) showing how many portfolios are
+configured, whether both Sharesight hosts are reachable, and the most recent
+successful update across them.
+
+---
+
+## Development
+
+```bash
+python -m pip install -r requirements_test.txt
+python -m pytest             # everything, including the Home Assistant tests
+ruff check .
+ruff format --check .
+```
+
+The suite is split so most of it runs anywhere:
+
+- The portable tests directly exercise the reporting-window date maths,
+  analytics, endpoint plan, a full simulated poll and structural checks over
+  all ~390 sensor descriptions. They still import Home Assistant types, but do
+  not need the Home Assistant pytest plugin at runtime. On Windows, where that
+  plugin imports POSIX-only modules, run them with plugin autoload disabled:
+
+  ```powershell
+  $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"
+  python -m pytest --ignore=tests/ha
+  ```
+
+  On POSIX shells, the equivalent is
+  `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --ignore=tests/ha`.
+- `tests/ha/` — the real thing: config, reauth, immutable-portfolio and options flows,
+  entry setup, migration from v1 and v2 entries, and diagnostics redaction.
+  These need `pytest-homeassistant-custom-component`, which cannot import on
+  Windows (it pulls in `fcntl`), so they run on Linux and in CI.
+
+CI reports line coverage for the complete Linux suite and enforces a
+conservative floor. Raise that floor as entity-platform coverage expands.
+
+`tests/fixtures.py` holds synthetic payloads shaped field-for-field like the
+real API responses, including the awkward cases: a sold-out holding left behind
+as dust, a foreign-currency holding, a stale price, a SELL whose value is
+negative, a null-typed cash transaction, and a portfolio on a calendar
+financial year.
 
 ---
 

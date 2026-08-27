@@ -6,10 +6,15 @@
 > <https://api.sharesight.com/api/3/doc/index.html>
 > (also mirrored at `portfolio.sharesight.com`).
 > Endpoint lists below were extracted from the live apiDoc data files
-> (`/api/2/doc/api_data.json`, `/api/3/doc/api_data.json`) on 2026-07-01,
-> re-verified complete against a fresh scrape on 2026-07-02, and re-verified
-> complete again against a fresh scrape on 2026-07-16
-> (52 unique V2 + 103 unique V3 endpoints — all present below).
+> (`/api/2/doc/api_data.json`, `/api/3/doc/api_data.json`) and last
+> re-verified against a fresh scrape on 2026-08-27.
+>
+> **Counts, deduped by `(method, url)`:** 49 unique V2 endpoints (52 named
+> operations — the tables fold Create/Confirm/Reject onto one row) and 105
+> unique V3 endpoints. Earlier revisions of this file deduped by apiDoc `name`,
+> which is *not* unique — `Connection_ConsumerList` and
+> `Connection_ConsumerShow` each cover two different URLs — and so undercounted
+> V3 by two. See §8.
 >
 > Docs are rendered client-side, so the human-readable `index.html` pages
 > only render in a browser; they are built entirely from the JSON data files.
@@ -40,6 +45,25 @@
   recommends checking V3 first and falling back to V2. Some V3 endpoints are
   flagged closed beta / "methods may change without notice" — treat V3
   response shapes as less stable than V2.
+- **Access tiers matter more than the version number.** Every apiDoc entry
+  carries a `version` string, and the suffix is the best predictor of whether
+  an ordinary API token can reach it:
+  - `3.0.0` / `2.0.0` — public User API surface. Still subject to account API
+    enablement, holding limits and ordinary transient failures.
+  - `3.0.0-internal` — Sharesight's own web app (`/totals`, `/overview`,
+    `/reports`, `/labels`, `/currencies`, `/markets`, `/exchange_rates`).
+    Commonly unavailable to a standard token (`403`, or `406` when the public
+    version prefix is not supported by that route).
+  - `3.0.0-mobile` / `2.0.0-mobile` — the mobile app (`/watchlist.json`,
+    `/value`, `portfolio_value_data.json`, `instrument_news.json`,
+    `average_purchase_price.json`, `cost_base.json`). These can return `403`,
+    `404` or `406` when called with the wrong scope or version prefix.
+  Prefer a public-tier endpoint wherever one can answer the same question; the
+  integration now does (see §3).
+- **Mobile base paths.** The apiDoc gives mobile entries a base of
+  `/api/v2.0-mobile/` or `/api/v3.0-mobile/` rather than `/api/v2/` /
+  `/api/v3/`. Endpoints reached under the plain prefix may therefore return
+  `404` or `406` even for an otherwise valid token.
 - A per-account **transaction log** (full XML/JSON request+response) is
   available in Sharesight account settings for debugging.
 
@@ -81,78 +105,105 @@ returned based on the user's plan. When capped, these response headers are set:
   performance windows are only fetched every 12th poll
   (`SLOW_PERIOD_REFRESH_EVERY`, ≈ hourly at the default interval); the day/week
   windows and the combined V3 report still refresh every poll.
-- 3-concurrent heavy cap → `SHARESIGHT_HEAVY_CONCURRENCY = 3` semaphore around
-  any path containing `/performance`, `/diversity`, `/valuation`.
-- General burst cap → separate semaphore of 8 concurrent requests.
-- 401 lockout → detected, then a 10-min global cooldown
+- 3-concurrent heavy cap → a shared `SHARESIGHT_HEAVY_CONCURRENCY = 3` gate
+  around the documented `/performance`, `/diversity` and `/valuation` routes
+  across every loaded portfolio entry using the consumer app. The integration
+  conservatively puts `/benchmark` reports through the same gate as well.
+- General burst cap → a separate shared gate for ordinary requests.
+- 401 lockout → detected, then a 10-min consumer-app cooldown
   (`SHARESIGHT_LOCKOUT_COOLDOWN`) + `ConfigEntryAuthFailed`.
-- 403 parallel/minute → 1-min global cooldown.
+- 403 parallel/minute → 1-min consumer-app cooldown.
 - Flaky optional endpoints → exponential backoff (1 h → 6 h max).
+- A planned optional route that proves version-incompatible →
+  capability-parked for the loaded entry. Routes already known to be rejected
+  by the supplied token are omitted from the polling plan entirely.
 
 ---
 
 ## 3. Endpoints currently used by this integration
 
-From [coordinator.py](../custom_components/sharesight/coordinator.py):
+From [coordinator.py](../custom_components/sharesight/coordinator.py). The poll
+is organised in three tiers; see §2 for why.
 
-| Ver | Endpoint | Purpose in integration |
-|-----|----------|------------------------|
-| V3 | `GET portfolios/{id}` | Startup: portfolio detail + `financial_year_end` |
-| V3 | `GET portfolios` | List (refresh FY bounds) |
-| V3 | `GET portfolios/{id}/performance` | Primary combined performance report |
-| V3 | `GET portfolios/{id}/holdings` | Holdings list |
-| V3 | `GET portfolios/{id}/user_setting` | User settings |
-| V2 | `GET portfolios/{id}/performance` | Period reports (1d / 1w / 1m / YTD / FY) via `start_date`+`end_date` |
-| V2 | `GET portfolios/{id}/payouts` | Income/dividends (historic, inception→today) |
-| V2 | `GET portfolios/{id}/payouts` (today→+1y) | Announced/upcoming dividends → next-dividend sensors + dividend calendar |
-| V2 | `GET portfolios/{id}/diversity` | Diversity breakdown |
-| V2 | `GET portfolios/{id}/trades` | Trades |
-| V2 | `GET portfolios/{id}/capital_gains` | AU only: realised CGT for current FY ("tax" device) |
-| V2 | `GET portfolios/{id}/unrealised_cgt` | AU only: unrealised CGT as of today ("tax" device) |
-| V3 | `GET portfolios/{id}/benchmark` | Benchmark performance + excess return ("benchmark" device; needs a benchmark configured) |
-| V2 | `GET cash_accounts` | Cash accounts |
-| V2 | `GET cash_accounts/{id}/cash_account_transactions` | Per-account cash transactions |
-| V2 | `GET user_instruments` | Per-holding fundamentals (P/E, EPS, NTA, sector, industry, price freshness) + sector/industry allocation device |
-| V2 | `GET my_user.json` | Account device: plan tier, member-since, subscription-problem binary sensor |
-| V3 | `GET watchlist.json` | Watchlist overview device (count, up/down today, top mover/loser) — mobile-scoped, parks if unreachable |
-| V3 | `GET markets` | Market-hours device: open/closed + next open/close per held market — internal-scoped, parks if unreachable |
-| V3 | `GET exchange_rates` | Live FX rate sensors (per foreign currency held) — internal-scoped, multi-currency only, parks if unreachable |
-| V3 | `GET portfolios/{id}/totals` | All-time portfolio performance **including fully-sold positions** (`include_sales=true`) — restores lifetime P&L the main performance report omits ("totals" device). Light endpoint; parks via backoff if the token's scope can't reach it |
-| V2 | `GET portfolios/{id}/instrument_news.json` | Mobile-scoped recent-news feed for the portfolio's instruments → **Latest News** sensor (headline + up to 25 articles: title/source/link/published time) and the `news_published` activity event. Light; parks via backoff if the token can't reach it |
-| V3 | `GET portfolios/{id}/portfolio_value_data.json` | Daily portfolio value series. Two callers: a bounded ~45-day window on the slow poll tier → **Value Change 7d / 30d** trend sensors (the 30d sensor carries the series as an attribute for sparkline cards), and a one-shot inception→today fetch at startup that backfills the Portfolio value sensor's long-term statistics (opt-out via options). Mobile-scoped — parks via backoff / skips silently if unreachable. See [statistics_import.py](../custom_components/sharesight/statistics_import.py). |
+### Required tier — every poll, failure degrades the poll
 
-> **Zero-cost derivations:** the per-holding dividend income / yield-on-cost /
-> franking / last-dividend sensors and the per-holding trade activity / VWAP
-> average buy price / brokerage / last-trade sensors are computed in-memory
-> from the already-fetched `payouts` and `trades` lists — no extra requests.
-> The per-watchlist-instrument price / day-change sensors and the per-label
-> value / share sensors are likewise derived from the already-fetched
-> `watchlist.json` and `holdings` payloads. See
+| Ver | Endpoint | Params the integration passes | Purpose |
+|-----|----------|-------------------------------|---------|
+| V3 | `GET portfolios/{id}` | — | Once at setup: currency, country, inception date, `financial_year_end` |
+| V3 | `GET portfolios` | — | Financial-year rollover, matched on **this** portfolio's id |
+| V3 | `GET portfolios/{id}/performance` | `grouping=market`, `include_limited=true`, `report_combined=true` | The combined report: value, the gain family, holdings, market sub-totals, cash accounts |
+| V3 → V2 | `GET portfolios/{id}/performance` | `start_date=end_date=today`, `grouping=market`, `include_sales=true` | Today's change; V2 is used only for a route/version mismatch |
+| V3 → V2 | `GET portfolios/{id}/performance` | Monday→today, same extras | Week to date; same fallback boundary |
+
+### Slow tier — every 12th poll (≈ hourly), carried forward in between
+
+| Ver | Endpoint | Params | Purpose |
+|-----|----------|--------|---------|
+| V3 → V2 | `GET portfolios/{id}/performance` | financial-year bounds | Financial-year device |
+| V3 → V2 | `GET portfolios/{id}/performance` | trailing 30 days | Monthly device |
+| V3 → V2 | `GET portfolios/{id}/performance` | 1 Jan → today | YTD device |
+| V3 → V2 | `GET portfolios/{id}/performance` | inception → today, `include_sales=true` | **All-time including sold positions**, using public performance routes rather than internal totals |
+| V3 | `GET portfolios/{id}/portfolio_value_data.json` | `start_date` = 45 days ago | Daily value series → trend, drawdown, volatility sensors |
+| V3 → V2 | `GET portfolios/{id}/performance` | 3 m / 6 m / 1 y / 3 y / 5 y windows | **Opt-in** (`enable_extended_performance`) |
+
+### Optional tier — each backs off independently, last payload carried forward
+
+| Ver | Endpoint | Params | Purpose / notes |
+|-----|----------|--------|-----------------|
+| V2 | `GET portfolios/{id}/payouts` | — | Income history (inception→today) |
+| V2 | `GET portfolios/{id}/payouts` | today→+1 y, `use_date=ex_date` | Announced dividends → next-dividend sensors, calendar, `dividend_announced` events; rejected rows are ignored |
+| V2 | `GET portfolios/{id}/trades` | — | Trade analytics, per-holding VWAP/brokerage |
+| V2 | `GET cash_accounts` | — | Cash accounts; also supplies the ids for the per-account transaction calls |
+| V2 | `GET cash_accounts/{id}/cash_account_transactions` | — | Contributions / withdrawals |
+| V3 | `GET portfolios/{id}/user_setting` | — | Report-settings diagnostics |
+| V2 | `GET user_instruments` | — | P/E, EPS, NTA, price freshness |
+| V3 | `GET portfolios/{id}/benchmark` | inception→today, `interest_method` matched to the portfolio | Benchmark comparison, **plus the undocumented `maximum_drawdown` / `return_over_drawdown`** |
+| V2 | `GET my_user.json` | — | Plan tier, subscription health |
+| V3 | `GET watchlist.json` | — | Watchlist device (mobile-scoped) |
+| V2 | `GET portfolios/{id}/capital_gains` | financial-year bounds | AU only |
+| V2 | `GET portfolios/{id}/unrealised_cgt` | `balance_date=today` | AU only |
+
+> **Local derivations from fetched payloads.** Market devices/allocation come
+> from the combined performance report's market-grouped `sub_totals`; sector,
+> industry, investment-type, currency and label allocation; per-holding income / yield-on-cost / franking / last
+> dividend; per-holding trade activity / VWAP / brokerage; portfolio
+> concentration, weighted yield and P/E, foreign-currency exposure from holding
+> currencies, cash drag, stale prices;
+> drawdown, high-water mark and volatility; the CGT harvestable-loss figures —
+> all computed in memory from payloads already fetched. See
 > [analytics.py](../custom_components/sharesight/analytics.py).
 
-> **On-demand (service-only) calls:** these are never polled — they run once
-> per explicit service invocation (see the Services section of the
-> [README](../README.md)) and each tolerates a `403`/gated response by
-> returning an `{"error": ...}` block rather than raising:
-> - V3 `GET instruments/{instrument_id}/sharechecker`, V3
->   `GET holdings/{holding_id}/average_purchase_price.json` and V3
->   `GET holdings/{holding_id}/cost_base.json` — the
->   `get_instrument_fundamentals` service (up to three calls; several are
->   mobile-scoped so may be unavailable to standard tokens).
+> **On-demand (service/button only), never polled.** Each tolerates an
+> inaccessible route by
+> returning an `{"error": …}` block:
+> - V3 `GET holdings/{id}?average_purchase_price=true&cost_base=true` — the
+>   `get_instrument_fundamentals` service. Public tier, and it returns strictly
+>   more than the two mobile-scoped `average_purchase_price.json` /
+>   `cost_base.json` calls it replaced (which remain as a fallback).
+> - V3 `GET instruments/{id}/sharechecker` — same service.
 > - V2 `GET single_sign_on.json` — the `get_login_link` service. Rate-limit
->   exempt; returns a one-minute login URL that is treated as a secret and
->   **never logged** at any level.
-> - V2/V3 `GET portfolios/{id}/performance` — the
->   `generate_performance_report` service (one call per invocation, arbitrary
->   date range + grouping).
+>   exempt; the URL it returns is a live session and is **never logged**.
+> - V3 `GET portfolios/{id}/performance` — the `generate_performance_report`
+>   service.
+> - V3 `GET portfolios/{id}/portfolio_value_data.json` (inception→today) — the
+>   long-term statistics backfill.
 
-**Not yet used but potentially useful** (read-only, low cost): V2
-`GET currencies.json`, V3 `GET .../overview` (holdings + cash,
-"performance minus calculations" — cheaper than `performance`).
+### Deliberately not called
+
+| Endpoint | Why not |
+|----------|---------|
+| V3 `GET portfolios/{id}/holdings` | The performance report's `holdings` array is a strict superset — the standalone endpoint returns no quantity, value or gains at all. It was a wasted request on every poll |
+| V2 `GET portfolios/{id}/diversity` | Investigated, but redundant: market-grouped performance `sub_totals` already drive Top Market, while industry/sector allocation is derived from holding metadata. Removing it saves a calculation-heavy request and avoids mislabelling its default industry buckets as markets |
+| V3 `GET portfolios/{id}/totals` | Internal-scoped and unavailable to ordinary tokens. The integration uses the public `include_sales=true` performance window and does not call or consume this route |
+| V3 internal `GET markets`, `GET exchange_rates` | The supplied standard token returned a permanent version rejection. Market devices/allocation already come from performance `sub_totals`, and foreign-currency exposure comes from holding currencies; no live FX-rate or market-hours entities are created |
+| V2 mobile `GET portfolios/{id}/instrument_news.json` | The advertised mobile route was rejected by the supplied token, so it is not polled and the integration does not advertise a news sensor or event |
+| V3 `GET portfolios/{id}/overview`, `/reports`, `/labels` | Internal-scoped; nothing they return is unavailable elsewhere |
+| V3 `GET portfolios/{id}/performance_index_chart` | Public tier and genuinely useful (growth-of-10 000 vs a benchmark) — see §9 |
+| V2 `GET instruments/{id}/prices.json`, `GET groups.json` | See §9 |
 
 ---
 
-## 4. V2 endpoints (complete — 52 endpoints)
+## 4. V2 endpoints (complete — 49 unique method+path, 52 named operations)
 
 Full path = `https://api.sharesight.com/api/v2` + path shown.
 `:param` and `{param}` are path variables.
@@ -243,7 +294,7 @@ Full path = `https://api.sharesight.com/api/v2` + path shown.
 
 ---
 
-## 5. V3 endpoints (complete — 103 endpoints)
+## 5. V3 endpoints (complete — 105 endpoints)
 
 Full path = `https://api.sharesight.com/api/v3` + path shown.
 
@@ -348,6 +399,8 @@ Full path = `https://api.sharesight.com/api/v3` + path shown.
 | POST | `/connections/{id}/connection_consumers` | Create connection consumer |
 | GET | `/portfolios/{portfolio_id}/connection_consumers` | List portfolio connection consumers |
 | GET/PATCH/DELETE | `/connection_consumers/{id}` | Show / update / delete consumer |
+| GET | `/connections/{id}/connection_consumers` | List a connection's consumers (`3.0.0-internal`; hidden by the old name-based dedupe) |
+| GET | `/portfolio/{id}/connection_consumers.json` | Legacy singular-path alias of the plural route above. No HA value |
 
 ### Watchlist
 | Method | Path | Description |
@@ -382,9 +435,15 @@ Full path = `https://api.sharesight.com/api/v3` + path shown.
 ## 6. Detailed parameters — key read endpoints
 
 ### V2 `GET /portfolios/:portfolio_id/performance.json`
-Returns `portfolio_performance` with `value`, `capital_gain(_percent)`,
+Returns a **flat** object: `value`, `capital_gain(_percent)`,
 `payout_gain(_percent)`, `currency_gain(_percent)`, `total_gain(_percent)`,
-`start_date`, `end_date`, plus grouped holdings/sub_totals.
+`start_date`, `end_date`, `include_sales`, `holdings[]`, `sub_totals[]`,
+`cash_accounts[]`.
+
+> The apiDoc's v2.1 entry for this endpoint describes a *sideloaded* schema
+> (`portfolio_performance`, `portfolio_performance_holdings`,
+> `portfolio_performance_sub_totals`, …). That shape is served under the
+> `/api/v2.1` prefix only — `/api/v2` returns the flat one above. See §7.1.
 
 | Param | Type | Default | Notes |
 |-------|------|---------|-------|
@@ -474,15 +533,32 @@ Superset of V2. Extra params the integration relies on:
 | `cost_base` | Bool | also return cost base |
 | `values_over_time` | String | `true`, or a start-date, for value series since inception |
 
+### Pagination boundary
+
+The read endpoints used by the coordinator do not expose page or cursor
+parameters in Sharesight's current API definitions, so the integration does
+not silently truncate a paginated portfolio feed. The documented list routes
+that do accept `page` / `per_page` are currently outside the polling plan:
+
+- V3 `GET custom_investments/{instrument_id}/adjustments`
+- V3 `GET custom_investments/{instrument_id}/coupon_rates`
+- V3 `GET custom_investment/{id}/prices.json`
+- V3 internal `GET file_imports/{id}/items`
+
+If one of these surfaces is added later, its consumer must iterate the API's
+pagination metadata rather than assuming the first response is complete.
+
 ---
 
 ## 7. Notable behavioural gotchas
 
-- **`performance`/`diversity`/`valuation` are the only endpoints under the
-  3-concurrent cap** — everything else only counts against the 360/min budget.
-- **Diversity/report payloads occasionally return empty/partial** (e.g. when a
-  poll races a token refresh); the coordinator carries the previous breakdown
-  forward to avoid sensor flap.
+- **Sharesight documents `performance`/`diversity`/`valuation` as the routes
+  under the 3-concurrent cap.** The integration also gates `/benchmark`
+  conservatively; ordinary routes only count against the 360/min budget.
+- **Combined performance `sub_totals` can be empty or partial** (e.g. when a
+  poll races a token refresh); a missing or malformed result carries the
+  previous derived market breakdown forward to avoid sensor flap, while a
+  valid empty list is treated as authoritative.
 - **404 on a portfolio** = deleted or access lost → treat as reauth, not a
   transient error.
 - **AU-only reports**: `capital_gains` and `unrealised_cgt` only work for
@@ -493,6 +569,38 @@ Superset of V2. Extra params the integration relies on:
 - Grouping vocabulary differs slightly between V2 (`markets`,
   `industry_classification`, ...) and V3 (adds `country`, `currency`,
   `custom_group`).
+- **`use_date` defaults are opposite between versions.** V2
+  `portfolios/:id/payouts.json` defaults to `paid_on`; the V3 analogue
+  `holdings/{id}/payouts` defaults to `ex_date`. The integration explicitly
+  sends `use_date=ex_date` for the forward-looking window and excludes payouts
+  whose status is `rejected`.
+- **Portfolio dates are portfolio-local.** Request windows are derived in the
+  portfolio's configured time zone and then sent as API dates; changing Home
+  Assistant's host time zone must not shift financial-year or dividend
+  boundaries.
+- **`custom_group_id` is unreachable from V3 alone.** Both performance
+  endpoints describe it as "an id returned from the CustomGroupsList
+  endpoint", which does not exist in V3. The ids come from V2
+  `GET groups.json`.
+
+### 7.1 Documented vs. actually returned
+
+Confirmed against a live portfolio's payloads. Every row here has cost real
+debugging time, and three of them were the direct cause of permanently-unknown
+sensors.
+
+| Field | apiDoc says | Live API returns | Consequence |
+|-------|-------------|------------------|-------------|
+| `payouts[].tax_credit` | documented | **absent** on every payout | "Total Tax Credits" read it and sat at Unknown. The real field is `franking_credits` |
+| `payouts[].capital_gains` | *not documented* (invented name) | **absent** | "Total Capital Gains Distributions" read it. The real fields are `discounted_capital_gains` + `non_discounted_capital_gains` |
+| `benchmark.capital_gain_percentage` | documented | returns `capital_gain_percent` | "Benchmark Capital Gain %" read the documented name and was always Unknown |
+| `benchmark.maximum_drawdown`, `.return_over_drawdown` | *not documented* | **present on every response** | Free risk metrics; now surfaced |
+| `portfolios/{id}/totals` → `percentage_annulaised` | documented (transposed letters) | example and reality both use `percentage_annualised` | Retained as an API quirk; the integration does not consume the internal totals route |
+| `markets[]` | documents `id`, `market_description`, `country_id`, `currency_id`, `allow_decimal_quantities` | returns only `code`, `tz_name`, `trading_start_time`, `trading_end_time`, plus an undocumented `source` | Not polled; market allocation uses performance `sub_totals` |
+| `cash_account_transactions[].cash_account_transaction_type.name` | documented | can be **null** on broker-synced rows | Classifying only on the type dropped real deposits; fall back to the sign of `amount` |
+| `payouts[].amount`, `.gross_amount` | in the **payout** currency | ditto — with `exchange_rate` alongside | Summing them raw across currencies produces a number in no currency at all |
+| `trades[].value` | — | **negative for a SELL** | Aggregates must take the magnitude, and net flow must subtract explicitly |
+| V2 performance response shape | v2.1 entries describe a sideloaded `portfolio_performance` + `portfolio_performance_holdings` schema | `/api/v2` returns a **flat** object (`value`, the gain family, `holdings`, `sub_totals`, `cash_accounts`) | The sideloaded schema is only served under the `/api/v2.1` prefix |
 
 ---
 
@@ -505,5 +613,34 @@ curl -s -o v3.json https://api.sharesight.com/api/3/doc/api_data.json
 ```
 
 Each entry has `type` (method), `url`, `title`, `name`, `group`, `version`,
-`description`, `parameter.fields`, and `success.fields`. Dedupe by `name`
-keeping the highest `version` (apiDoc keeps historical versions of each entry).
+`description`, `parameter.fields`, and `success.fields`.
+
+**Dedupe by `(type.upper(), url)`, not by `name`** — apiDoc `name` is not
+unique per endpoint, and deduping by it silently drops real endpoints.
+
+**Take the UNION of `success.fields` across every version of an entry**, rather
+than keeping only the highest. The v2.1 entries describe a *sideloaded* schema
+served under the `/api/v2.1` prefix, and they omit fields the v2.0 entries
+document that the plain `/api/v2` endpoints really return (ten of the trade
+fields, among others).
+
+---
+
+## 9. Unused endpoints worth revisiting
+
+Ordered by value, annotated with the access tier that decides whether an
+ordinary token can reach them.
+
+| Ver | Endpoint | Tier | What it would unlock |
+|-----|----------|------|----------------------|
+| V3 | `GET portfolios/{id}/performance_index_chart` | **public** | `dates` + `lines[]` where each line is `PORTFOLIO`, `BENCHMARK` or a group — a growth-of-10 000 series for an ApexCharts card, with per-market index lines included when `grouping=market`. Response caveat: the apiDoc field list wraps it in `performance_index_chart` while the example does not, and names the discriminator `type` rather than `line_type`. Parse defensively |
+| V2 | `GET instruments/{id}/prices.json` | public | `high`, `low`, `volume`, `last_traded_on`, `last_traded_value` — the only source of 52-week high/low and distance-from-high. Its cost scales with holding count, so it needs per-instrument backoff |
+| V2 | `GET groups.json` | public | `groups[].id` + `.custom` — the ids that make `grouping=custom_group` usable on both performance endpoints, i.e. per-custom-group performance sensors |
+| V3 | `GET holdings/{id}?values_over_time=<date>` | public | Per-holding value history, for a per-holding long-term-statistics backfill |
+| V3 | `GET portfolios/{id}/performance?benchmark_code=X.Y` | public | Returns `report.benchmark` inline, which could fold per-period excess return (1 d / 1 w / 1 m / YTD / FY vs the benchmark) into the existing period reports |
+| V3 | `GET watchlist.json?start_date=…` | mobile | Reframes `price.diff_*` from a one-day change to a period change |
+| V3 | `GET portfolios/{id}/overview` | internal | `holdings[].sold_at_end` — Sharesight's own answer to "is this position closed?", which the integration currently infers from a dust-quantity heuristic |
+| V3 | `GET portfolios/{id}/reports` | internal | `report_tiles[].show_full_report` — an authoritative entitlement probe, instead of learning by 403 |
+| V2 | `GET currencies.json`, V3 `GET countries`, `/cryptocurrencies` | mixed | Metadata only; nothing the payloads do not already carry |
+| V3 | `GET portfolios/{id}/value` | mobile | A single point-in-time balance. **Not** a series — `portfolio_value_data.json` is the series |
+| V3 | connections / file imports / custom investments / labels write APIs | internal | Write operations; out of scope for a read-only integration |

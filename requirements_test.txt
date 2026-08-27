@@ -1,0 +1,12 @@
+# Test harness for the Sharesight custom integration.
+#
+# pytest-homeassistant-custom-component pins the exact Home Assistant version
+# it was built against (see the matching table in that project's README), so
+# bumping it is how the CI target HA version moves. Minimum-version
+# compatibility is a separate test concern from this current-version CI job.
+pytest-homeassistant-custom-component==0.13.357
+pytest-cov==7.1.0
+
+# The integration's own runtime requirement (mirrors manifest.json), so the
+# import of custom_components.sharesight resolves during tests.
+SharesightAPI==1.4.0

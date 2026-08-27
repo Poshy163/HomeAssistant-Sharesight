@@ -9,9 +9,11 @@ The design goal is to mine data the coordinator ALREADY fetches (the
 portfolio payouts list, the trades list, and the user_instruments feed)
 without adding any API requests.
 """
+
 from __future__ import annotations
 
 from datetime import date, timedelta
+import itertools
 from typing import Any
 
 
@@ -23,6 +25,152 @@ def _f(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _fx_rate(record: dict[str, Any]) -> float | None:
+    """The usable ``exchange_rate`` on a payout or trade, if any.
+
+    Sharesight stamps every payout and trade with the rate that converts its
+    native amount into the portfolio currency.  Zero, negative and unparseable
+    rates are rejected so a bad row falls back to the raw figure rather than
+    producing an infinity.
+    """
+    rate = _f(record.get("exchange_rate"))
+    if rate is None or rate <= 0:
+        return None
+    return rate
+
+
+def to_portfolio_currency(record: dict[str, Any], amount: Any) -> float | None:
+    """Convert ``amount`` from a record's native currency to the portfolio's.
+
+    V2 payouts and trades carry ``amount``/``price``/``brokerage`` in their own
+    currency plus an ``exchange_rate``.  Empirically - and consistent with
+    Sharesight's own converted ``trades[].value`` - the rate is *native units
+    per portfolio unit*, so the conversion is a division::
+
+        0.65 USD / 0.6633 = 0.98 AUD
+        128.00 USD / 0.666356 = 192.09 AUD   (matches trades[].value)
+
+    Summing the raw amounts instead - which the income, brokerage and tax
+    aggregates all used to do - produces a number in no currency at all as
+    soon as a portfolio holds anything foreign.
+
+    Returns None when ``amount`` is not a number; falls back to the raw amount
+    when the record carries no usable rate.
+    """
+    raw = _f(amount)
+    if raw is None:
+        return None
+    rate = _fx_rate(record)
+    return raw / rate if rate is not None else raw
+
+
+def record_currency_code(record: dict[str, Any]) -> str | None:
+    """Return a monetary record's native three-letter currency, when present."""
+    for candidate in (
+        record.get("currency_code"),
+        record.get("currency"),
+        record.get("native_currency"),
+        record.get("instrument_currency"),
+    ):
+        if isinstance(candidate, dict):
+            candidate = candidate.get("code")
+        if candidate:
+            return str(candidate).upper()
+    return None
+
+
+def monetary_amount_details(
+    record: dict[str, Any], amount: Any, portfolio_currency: str | None
+) -> dict[str, Any]:
+    """Describe a native amount and its safe portfolio-currency equivalent.
+
+    A foreign amount without a usable exchange rate is deliberately not
+    relabelled as portfolio currency. Callers still receive the raw amount and
+    native currency for display or audit, while the converted ``amount`` is
+    ``None`` so automations cannot accidentally sum mixed currencies.
+    """
+    raw = _f(amount)
+    native_currency = record_currency_code(record)
+    target_currency = str(portfolio_currency or "").upper() or None
+    rate = _fx_rate(record)
+
+    converted: float | None = None
+    if raw is not None:
+        if native_currency and target_currency:
+            if native_currency == target_currency:
+                converted = raw
+            elif rate is not None:
+                converted = raw / rate
+        else:
+            # Older payloads omit the currency code. Preserve the established
+            # best effort, but publish the native currency as unknown.
+            converted = raw / rate if rate is not None else raw
+
+    return {
+        "amount": converted,
+        "currency": target_currency,
+        "native_amount": raw,
+        "native_currency": native_currency,
+        "exchange_rate": rate,
+    }
+
+
+def brokerage_to_portfolio_currency(
+    trade: dict[str, Any],
+    amount: Any,
+    portfolio_currency: str | None,
+    instrument_currency: str | None = None,
+) -> float | None:
+    """Convert brokerage only when its denomination makes that safe.
+
+    Sharesight permits brokerage in the portfolio currency, the instrument
+    currency, or an unrelated third currency. ``exchange_rate`` converts the
+    instrument currency only, so applying it to every brokerage value silently
+    corrupts third-currency fees. Explicit ambiguous values are omitted; old
+    payloads with no denomination retain the historical best-effort behavior.
+    """
+    raw = _f(amount)
+    if raw is None:
+        return None
+
+    brokerage_code = str(trade.get("brokerage_currency_code") or "").upper()
+    portfolio_code = str(portfolio_currency or "").upper()
+    embedded_instrument_code = (
+        trade.get("instrument_currency_code")
+        or (trade.get("instrument") or {}).get("currency_code")
+        or instrument_currency
+    )
+    instrument_code = str(embedded_instrument_code or "").upper()
+
+    if brokerage_code and portfolio_code and brokerage_code == portfolio_code:
+        return raw
+    if brokerage_code and instrument_code and brokerage_code == instrument_code:
+        return to_portfolio_currency(trade, raw)
+    if brokerage_code and portfolio_code:
+        return None
+    return to_portfolio_currency(trade, raw)
+
+
+def holding_currency(holding: dict[str, Any]) -> str | None:
+    """The instrument's own currency code for a holding.
+
+    The V3 report/holdings rows carry it as ``instrument_currency.code``; the
+    embedded instrument repeats it as ``currency_code``.  Needed wherever a
+    figure is denominated in the instrument's currency rather than the
+    portfolio's - the market price, the average buy price, brokerage.
+    """
+    if not isinstance(holding, dict):
+        return None
+    for candidate in (
+        (holding.get("instrument_currency") or {}).get("code"),
+        holding.get("currency_code"),
+        (holding.get("instrument") or {}).get("currency_code"),
+    ):
+        if candidate:
+            return str(candidate).upper()
+    return None
 
 
 def holding_symbol(holding: dict[str, Any]) -> str | None:
@@ -43,11 +191,7 @@ def holding_market(holding: dict[str, Any]) -> str | None:
     if not isinstance(holding, dict):
         return None
     instrument = holding.get("instrument") or {}
-    return (
-        holding.get("market")
-        or instrument.get("market_code")
-        or holding.get("market_code")
-    )
+    return holding.get("market") or instrument.get("market_code") or holding.get("market_code")
 
 
 # Field-name fallbacks for the two numbers that decide whether a holding row
@@ -167,6 +311,75 @@ def lookup_instrument(
     return None
 
 
+# Above this, a "yield on cost" is an artefact of a shrunken denominator
+# rather than a real figure (a position mostly sold during the trailing year
+# keeps its income but loses its cost base).  Real yields, including the
+# option-income ETFs that make this integration interesting, sit far below it.
+_MAX_PLAUSIBLE_YIELD_PERCENT = 200.0
+
+
+def payout_pay_date(payout: dict[str, Any]) -> str | None:
+    """The date a payout was (or will be) paid, tolerating shape differences."""
+    for field in ("paid_on", "pay_date", "date"):
+        value = payout.get(field)
+        if value:
+            return str(value)
+    return None
+
+
+def payout_ex_date(payout: dict[str, Any]) -> str | None:
+    """The date a payout goes ex-dividend.
+
+    Sharesight's V2 payout calls this ``goes_ex_on``; only the integration's
+    own derived forecast shape uses ``ex_date``.  Reading just ``ex_date`` -
+    as the activity diff and the ``get_income`` service used to - resolves to
+    None on every real payout, which both blanked the field in the emitted
+    events and collapsed the de-duplication key for announced payouts (whose
+    ``id`` is null until they are confirmed).
+    """
+    for field in ("goes_ex_on", "ex_date"):
+        value = payout.get(field)
+        if value:
+            return str(value)
+    return None
+
+
+def holding_symbol_aliases(holding: dict[str, Any]) -> set[str]:
+    """Every spelling of a holding's symbol that appears in the codebase.
+
+    ``holding_symbol`` resolves ``instrument_code -> instrument.code -> code ->
+    symbol`` while the sensor platform's own resolver walks that list in the
+    opposite order.  On every payload Sharesight actually returns the two agree
+    (only ``instrument.code`` is populated), but a payload carrying more than
+    one of them would make a per-holding income or trade sensor look up a key
+    the map was never built under.  Registering both spellings removes the
+    whole class of mismatch without changing which spelling becomes the
+    entity's ``local_name`` — and so without touching any unique_id.
+    """
+    if not isinstance(holding, dict):
+        return set()
+    instrument = holding.get("instrument") or {}
+    candidates = (
+        holding.get("instrument_code"),
+        instrument.get("code"),
+        holding.get("code"),
+        holding.get("symbol"),
+        instrument.get("symbol"),
+    )
+    return {str(value) for value in candidates if value}
+
+
+def _alias_entries(result: dict[str, dict[str, Any]], holdings: list[dict[str, Any]]) -> None:
+    """Point every alias of a held symbol at the same entry object."""
+    for holding in holdings or []:
+        primary = holding_symbol(holding)
+        if not primary or primary not in result:
+            continue
+        entry = result[primary]
+        for alias in holding_symbol_aliases(holding):
+            result.setdefault(alias, entry)
+
+
 def _holding_id_to_symbol(holdings: list[dict[str, Any]]) -> dict[str, str]:
     """Map str(holding_id) -> symbol for joining payouts/trades to holdings."""
     mapping: dict[str, str] = {}
@@ -191,9 +404,11 @@ def build_holding_income(
     trailing-12-month income, franking credits (AU), last dividend
     amount/date, count and yield-on-cost (TTM income / cost base).
 
-    Currency caveat: payout amounts are in the payout currency while cost
-    base is in portfolio currency, so yield-on-cost is approximate for
-    foreign holdings — good enough for a glanceable sensor.
+    Amounts are converted to the portfolio currency with each payout's own
+    ``exchange_rate`` (see ``to_portfolio_currency``) so a portfolio holding
+    both AUD and USD payers produces a total in one currency.  Franking
+    credits and withholding tax are left alone: Sharesight documents those as
+    already being in the portfolio currency.
     """
     id_to_symbol = _holding_id_to_symbol(holdings)
     cost_by_symbol: dict[str, float | None] = {}
@@ -223,12 +438,11 @@ def build_holding_income(
                 "last_dividend_amount": None,
             },
         )
-        pay_date = payout.get("paid_on") or payout.get("date") or payout.get("ex_date")
-        amount = _f(payout.get("amount")) or 0.0
+        pay_date = payout_pay_date(payout)
+        amount = to_portfolio_currency(payout, payout.get("amount")) or 0.0
         entry["count"] += 1
         if pay_date and (
-            entry["last_dividend_date"] is None
-            or str(pay_date)[:10] > entry["last_dividend_date"]
+            entry["last_dividend_date"] is None or str(pay_date)[:10] > entry["last_dividend_date"]
         ):
             entry["last_dividend_date"] = str(pay_date)[:10]
             entry["last_dividend_amount"] = round(amount, 2)
@@ -241,11 +455,22 @@ def build_holding_income(
     for symbol, entry in result.items():
         entry["ttm_income"] = round(entry["ttm_income"], 2)
         entry["franking_ttm"] = round(entry["franking_ttm"], 2)
+        entry["held"] = symbol in cost_by_symbol
         cost_base = cost_by_symbol.get(symbol)
-        if cost_base and cost_base != 0:
-            entry["yield_on_cost"] = round(entry["ttm_income"] / cost_base * 100, 2)
+        # A cost base has to be positive to divide by, and it has to be the
+        # cost base of roughly the position that earned the income: selling
+        # most of a holding during the year collapses the denominator while
+        # the trailing income still reflects the old position, which produced
+        # figures like 8579% on real data.  Above the ceiling the number is
+        # not a yield, it is an artefact, so publish nothing.
+        if cost_base is not None and cost_base > 0:
+            candidate = round(entry["ttm_income"] / cost_base * 100, 2)
+            entry["yield_on_cost"] = (
+                candidate if candidate <= _MAX_PLAUSIBLE_YIELD_PERCENT else None
+            )
         else:
             entry["yield_on_cost"] = None
+    _alias_entries(result, holdings)
     return result
 
 
@@ -270,9 +495,7 @@ def _trade_order_key(trade: dict[str, Any]) -> tuple[str, float]:
     return (trade_date, _f(trade.get("id")) or 0.0)
 
 
-def _rescale_buy_quantity(
-    entry: dict[str, Any], old_quantity: float, new_quantity: float
-) -> None:
+def _rescale_buy_quantity(entry: dict[str, Any], old_quantity: float, new_quantity: float) -> None:
     """Restate accumulated buy quantity across a split or consolidation.
 
     Neither event changes the money spent, only how many shares that money
@@ -288,6 +511,7 @@ def _rescale_buy_quantity(
 def build_holding_trades(
     trades: list[dict[str, Any]],
     holdings: list[dict[str, Any]],
+    portfolio_currency: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Per-holding trade activity keyed by symbol.
 
@@ -304,6 +528,11 @@ def build_holding_trades(
     rate Sharesight's official average purchase price uses.
     """
     id_to_symbol = _holding_id_to_symbol(holdings)
+    symbol_currencies = {
+        str(symbol): holding_currency(holding)
+        for holding in holdings or []
+        if isinstance(holding, dict) and (symbol := holding_symbol(holding)) is not None
+    }
     result: dict[str, dict[str, Any]] = {}
     ordered_trades = sorted(
         (trade for trade in trades or [] if isinstance(trade, dict)),
@@ -329,11 +558,17 @@ def build_holding_trades(
         )
         entry["count"] += 1
         trade_date = trade.get("transaction_date") or trade.get("date")
-        if trade_date and (
-            entry["last_date"] is None or str(trade_date)[:10] > entry["last_date"]
-        ):
+        if trade_date and (entry["last_date"] is None or str(trade_date)[:10] > entry["last_date"]):
             entry["last_date"] = str(trade_date)[:10]
-        brokerage = _f(trade.get("brokerage"))
+        # Brokerage can be in the portfolio currency, instrument currency, or
+        # an unrelated third currency. The trade exchange_rate only converts
+        # the instrument currency, so never apply it blindly to all three.
+        brokerage = brokerage_to_portfolio_currency(
+            trade,
+            trade.get("brokerage"),
+            portfolio_currency,
+            symbol_currencies.get(str(symbol)),
+        )
         if brokerage is not None:
             entry["brokerage"] += brokerage
         qty = _f(trade.get("quantity")) or 0.0
@@ -346,23 +581,17 @@ def build_holding_trades(
         elif trade_type in _SELL_TYPES:
             entry["net_shares"] -= qty
         elif trade_type in _SPLIT_TYPES:
-            _rescale_buy_quantity(
-                entry, entry["net_shares"], entry["net_shares"] + qty
-            )
+            _rescale_buy_quantity(entry, entry["net_shares"], entry["net_shares"] + qty)
             entry["net_shares"] += qty
         elif trade_type in _CONSOLIDATION_TYPES:
-            _rescale_buy_quantity(
-                entry, entry["net_shares"], entry["net_shares"] - qty
-            )
+            _rescale_buy_quantity(entry, entry["net_shares"], entry["net_shares"] - qty)
             entry["net_shares"] -= qty
         elif trade_type in _CAPITAL_RETURN_TYPES:
             # ``capital_return_value`` is the whole distribution for the
             # holding, in the same currency as the trade prices.
             capital_return = _f(trade.get("capital_return_value"))
             if capital_return:
-                entry["_buy_cost"] = max(
-                    0.0, entry["_buy_cost"] - abs(capital_return)
-                )
+                entry["_buy_cost"] = max(0.0, entry["_buy_cost"] - abs(capital_return))
 
     for entry in result.values():
         entry["brokerage"] = round(entry["brokerage"], 2)
@@ -370,7 +599,45 @@ def build_holding_trades(
         buy_qty = entry.pop("_buy_qty", 0.0)
         buy_cost = entry.pop("_buy_cost", 0.0)
         entry["vwap_buy_price"] = round(buy_cost / buy_qty, 4) if buy_qty > 0 else None
+    _alias_entries(result, holdings)
     return result
+
+
+# Where each allocation axis lives on a holding's own embedded instrument.
+# Reading these first means sector/industry/type allocation no longer depends
+# on the OPTIONAL user_instruments feed: the V3 report and holdings rows carry
+# the classification inline, so the breakdown survives a token whose scope
+# cannot reach user_instruments.
+_AXIS_HOLDING_FIELDS = {
+    "sector": ("sector_classification_name",),
+    "industry": ("industry_classification_name",),
+    "instrument_type": (
+        "friendly_instrument_description",
+        "security_type",
+    ),
+}
+
+
+def _axis_value(holding: dict[str, Any], instrument: dict[str, Any], axis: str) -> str:
+    """The allocation bucket a holding belongs to on ``axis``."""
+    embedded = holding.get("instrument")
+    if isinstance(embedded, dict):
+        for field in _AXIS_HOLDING_FIELDS.get(axis, ()):
+            if value := embedded.get(field):
+                return str(value)
+    if value := instrument.get(axis):
+        return str(value)
+    return "Unknown"
+
+
+def _breakdown(buckets: dict[str, float], total: float) -> dict[str, Any]:
+    """Sort value buckets into the ``{breakdown, total}`` shape sensors read."""
+    breakdown: list[dict[str, Any]] = []
+    for name, value in buckets.items():
+        percentage = round(value / total * 100, 2) if total else 0
+        breakdown.append({"group_name": name, "value": round(value, 2), "percentage": percentage})
+    breakdown.sort(key=lambda item: item["value"], reverse=True)
+    return {"breakdown": breakdown, "total": round(total, 2)}
 
 
 def build_sector_allocation(
@@ -378,12 +645,12 @@ def build_sector_allocation(
     instrument_lookup: dict[str, dict[str, Any]],
     axis: str = "sector",
 ) -> dict[str, Any]:
-    """Value-weighted sector or industry allocation.
+    """Value-weighted sector, industry or investment-type allocation.
 
-    Joins each holding's value to its FactSet sector/industry classification
-    (from the free user_instruments feed) and returns a diversity-style
-    ``breakdown`` list, so the existing top-N helper can consume it.  ``axis``
-    is "sector" or "industry".  Unclassified holdings land in "Unknown".
+    Prefers the classification embedded in the holding itself and falls back
+    to the user_instruments feed, returning a diversity-style ``breakdown``
+    list so the existing top-N helper can consume it.  ``axis`` is "sector",
+    "industry" or "instrument_type".  Unclassified holdings land in "Unknown".
     """
     buckets: dict[str, float] = {}
     total = 0.0
@@ -391,60 +658,35 @@ def build_sector_allocation(
         if not isinstance(holding, dict):
             continue
         instrument = lookup_instrument(instrument_lookup, holding) or {}
-        name = instrument.get(axis) or "Unknown"
+        name = _axis_value(holding, instrument, axis)
         value = _f(holding.get("value")) or 0.0
         buckets[name] = buckets.get(name, 0.0) + value
         total += value
-
-    breakdown: list[dict[str, Any]] = []
-    for name, value in buckets.items():
-        percentage = round(value / total * 100, 2) if total else 0
-        breakdown.append(
-            {"group_name": name, "value": round(value, 2), "percentage": percentage}
-        )
-    breakdown.sort(key=lambda item: item["value"], reverse=True)
-    return {"breakdown": breakdown, "total": round(total, 2)}
+    return _breakdown(buckets, total)
 
 
-def portfolio_currency_codes(data: dict[str, Any]) -> list[str]:
-    """Distinct currency codes seen across holdings + instruments (upper-case).
+def build_currency_allocation(
+    holdings: list[dict[str, Any]], base_currency: str | None = None
+) -> dict[str, Any]:
+    """Value-weighted allocation across the currencies holdings are priced in.
 
-    Used to build the exchange_rates request.  Reads whatever data is already
-    present (typically the previous poll's), because holdings for the current
-    poll are not built yet when the request list is assembled.
+    Every holding row carries ``instrument_currency.code``, so this needs no
+    extra request and works even when the FX-rate endpoint is out of scope.
+    ``base_currency`` is only used to label the result; the buckets are the
+    currencies actually held.
     """
-    codes: set[str] = set()
-    if not isinstance(data, dict):
-        return []
-
-    portfolios = data.get("portfolios")
-    if isinstance(portfolios, list) and portfolios and isinstance(portfolios[0], dict):
-        base = portfolios[0].get("currency_code")
-        if base:
-            codes.add(str(base).upper())
-
-    detail = data.get("portfolio_detail")
-    if isinstance(detail, dict) and detail.get("currency_code"):
-        codes.add(str(detail["currency_code"]).upper())
-
-    instruments = data.get("user_instruments")
-    if isinstance(instruments, dict):
-        for inst in instruments.get("instruments", []) or []:
-            if isinstance(inst, dict) and inst.get("currency_code"):
-                codes.add(str(inst["currency_code"]).upper())
-
-    holdings = data.get("holdings")
-    if isinstance(holdings, dict):
-        for holding in holdings.get("holdings", []) or []:
-            if not isinstance(holding, dict):
-                continue
-            currency = holding.get("currency_code") or (
-                holding.get("instrument") or {}
-            ).get("currency_code")
-            if currency:
-                codes.add(str(currency).upper())
-
-    return sorted(codes)
+    buckets: dict[str, float] = {}
+    total = 0.0
+    for holding in holdings or []:
+        if not isinstance(holding, dict):
+            continue
+        code = holding_currency(holding) or "UNKNOWN"
+        value = _f(holding.get("value")) or 0.0
+        buckets[code] = buckets.get(code, 0.0) + value
+        total += value
+    result = _breakdown(buckets, total)
+    result["base_currency"] = (base_currency or "").upper() or None
+    return result
 
 
 def _parse_date(value: Any) -> date | None:
@@ -506,6 +748,13 @@ def _trailing_yield(
     return ttm_income / value * 100
 
 
+# Below this share of equity value, a "portfolio P/E" says more about which
+# instruments happen to publish a ratio than about the portfolio.  Sharesight
+# only carries pe_ratio for a minority of instruments (2% of one real
+# portfolio's value), so the figure is suppressed rather than published.
+_MIN_PE_COVERAGE_PERCENT = 50.0
+
+
 def _price_is_stale(updated_at: Any, today: date, max_age_days: int = 3) -> bool:
     """Whether an instrument price timestamp is older than ``max_age_days``.
 
@@ -524,6 +773,7 @@ def build_portfolio_analytics(
     report: dict[str, Any],
     today: date,
     holding_income: dict[str, Any] | None = None,
+    base_currency: str | None = None,
 ) -> dict[str, Any]:
     """Portfolio-level concentration, quality and composition metrics.
 
@@ -535,25 +785,37 @@ def build_portfolio_analytics(
     - ``hhi``: Herfindahl-Hirschman concentration over equity weights
       (→0 perfectly diversified, →1 a single holding).
     - ``effective_holdings``: inverse-Simpson effective holding count (1/HHI).
-    - ``weighted_yield`` / ``weighted_pe``: value-weighted over ONLY the
-      holdings that expose a valid figure; ``pe_coverage_percent`` reports how
-      much of the equity value backs the P/E number.  No Sharesight payload
-      carries a yield field, so the yield falls back to each holding's
-      trailing-12-month income (``holding_income``) over its market value.
-    - ``fx_exposure_percent``: share of equity value NOT in the largest
-      (assumed base) currency bucket.
+    - ``weighted_yield``: value-weighted across EVERY holding, counting a
+      holding that pays nothing as 0% rather than dropping it from the
+      denominator (which used to inflate the figure by the share of the
+      portfolio that pays no dividends).  No Sharesight payload carries a
+      yield field, so it comes from each holding's trailing-12-month income.
+    - ``weighted_pe``: the harmonic mean (portfolio earnings yield inverted),
+      which is the arithmetically correct way to aggregate P/E ratios, and
+      suppressed entirely below ``_MIN_PE_COVERAGE_PERCENT`` of equity value —
+      an "average P/E" backed by 2% of the portfolio is noise.
+      ``pe_coverage_percent`` reports the backing either way.
+    - ``fx_exposure_percent``: share of equity value not in ``base_currency``
+      (the portfolio's own currency), falling back to the largest bucket only
+      when no base currency is known.  ``None`` when no holding exposes a
+      currency at all, rather than a confident 0%.
     - ``cash_drag_percent``: cash / (equity + cash).
-    - ``stale_price_count``: holdings whose instrument price is >3 days old.
+    - ``stale_price_count``: holdings whose instrument price is >3 days old,
+      or ``None`` when no holding carries a parseable price timestamp (which
+      is what happens when the optional user_instruments feed is out of scope
+      — reporting a confident 0 there was a lie).
     """
     result: dict[str, Any] = {
         "hhi": None,
         "effective_holdings": None,
         "weighted_yield": None,
+        "yield_coverage_percent": None,
         "weighted_pe": None,
         "pe_coverage_percent": None,
         "fx_exposure_percent": None,
         "cash_drag_percent": None,
-        "stale_price_count": 0,
+        "stale_price_count": None,
+        "price_timestamp_coverage_percent": None,
     }
     if not isinstance(holdings_list, list):
         return result
@@ -565,62 +827,91 @@ def build_portfolio_analytics(
     values: list[float] = []
     equity_value = 0.0
     currency_buckets: dict[str, float] = {}
+    currency_known_value = 0.0
     pe_weight = 0.0
-    pe_weighted_sum = 0.0
+    pe_earnings_weight = 0.0
     yield_weight = 0.0
     yield_weighted_sum = 0.0
     stale_count = 0
+    priced_holdings = 0
+    total_holdings = 0
 
     for holding in holdings_list:
         if not isinstance(holding, dict):
             continue
+        total_holdings += 1
         instrument = lookup_instrument(instrument_lookup, holding) or {}
         value = _f(holding.get("value"))
         if value is not None and value > 0:
             values.append(value)
             equity_value += value
 
-            currency = (
-                holding.get("currency_code")
-                or instrument.get("currency_code")
-                or "UNKNOWN"
-            )
-            currency = str(currency).upper()
-            currency_buckets[currency] = currency_buckets.get(currency, 0.0) + value
+            # instrument_currency lives on every V3 report/holdings row, so
+            # this no longer depends on the optional user_instruments feed.
+            currency = holding_currency(holding) or instrument.get("currency_code")
+            if currency:
+                currency = str(currency).upper()
+                currency_buckets[currency] = currency_buckets.get(currency, 0.0) + value
+                currency_known_value += value
 
             pe = _f(instrument.get("pe_ratio"))
             if pe is not None and pe > 0:
                 pe_weight += value
-                pe_weighted_sum += value * pe
+                # Harmonic mean: sum the earnings each holding contributes,
+                # then invert.  An arithmetic mean over-weights the expensive
+                # names and is not a portfolio P/E at all.
+                pe_earnings_weight += value / pe
 
             holding_yield = _holding_yield(holding, instrument)
             if holding_yield is None:
                 holding_yield = _trailing_yield(holding, value, holding_income)
+            # A holding with no payouts has a KNOWN yield of 0%, not an
+            # unknown one, so it belongs in the denominator.
+            if holding_yield is None and isinstance(holding_income, dict):
+                holding_yield = 0.0
             if holding_yield is not None and holding_yield >= 0:
                 yield_weight += value
                 yield_weighted_sum += value * holding_yield
 
-        if _price_is_stale(instrument.get("current_price_updated_at"), today):
-            stale_count += 1
+        price_timestamp = instrument.get("current_price_updated_at")
+        if _parse_date(price_timestamp) is not None:
+            priced_holdings += 1
+            if _price_is_stale(price_timestamp, today):
+                stale_count += 1
 
-    result["stale_price_count"] = stale_count
+    if priced_holdings:
+        result["stale_price_count"] = stale_count
+    if total_holdings:
+        result["price_timestamp_coverage_percent"] = round(
+            priced_holdings / total_holdings * 100, 2
+        )
 
     if equity_value > 0 and values:
         hhi = sum((value / equity_value) ** 2 for value in values)
         result["hhi"] = round(hhi, 4)
         if hhi > 0:
             result["effective_holdings"] = round(1.0 / hhi, 2)
-        base_value = max(currency_buckets.values()) if currency_buckets else 0.0
-        result["fx_exposure_percent"] = round(
-            (equity_value - base_value) / equity_value * 100, 2
-        )
+        if currency_known_value > 0:
+            base = (base_currency or "").upper()
+            if base and base in currency_buckets:
+                base_value = currency_buckets[base]
+            else:
+                # No declared base currency: the largest bucket is the best
+                # available guess, which is what this always did.
+                base_value = max(currency_buckets.values())
+            result["fx_exposure_percent"] = round(
+                (currency_known_value - base_value) / currency_known_value * 100, 2
+            )
 
-    if pe_weight > 0:
-        result["weighted_pe"] = round(pe_weighted_sum / pe_weight, 2)
-        if equity_value > 0:
-            result["pe_coverage_percent"] = round(pe_weight / equity_value * 100, 2)
+    if pe_weight > 0 and pe_earnings_weight > 0 and equity_value > 0:
+        coverage = round(pe_weight / equity_value * 100, 2)
+        result["pe_coverage_percent"] = coverage
+        if coverage >= _MIN_PE_COVERAGE_PERCENT:
+            result["weighted_pe"] = round(pe_weight / pe_earnings_weight, 2)
     if yield_weight > 0:
         result["weighted_yield"] = round(yield_weighted_sum / yield_weight, 2)
+        if equity_value > 0:
+            result["yield_coverage_percent"] = round(yield_weight / equity_value * 100, 2)
 
     cash_value = 0.0
     for account in report.get("cash_accounts", []) or []:
@@ -643,14 +934,31 @@ def build_income_forecast(
     holding_income: dict[str, dict[str, Any]],
     portfolio_value: Any,
     today: date,
+    held_symbols: set[str] | None = None,
 ) -> dict[str, Any]:
     """Forward dividend-income projection.
 
-    Confirmed leg: announced-but-unpaid payouts (``upcoming_payouts``) grouped
-    by pay month.  Projected leg: each dividend-paying holding's
-    trailing-12-month income run-rate (``holding_income``) for payers that do
-    NOT yet have an announcement, so an announced payer is counted from its
-    confirmed figure and everyone else from history (no double counting).
+    Two legs, combined without double counting:
+
+    * **Announced** - the ``upcoming_payouts`` window Sharesight has already
+      declared, grouped by pay month.  Amounts are converted to the portfolio
+      currency with each payout's own ``exchange_rate``.
+    * **Projected** - each *currently held* payer's trailing-12-month income
+      as a run-rate.  For a payer that also has announcements, only the part
+      of the year the announcements do not already cover is projected, so an
+      announced payer no longer silently loses its remaining eleven months.
+
+    ``held_symbols`` is what keeps the projection honest.  ``holding_income``
+    is keyed by every symbol that appears in the payouts feed, which includes
+    positions sold years ago - projecting their run-rate forward produced a
+    "forward annual income" that was mostly income from holdings the user no
+    longer owns.  Pass the symbols currently held and exited positions drop
+    out; pass None and the old (over-stated) behaviour is preserved for
+    callers that cannot supply it.
+
+    The 30- and 90-day windows blend the same two legs, so they stop being
+    exact duplicates of "announced income unpaid" for portfolios whose payers
+    announce only a few weeks ahead.
 
     Returns zero/None fields rather than raising when inputs are missing.
     """
@@ -670,9 +978,9 @@ def build_income_forecast(
 
     income_by_month: dict[str, float] = {}
     announced_total = 0.0
-    income_30d = 0.0
-    income_90d = 0.0
-    announced_symbols: set[str] = set()
+    announced_30d = 0.0
+    announced_90d = 0.0
+    announced_by_symbol: dict[str, float] = {}
     next_date: date | None = None
     horizon_30 = today + timedelta(days=30)
     horizon_90 = today + timedelta(days=90)
@@ -680,49 +988,60 @@ def build_income_forecast(
     for payout in upcoming_payouts:
         if not isinstance(payout, dict):
             continue
-        amount = _f(payout.get("amount"))
+        amount = to_portfolio_currency(payout, payout.get("amount"))
         if amount is None:
-            amount = _f(payout.get("gross_amount"))
+            amount = to_portfolio_currency(payout, payout.get("gross_amount"))
         amount = amount or 0.0
         announced_total += amount
 
         symbol = payout.get("symbol")
         if symbol:
-            announced_symbols.add(symbol)
+            announced_by_symbol[str(symbol)] = announced_by_symbol.get(str(symbol), 0.0) + amount
 
-        pay_date = _parse_date(
-            payout.get("pay_date") or payout.get("paid_on") or payout.get("date")
-        )
-        upcoming_date = pay_date or _parse_date(payout.get("ex_date"))
+        pay_date = _parse_date(payout_pay_date(payout))
+        upcoming_date = pay_date or _parse_date(payout_ex_date(payout))
 
         if pay_date is not None:
             month_key = pay_date.strftime("%Y-%m")
-            income_by_month[month_key] = round(
-                income_by_month.get(month_key, 0.0) + amount, 2
-            )
+            income_by_month[month_key] = round(income_by_month.get(month_key, 0.0) + amount, 2)
             if today <= pay_date <= horizon_30:
-                income_30d += amount
+                announced_30d += amount
             if today <= pay_date <= horizon_90:
-                income_90d += amount
+                announced_90d += amount
 
-        if upcoming_date is not None and upcoming_date >= today and (
-            next_date is None or upcoming_date < next_date
+        if (
+            upcoming_date is not None
+            and upcoming_date >= today
+            and (next_date is None or upcoming_date < next_date)
         ):
             next_date = upcoming_date
 
-    # Projected leg: TTM run-rate for payers without an announcement.
-    projected_total = 0.0
+    # Projected leg: the TTM run-rate of holdings still owned, net of whatever
+    # each has already announced.
+    projected_annual = 0.0
+    projected_30d = 0.0
+    projected_90d = 0.0
     for symbol, entry in holding_income.items():
-        if symbol in announced_symbols or not isinstance(entry, dict):
+        if not isinstance(entry, dict):
+            continue
+        if held_symbols is not None and symbol not in held_symbols:
+            continue
+        # build_holding_income marks entries it could match to a live holding.
+        if held_symbols is None and entry.get("held") is False:
             continue
         ttm = _f(entry.get("ttm_income"))
-        if ttm and ttm > 0:
-            projected_total += ttm
+        if not ttm or ttm <= 0:
+            continue
+        announced = announced_by_symbol.get(symbol, 0.0)
+        projected_annual += max(0.0, ttm - announced)
+        daily = ttm / 365.0
+        projected_30d += max(0.0, daily * 30 - announced)
+        projected_90d += max(0.0, daily * 90 - announced)
 
-    forward_annual_income = announced_total + projected_total
+    forward_annual_income = announced_total + projected_annual
     result["announced_income"] = round(announced_total, 2)
-    result["income_30d"] = round(income_30d, 2)
-    result["income_90d"] = round(income_90d, 2)
+    result["income_30d"] = round(announced_30d + projected_30d, 2)
+    result["income_90d"] = round(announced_90d + projected_90d, 2)
     result["forward_annual_income"] = round(forward_annual_income, 2)
     result["income_by_month"] = income_by_month
     if next_date is not None:
@@ -779,9 +1098,7 @@ def _value_series_points(payload: Any) -> list[tuple[str, float]]:
         for item in raw:
             if not isinstance(item, dict):
                 continue
-            parsed = _parse_date(
-                item.get("date") or item.get("timestamp") or item.get("as_at")
-            )
+            parsed = _parse_date(item.get("date") or item.get("timestamp") or item.get("as_at"))
             value = _f(item.get("value"))
             if value is None:
                 value = _f((item.get("in_portfolio_currency") or {}).get("value"))
@@ -824,9 +1141,7 @@ def build_value_trend(series: Any) -> dict[str, Any]:
         return result
 
     points = points[-31:]
-    result["series"] = [
-        {"date": date_str, "value": round(value, 2)} for date_str, value in points
-    ]
+    result["series"] = [{"date": date_str, "value": round(value, 2)} for date_str, value in points]
 
     latest_date_str, latest_value = points[-1]
     latest_date = _parse_date(latest_date_str)
@@ -856,6 +1171,172 @@ def build_value_trend(series: Any) -> dict[str, Any]:
 
     result["change_7d_percent"] = _change(7)
     result["change_30d_percent"] = _change(30)
+    return result
+
+
+def build_value_analytics(series: Any) -> dict[str, Any]:
+    """Risk metrics derived from the daily portfolio value series.
+
+    Every figure here comes from a payload the integration already fetches for
+    the value-trend sensors, so it costs no extra request.  Sharesight's own
+    ``/benchmark`` report publishes a maximum drawdown for the *benchmark*;
+    this is the portfolio's own, computed the same way.
+
+    * ``all_time_high`` / ``all_time_high_date`` - the peak in the window.
+    * ``max_drawdown_percent`` - the largest peak-to-trough fall in the window.
+    * ``current_drawdown_percent`` - how far below the peak the latest value
+      sits (0 when at a new high).
+    * ``days_since_high`` - days since the peak was set.
+    * ``volatility_percent`` - the standard deviation of the percentage moves
+      between consecutive points, annualised.  Sharesight thins the series
+      (points can be three or more days apart), so the annualisation scales by
+      the observed average spacing rather than assuming one point per trading
+      day; assuming daily points inflates the figure several-fold.  None when
+      there are fewer than three points to measure.
+
+    The window is whatever the caller fetched: the trend sensors request ~45
+    days, so these are "in the last 45 days" figures unless a longer series is
+    supplied.  Degrades to all-None rather than raising.
+    """
+    result: dict[str, Any] = {
+        "all_time_high": None,
+        "all_time_high_date": None,
+        "max_drawdown_percent": None,
+        "current_drawdown_percent": None,
+        "days_since_high": None,
+        "volatility_percent": None,
+        "point_count": 0,
+    }
+    points = _value_series_points(series)
+    if not points:
+        return result
+    result["point_count"] = len(points)
+
+    peak = float("-inf")
+    peak_date: str | None = None
+    max_drawdown = 0.0
+    for date_str, value in points:
+        if value > peak:
+            peak, peak_date = value, date_str
+        elif peak > 0:
+            drawdown = (peak - value) / peak * 100
+            max_drawdown = max(max_drawdown, drawdown)
+
+    latest_date_str, latest_value = points[-1]
+    if peak_date is not None and peak > 0:
+        result["all_time_high"] = round(peak, 2)
+        result["all_time_high_date"] = peak_date
+        result["max_drawdown_percent"] = round(max_drawdown, 2)
+        result["current_drawdown_percent"] = round(max(0.0, (peak - latest_value) / peak * 100), 2)
+        high_date = _parse_date(peak_date)
+        latest_date = _parse_date(latest_date_str)
+        if high_date is not None and latest_date is not None:
+            result["days_since_high"] = (latest_date - high_date).days
+
+    returns: list[float] = []
+    for (_, previous), (_, current) in itertools.pairwise(points):
+        if previous:
+            returns.append((current - previous) / previous)
+    if len(returns) >= 2:
+        mean = sum(returns) / len(returns)
+        variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+        first_date = _parse_date(points[0][0])
+        last_date = _parse_date(latest_date_str)
+        span_days = (
+            (last_date - first_date).days if first_date is not None and last_date is not None else 0
+        )
+        # Periods per year implied by the series' own spacing, capped at the
+        # 252-trading-day convention so a same-day duplicate cannot blow the
+        # figure up.
+        average_gap = span_days / len(returns) if span_days > 0 else 1.0
+        periods_per_year = min(252.0, 365.0 / max(average_gap, 1.0))
+        result["volatility_percent"] = round((variance**0.5) * (periods_per_year**0.5) * 100, 2)
+
+    return result
+
+
+def _parcel_gain(parcel: dict[str, Any]) -> float | None:
+    """The unrealised gain on a CGT parcel, tolerating field-name drift."""
+    for field in ("unrealised_gain", "gain", "capital_gain"):
+        value = _f(parcel.get(field))
+        if value is not None:
+            return value
+    # Fall back to the arithmetic the report is doing anyway.
+    market_value = _f(parcel.get("market_value"))
+    cost_base = _f(parcel.get("cost_base"))
+    if market_value is not None and cost_base is not None:
+        return market_value - cost_base
+    return None
+
+
+def build_cgt_analytics(capital_gains: Any, unrealised_cgt: Any) -> dict[str, Any]:
+    """Tax figures the CGT reports return but the integration never surfaced.
+
+    Both reports are already fetched every poll for Australian portfolios and
+    carry per-parcel arrays alongside the headline scalars.  The parcels are
+    what make tax-loss harvesting answerable: how much unrealised loss is
+    sitting there, across how many parcels, and how much short-term gain is
+    close enough to the twelve-month mark to be worth waiting for.
+
+    Every field degrades to None/0 when its report is absent (a non-AU
+    portfolio never fetches them at all).
+    """
+    result: dict[str, Any] = {
+        "claimable_loss": None,
+        "short_term_losses": None,
+        "long_term_losses": None,
+        "cgt_concession_rate": None,
+        "realised_market_value": None,
+        "harvestable_loss": None,
+        "harvestable_parcel_count": None,
+        "unrealised_short_term_parcels": None,
+        "unrealised_long_term_parcels": None,
+        "unrealised_balance_date": None,
+        "largest_loss_symbol": None,
+        "largest_loss_amount": None,
+        "largest_loss_purchased_on": None,
+    }
+
+    if isinstance(capital_gains, dict):
+        result["claimable_loss"] = _f(capital_gains.get("claimable_loss"))
+        result["short_term_losses"] = _f(capital_gains.get("short_term_losses"))
+        result["long_term_losses"] = _f(capital_gains.get("long_term_losses"))
+        result["cgt_concession_rate"] = _f(capital_gains.get("cgt_concession_rate"))
+        result["realised_market_value"] = _f(capital_gains.get("market_value"))
+
+    if isinstance(unrealised_cgt, dict):
+        losses = unrealised_cgt.get("losses")
+        if isinstance(losses, list):
+            harvestable = 0.0
+            worst: dict[str, Any] | None = None
+            for parcel in losses:
+                if not isinstance(parcel, dict):
+                    continue
+                # Verified against a live payload: a parcel is
+                # {market, symbol, name, allocation_method, purchase_date,
+                #  quantity, cost_base, market_value, unrealised_gain}, and a
+                # loss is a negative unrealised_gain.
+                gain = _parcel_gain(parcel)
+                if gain is not None and gain < 0:
+                    harvestable += abs(gain)
+                    if worst is None or gain < (_parcel_gain(worst) or 0.0):
+                        worst = parcel
+            result["harvestable_loss"] = round(harvestable, 2)
+            result["harvestable_parcel_count"] = len(losses)
+            if worst is not None:
+                result["largest_loss_symbol"] = worst.get("symbol")
+                result["largest_loss_amount"] = round(abs(_parcel_gain(worst) or 0.0), 2)
+                result["largest_loss_purchased_on"] = worst.get("purchase_date")
+        for key, field in (
+            ("unrealised_short_term_parcels", "short_term_parcels"),
+            ("unrealised_long_term_parcels", "long_term_parcels"),
+        ):
+            parcels = unrealised_cgt.get(field)
+            if isinstance(parcels, list):
+                result[key] = len(parcels)
+        if balance_date := unrealised_cgt.get("balance_date"):
+            result["unrealised_balance_date"] = str(balance_date)
+
     return result
 
 

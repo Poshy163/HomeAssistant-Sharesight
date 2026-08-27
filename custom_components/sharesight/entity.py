@@ -14,12 +14,14 @@ URL points at the standard or edge web host accordingly.
 Subclasses keep full ownership of their ``unique_id``, ``entity_id`` and name;
 this base only removes duplication and must not change any of those values.
 """
+
 from __future__ import annotations
 
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import ACCOUNT_DEVELOPER, DOMAIN, portfolio_resource_id
 from .coordinator import SharesightCoordinator
 
 
@@ -33,12 +35,13 @@ class SharesightBaseEntity(CoordinatorEntity[SharesightCoordinator]):
     # existing entity is renamed or orphaned by this switch.
     _attr_has_entity_name = True
 
-    def __init__(
-        self, coordinator: SharesightCoordinator, portfolio_id, edge: bool
-    ) -> None:
+    def __init__(self, coordinator: SharesightCoordinator, portfolio_id, edge: bool) -> None:
         super().__init__(coordinator)
         self._portfolio_id = portfolio_id
         self._edge = edge
+        self._resource_id = portfolio_resource_id(
+            portfolio_id, ACCOUNT_DEVELOPER if edge else "standard"
+        )
         # " Edge " for developer/edge portfolios, " " otherwise — the exact
         # infix the platforms have always used inside display names/models.
         self._edge_name = " Edge " if edge else " "
@@ -68,21 +71,14 @@ class SharesightBaseEntity(CoordinatorEntity[SharesightCoordinator]):
         # written afterwards, so this is populated whenever it matters.
         if not (translation_key := self.translation_key) or self.platform is None:
             return None
-        return self.coordinator.entity_icons.get(self.platform.domain, {}).get(
-            translation_key
-        )
+        return self.coordinator.entity_icons.get(self.platform.domain, {}).get(translation_key)
 
     @property
     def _configuration_url(self) -> str:
         """Deep link to this portfolio on the (edge or standard) web app."""
-        return (
-            f"https://{self._edge_url}portfolio.sharesight.com"
-            f"/portfolios/{self._portfolio_id}"
-        )
+        return f"https://{self._edge_url}portfolio.sharesight.com/portfolios/{self._portfolio_id}"
 
-    def _make_device_info(
-        self, *, identifier: str, name: str, model: str
-    ) -> DeviceInfo:
+    def _make_device_info(self, *, identifier: str, name: str, model: str) -> DeviceInfo:
         """Wrap a fully-resolved (identifier, name, model) into a DeviceInfo.
 
         Used where the caller has already resolved the device's display name and
@@ -96,7 +92,7 @@ class SharesightBaseEntity(CoordinatorEntity[SharesightCoordinator]):
         (``{portfolio_id}_portfolio``) is the tree root and must not reference
         itself, so it is the one device that gets no ``via_device``.
         """
-        hub_identifier = f"{self._portfolio_id}_portfolio"
+        hub_identifier = f"{self._resource_id}_portfolio"
         device_info = DeviceInfo(
             entry_type=DeviceEntryType.SERVICE,
             identifiers={(DOMAIN, identifier)},
@@ -109,12 +105,19 @@ class SharesightBaseEntity(CoordinatorEntity[SharesightCoordinator]):
         # __init__.async_setup_entry ensures the hub device exists before any
         # platform adds entities (guaranteeing this reference always resolves).
         if identifier != hub_identifier:
-            device_info["via_device"] = (DOMAIN, hub_identifier)
+            # 2026.8 deprecates the tuple form and removes it in 2027.8. Keep a
+            # feature-gated fallback for the declared 2025.3 minimum.
+            if "via_device_id" in DeviceInfo.__annotations__:
+                hub = dr.async_get(self.coordinator.hass).async_get_device(
+                    identifiers={(DOMAIN, hub_identifier)}
+                )
+                if hub is not None:
+                    device_info["via_device_id"] = hub.id
+            else:  # pragma: no cover - exercised on older supported HA cores
+                device_info["via_device"] = (DOMAIN, hub_identifier)
         return device_info
 
-    def _service_device_info(
-        self, group: str, label: str, model_suffix: str
-    ) -> DeviceInfo:
+    def _service_device_info(self, group: str, label: str, model_suffix: str) -> DeviceInfo:
         """Build the standard ``Sharesight[ Edge ]<label>`` service device.
 
         ``group`` is appended to the portfolio id to form the device identifier
@@ -123,7 +126,7 @@ class SharesightBaseEntity(CoordinatorEntity[SharesightCoordinator]):
         reproduces, byte-for-byte, the DeviceInfo the platforms built inline.
         """
         return self._make_device_info(
-            identifier=f"{self._portfolio_id}_{group}",
+            identifier=f"{self._resource_id}_{group}",
             name=f"Sharesight{self._edge_name}{label}",
             model=f"Sharesight{self._edge_name}API - {model_suffix}",
         )

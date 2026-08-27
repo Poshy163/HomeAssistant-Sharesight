@@ -6,14 +6,23 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: "ubuntu-latest"
+    timeout-minutes: 15
     steps:
-      - uses: "actions/checkout@v2"
+      - uses: "actions/checkout@v6"
       - name: HACS validation
         uses: "hacs/action@main"
         with:
           category: "integration"
+          ignore: brands
       - name: Hassfest validation
         uses: "home-assistant/actions/hassfest@master"

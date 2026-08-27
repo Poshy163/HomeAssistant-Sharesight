@@ -1,39 +1,46 @@
-from homeassistant.const import CURRENCY_DOLLAR
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.components.sensor import (
-    SensorEntity
-)
-from .const import APP_VERSION
-from .data import SharesightConfigEntry
+from datetime import date, datetime, timedelta
 import logging
 from time import monotonic
-from datetime import datetime, time, timedelta
-from homeassistant.util import dt as dt_util
-from .enum import (
-    SENSOR_DESCRIPTIONS,
-    MARKET_SENSOR_DESCRIPTIONS,
-    CASH_SENSOR_DESCRIPTIONS,
-    ALL_HOLDING_DESCRIPTIONS,
-    TAX_SENSOR_DESCRIPTIONS,
-    BENCHMARK_SENSOR_DESCRIPTIONS,
-    SECTOR_SENSOR_DESCRIPTIONS,
-    ACCOUNT_SENSOR_DESCRIPTIONS,
-    WATCHLIST_SENSOR_DESCRIPTIONS,
-    FX_SENSOR_DESCRIPTIONS,
-    MARKET_HOURS_SENSOR_DESCRIPTIONS,
-    ANALYTICS_SENSOR_DESCRIPTIONS,
-    TOTALS_SENSOR_DESCRIPTIONS,
-    WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS,
-    NEWS_SENSOR_DESCRIPTIONS,
-    VALUE_TREND_SENSOR_DESCRIPTIONS,
-    LABEL_SENSOR_DESCRIPTIONS,
-)
-from . import analytics
-from .coordinator import SharesightCoordinator
-from .entity import SharesightBaseEntity
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.const import CURRENCY_DOLLAR
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
+
+from . import analytics
+from .const import (
+    APP_VERSION,
+    CONF_ENABLE_EXTENDED_PERFORMANCE,
+    CONF_ENABLE_HOLDING_ENTITIES,
+    DEFAULT_ENABLE_EXTENDED_PERFORMANCE,
+    DEFAULT_ENABLE_HOLDING_ENTITIES,
+    DOMAIN,
+)
+from .coordinator import SharesightCoordinator
+from .data import SharesightConfigEntry
+from .entity import SharesightBaseEntity
+from .enum import (
+    ACCOUNT_SENSOR_DESCRIPTIONS,
+    ALL_HOLDING_DESCRIPTIONS,
+    ANALYTICS_SENSOR_DESCRIPTIONS,
+    BENCHMARK_SENSOR_DESCRIPTIONS,
+    CASH_SENSOR_DESCRIPTIONS,
+    EXTENDED_SENSOR_DESCRIPTIONS,
+    LABEL_SENSOR_DESCRIPTIONS,
+    MARKET_SENSOR_DESCRIPTIONS,
+    SECTOR_SENSOR_DESCRIPTIONS,
+    SENSOR_DESCRIPTIONS,
+    TAX_SENSOR_DESCRIPTIONS,
+    TOTALS_SENSOR_DESCRIPTIONS,
+    VALUE_TREND_SENSOR_DESCRIPTIONS,
+    WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS,
+    WATCHLIST_SENSOR_DESCRIPTIONS,
+)
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Entities are updated from the DataUpdateCoordinator (no per-entity I/O), so
 # no parallel-update limit is needed. Declaring this satisfies the HA quality
@@ -46,16 +53,13 @@ WATCHLIST_INSTRUMENT_CAP = 50
 
 
 def _slug_symbol(value):
-    """Slugify an instrument code / label into a registry-safe unique_id token.
+    """Reproduce the historical instrument/label unique-id token.
 
-    Mirrors the entity_id slug rules used in SharesightSensor.__init__ so codes
-    like "BRK.B" or labels with spaces/punctuation collapse to a stable
-    lowercase [a-z0-9_] token.
+    Kept solely so an existing registry row can be adopted. New canonical
+    unique ids retain the raw code/name and cannot collide through this lossy
+    recipe.
     """
-    slug = "".join(
-        c if c.isalnum() else "_"
-        for c in str(value).lower().replace(" ", "_")
-    )
+    slug = "".join(c if c.isalnum() else "_" for c in str(value).lower().replace(" ", "_"))
     while "__" in slug:
         slug = slug.replace("__", "_")
     return slug.strip("_")
@@ -91,9 +95,48 @@ def _watchlist_instruments_for_discovery(data, cap=WATCHLIST_INSTRUMENT_CAP):
     return out
 
 
+# Per-holding descriptions whose value is denominated in the INSTRUMENT's own
+# currency rather than the portfolio's.  Everything else on a holding (value,
+# the gain family, cost base) is already converted by Sharesight, so labelling
+# a London price of 7.045 as "7.045 AUD" was wrong for these fields.
+_INSTRUMENT_CURRENCY_RECIPES = frozenset(
+    {
+        ("holdings_list", "instrument_price"),
+        ("holding_trade", "vwap_buy_price"),
+        ("holding_fundamental", "eps"),
+        ("holding_fundamental", "nta"),
+    }
+)
+
+
+def _holding_sensor_currency(description, instrument_currency: str, portfolio_currency: str) -> str:
+    """The currency unit a per-holding sensor should carry."""
+    if (description.key, description.sub_key) in _INSTRUMENT_CURRENCY_RECIPES:
+        return instrument_currency
+    return portfolio_currency
+
+
+def _holding_logo(holding) -> str | None:
+    """The instrument's logo URL, used as the holding sensor's entity picture.
+
+    Sharesight ships a light/dark SVG pair on every instrument.  The light
+    variant is chosen because Home Assistant renders entity pictures on the
+    card background, which is light in the default theme; both URLs are also
+    published as attributes so a dashboard can pick the other one.
+    """
+    if not isinstance(holding, dict):
+        return None
+    logo = (holding.get("instrument") or {}).get("logo")
+    if isinstance(logo, dict):
+        url = logo.get("light_url") or logo.get("dark_url")
+        if isinstance(url, str) and url.startswith("https://"):
+            return url
+    return None
+
+
 def _get_holding_value(h):
     """Get the market value of a holding, trying multiple field names."""
-    for field in ('value', 'market_value', 'total_value', 'current_value', 'last_value'):
+    for field in ("value", "market_value", "total_value", "current_value", "last_value"):
         val = h.get(field)
         if val is not None:
             try:
@@ -105,7 +148,7 @@ def _get_holding_value(h):
 
 def _get_holding_gain(h):
     """Get the gain of a holding, trying multiple field names."""
-    for field in ('capital_gain', 'gain', 'total_gain', 'unrealised_gain'):
+    for field in ("capital_gain", "gain", "total_gain", "unrealised_gain"):
         val = h.get(field)
         if val is not None:
             try:
@@ -117,7 +160,7 @@ def _get_holding_gain(h):
 
 def _get_holding_gain_percent(h):
     """Get the gain percent of a holding, trying multiple field names."""
-    for field in ('capital_gain_percent', 'gain_percent', 'total_gain_percent'):
+    for field in ("capital_gain_percent", "gain_percent", "total_gain_percent"):
         val = h.get(field)
         if val is not None:
             try:
@@ -130,12 +173,12 @@ def _get_holding_gain_percent(h):
 def _get_holding_symbol(h):
     """Get the symbol/code of a holding."""
     return (
-        h.get('symbol')
-        or h.get('code')
-        or h.get('instrument_code')
-        or (h.get('instrument', {}) or {}).get('code', '')
-        or (h.get('instrument', {}) or {}).get('symbol', '')
-        or ''
+        h.get("symbol")
+        or h.get("code")
+        or h.get("instrument_code")
+        or (h.get("instrument", {}) or {}).get("code", "")
+        or (h.get("instrument", {}) or {}).get("symbol", "")
+        or ""
     )
 
 
@@ -145,29 +188,20 @@ def _get_largest_holding(holdings_data):
         _LOGGER.debug("holdings_data is empty")
         return None
 
-    holdings = holdings_data.get('holdings', [])
+    holdings = holdings_data.get("holdings", [])
     if not holdings:
         _LOGGER.debug("No holdings in holdings_data. Keys: %s", list(holdings_data.keys()))
         return None
 
     try:
-        # Log sample holding keys for debugging
-        if holdings:
-            _LOGGER.debug("Sample holding keys: %s", list(holdings[0].keys()))
-
         largest = max(holdings, key=_get_holding_value)
-        portfolio_value = float(holdings_data.get('value', 0) or 1)
+        portfolio_value = float(holdings_data.get("value", 0) or 1)
         largest_value = _get_holding_value(largest)
         percent = (largest_value / portfolio_value * 100) if portfolio_value else 0
         symbol = _get_holding_symbol(largest)
-        _LOGGER.debug("Found largest holding: %s with value %s", symbol, largest_value)
-        return {
-            'symbol': symbol,
-            'value': largest_value,
-            'percent': round(percent, 2)
-        }
+        return {"symbol": symbol, "value": largest_value, "percent": round(percent, 2)}
     except (ValueError, TypeError, KeyError) as e:
-        _LOGGER.debug("Error in _get_largest_holding: %s, first holding sample: %s", e, holdings[0] if holdings else 'no holdings')
+        _LOGGER.debug("Could not calculate largest holding: %s", e)
         return None
 
 
@@ -176,7 +210,7 @@ def _get_top_gain_holding(holdings_data):
     if not holdings_data:
         return None
 
-    holdings = holdings_data.get('holdings', [])
+    holdings = holdings_data.get("holdings", [])
     if not holdings:
         return None
 
@@ -184,11 +218,7 @@ def _get_top_gain_holding(holdings_data):
         top = max(holdings, key=_get_holding_gain)
         symbol = _get_holding_symbol(top)
         gain_pct = _get_holding_gain_percent(top)
-        return {
-            'symbol': symbol,
-            'amount': _get_holding_gain(top),
-            'percent': gain_pct
-        }
+        return {"symbol": symbol, "amount": _get_holding_gain(top), "percent": gain_pct}
     except (ValueError, TypeError, KeyError) as e:
         _LOGGER.debug("Error in _get_top_gain_holding: %s", e)
         return None
@@ -199,7 +229,7 @@ def _get_worst_gain_holding(holdings_data):
     if not holdings_data:
         return None
 
-    holdings = holdings_data.get('holdings', [])
+    holdings = holdings_data.get("holdings", [])
     if not holdings:
         return None
 
@@ -207,11 +237,7 @@ def _get_worst_gain_holding(holdings_data):
         worst = min(holdings, key=_get_holding_gain)
         symbol = _get_holding_symbol(worst)
         gain_pct = _get_holding_gain_percent(worst)
-        return {
-            'symbol': symbol,
-            'amount': _get_holding_gain(worst),
-            'percent': gain_pct
-        }
+        return {"symbol": symbol, "amount": _get_holding_gain(worst), "percent": gain_pct}
     except (ValueError, TypeError, KeyError) as e:
         _LOGGER.debug("Error in _get_worst_gain_holding: %s", e)
         return None
@@ -221,15 +247,15 @@ def _get_smallest_holding(holdings_data):
     """Get the smallest holding by value."""
     if not holdings_data:
         return None
-    holdings = holdings_data.get('holdings', [])
+    holdings = holdings_data.get("holdings", [])
     if not holdings:
         return None
     try:
         smallest = min(holdings, key=_get_holding_value)
         smallest_value = _get_holding_value(smallest)
         return {
-            'symbol': _get_holding_symbol(smallest),
-            'value': smallest_value,
+            "symbol": _get_holding_symbol(smallest),
+            "value": smallest_value,
         }
     except (ValueError, TypeError, KeyError):
         return None
@@ -246,52 +272,43 @@ def _find_holding_by_symbol(holdings_list, symbol):
 def _get_income_summary(income_data, report_data=None):
     """Get income report summary."""
     # First try from dedicated income_report data (full API response)
-    if income_data and 'error' not in income_data:
+    if income_data and "error" not in income_data:
         try:
             # Use explicit None checks instead of 'or' chains (0 is a valid value)
             total_income = None
-            for field in ('total_income', 'total', 'total_dividend', 'payout_gain'):
+            for field in ("total_income", "total", "total_dividend", "payout_gain"):
                 val = income_data.get(field)
                 if val is not None:
                     total_income = val
                     break
 
-            payouts = income_data.get('payouts', [])
+            payouts = income_data.get("payouts", [])
 
             if total_income is None and payouts:
                 try:
-                    total_income = sum(float(p.get('amount', 0)) for p in payouts)
+                    total_income = sum(float(p.get("amount", 0)) for p in payouts)
                 except (ValueError, TypeError):
                     pass
 
             # If we still don't have total_income, try from report_data
             if total_income is None and report_data:
-                val = report_data.get('payout_gain')
+                val = report_data.get("payout_gain")
                 if val is not None:
                     total_income = val
 
-            return {
-                'total_income': total_income,
-                'dividend_count': len(payouts) if payouts else 0
-            }
+            return {"total_income": total_income, "dividend_count": len(payouts) if payouts else 0}
         except (TypeError, KeyError) as e:
             _LOGGER.debug("Error in _get_income_summary from income_data: %s", e)
 
     # Fallback: try to extract payout info from report data
     if report_data:
         try:
-            payout_gain = report_data.get('payout_gain')
-            return {
-                'total_income': payout_gain,
-                'dividend_count': 0
-            }
+            payout_gain = report_data.get("payout_gain")
+            return {"total_income": payout_gain, "dividend_count": 0}
         except (TypeError, KeyError):
             pass
 
-    return {
-        'total_income': None,
-        'dividend_count': 0
-    }
+    return {"total_income": None, "dividend_count": 0}
 
 
 def _get_diversity_top_markets(diversity_data, n=5):
@@ -303,9 +320,9 @@ def _get_diversity_top_markets(diversity_data, n=5):
 
     try:
         breakdown = sorted(
-            diversity_data.get('breakdown', []),
-            key=lambda x: float(x.get('percentage', 0)),
-            reverse=True
+            diversity_data.get("breakdown", []),
+            key=lambda x: float(x.get("percentage", 0)),
+            reverse=True,
         )
 
         if not breakdown:
@@ -315,18 +332,15 @@ def _get_diversity_top_markets(diversity_data, n=5):
         result = [{} for _ in range(n)]
         for i in range(min(n, len(breakdown))):
             result[i] = {
-                'name': breakdown[i].get('group_name'),
-                'percent': breakdown[i].get('percentage'),
-                'value': breakdown[i].get('value')
+                "name": breakdown[i].get("group_name"),
+                "percent": breakdown[i].get("percentage"),
+                "value": breakdown[i].get("value"),
             }
-            _LOGGER.debug("Market %s: %s - %s%%", i + 1, breakdown[i].get('group_name'), breakdown[i].get('percentage'))
-
         return result
     except (ValueError, TypeError, KeyError) as e:
         _LOGGER.debug(
-            "Error in _get_diversity_top_markets: %s, sample breakdown: %s",
+            "Could not rank diversity markets: %s",
             e,
-            diversity_data.get('breakdown', [{}])[0] if diversity_data.get('breakdown') else 'no breakdown',
         )
         return empty
 
@@ -391,8 +405,18 @@ def _get_contributions_summary(cash_transactions_data):
             if isinstance(tx_type_obj, dict):
                 tx_type = tx_type_obj.get("name")
         tx_type = str(tx_type or "").upper()
-        if tx_type not in {"DEPOSIT", "WITHDRAWAL", "OPENING BALANCE"}:
+
+        # A settled trade or a dividend credit is not an external
+        # contribution, so anything tied to one is excluded outright.
+        if any(tx.get(field) is not None for field in ("trade_id", "payout_id")):
             continue
+        if tx_type:
+            if tx_type not in {"DEPOSIT", "WITHDRAWAL", "OPENING BALANCE"}:
+                continue
+        # Sharesight leaves the type null on some broker-synced rows.
+        # Skipping those silently dropped real deposits - one live
+        # portfolio was understating its contributions ten-fold - so an
+        # untyped row is classified by the sign of its amount instead.
 
         amount = tx.get("amount")
         try:
@@ -414,9 +438,7 @@ def _get_contributions_summary(cash_transactions_data):
                 latest = {"date_time": dt_value, "amount": amount}
 
     avg_contribution = (
-        round(total_contributions / contribution_count, 2)
-        if contribution_count
-        else None
+        round(total_contributions / contribution_count, 2) if contribution_count else None
     )
 
     return {
@@ -458,115 +480,39 @@ def _watchlist_metric(items, key):
     for item in items or []:
         if not isinstance(item, dict):
             continue
-        instrument = item.get('instrument') or {}
-        price = item.get('price') or {}
-        code = instrument.get('code') or item.get('code')
-        diff = price.get('diff_percent')
+        instrument = item.get("instrument") or {}
+        price = item.get("price") or {}
+        code = instrument.get("code") or item.get("code")
+        diff = price.get("diff_percent")
         try:
             diff = float(diff) if diff is not None else None
         except (ValueError, TypeError):
             diff = None
-        parsed.append({'code': code, 'diff': diff})
+        parsed.append({"code": code, "diff": diff})
 
     if key == "watchlist_count":
         return len(parsed)
 
-    with_diff = [p for p in parsed if p['diff'] is not None]
+    with_diff = [p for p in parsed if p["diff"] is not None]
     if key == "watchlist_up_count":
-        return sum(1 for p in with_diff if p['diff'] > 0)
+        return sum(1 for p in with_diff if p["diff"] > 0)
     if key == "watchlist_down_count":
-        return sum(1 for p in with_diff if p['diff'] < 0)
+        return sum(1 for p in with_diff if p["diff"] < 0)
     if key == "watchlist_average_percent":
         if not with_diff:
             return None
-        return round(sum(p['diff'] for p in with_diff) / len(with_diff), 2)
+        return round(sum(p["diff"] for p in with_diff) / len(with_diff), 2)
     if not with_diff:
         return None
     if key == "watchlist_top_gainer_symbol":
-        return max(with_diff, key=lambda p: p['diff'])['code']
+        return max(with_diff, key=lambda p: p["diff"])["code"]
     if key == "watchlist_top_gainer_percent":
-        return round(max(with_diff, key=lambda p: p['diff'])['diff'], 2)
+        return round(max(with_diff, key=lambda p: p["diff"])["diff"], 2)
     if key == "watchlist_top_loser_symbol":
-        return min(with_diff, key=lambda p: p['diff'])['code']
+        return min(with_diff, key=lambda p: p["diff"])["code"]
     if key == "watchlist_top_loser_percent":
-        return round(min(with_diff, key=lambda p: p['diff'])['diff'], 2)
+        return round(min(with_diff, key=lambda p: p["diff"])["diff"], 2)
     return None
-
-
-def _foreign_currency_codes(data, base_currency):
-    """Foreign currency codes held (for FX rate sensor discovery)."""
-    if not isinstance(data, dict):
-        return []
-    base = str(base_currency or "").upper()
-    return [c for c in analytics.portfolio_currency_codes(data) if c and c != base]
-
-
-def _held_market_codes(data):
-    """Distinct market codes across current holdings (sorted, de-duplicated)."""
-    if not isinstance(data, dict):
-        return []
-    holdings = data.get("holdings", {})
-    holdings_list = holdings.get("holdings", []) if isinstance(holdings, dict) else []
-    codes: set[str] = set()
-    for holding in holdings_list:
-        market = analytics.holding_market(holding)
-        if market:
-            codes.add(str(market))
-    return sorted(codes)
-
-
-def _market_hours_status(market, now):
-    """Compute (is_open, next_open, next_close) for a market from its hours.
-
-    ``market`` is a Sharesight markets[] entry (tz_name + trading_start_time +
-    trading_end_time as HH:MM).  ``now`` is an aware datetime.  Weekends are
-    treated as closed; public holidays and half-days are NOT modelled, so the
-    signal is approximate.  Returns aware datetimes (or None) for the next
-    open/close boundaries.
-    """
-    tz_name = market.get("tz_name")
-    start_raw = market.get("trading_start_time")
-    end_raw = market.get("trading_end_time")
-    if not (tz_name and start_raw and end_raw):
-        return None, None, None
-    tz = dt_util.get_time_zone(tz_name)
-    if tz is None:
-        return None, None, None
-    try:
-        start_h, start_m = (int(x) for x in str(start_raw).split(":")[:2])
-        end_h, end_m = (int(x) for x in str(end_raw).split(":")[:2])
-    except (ValueError, TypeError):
-        return None, None, None
-
-    local_now = now.astimezone(tz)
-    start_t = time(start_h, start_m)
-    end_t = time(end_h, end_m)
-
-    def _is_trading_day(d):
-        return d.weekday() < 5
-
-    is_open = _is_trading_day(local_now) and start_t <= local_now.time() <= end_t
-
-    next_open = None
-    next_close = None
-    for offset in range(0, 9):
-        day = (local_now + timedelta(days=offset)).date()
-        if not _is_trading_day(day):
-            continue
-        open_dt = datetime.combine(day, start_t, tzinfo=tz)
-        close_dt = datetime.combine(day, end_t, tzinfo=tz)
-        if next_open is None and open_dt > local_now:
-            next_open = open_dt
-        if next_close is None and close_dt > local_now:
-            next_close = close_dt
-        if next_open and next_close:
-            break
-
-    return (
-        is_open,
-        next_open.astimezone(dt_util.UTC) if next_open else None,
-        next_close.astimezone(dt_util.UTC) if next_close else None,
-    )
 
 
 async def async_setup_entry(
@@ -579,14 +525,13 @@ async def async_setup_entry(
     coordinator: SharesightCoordinator = runtime_data.coordinator
     portfolio_id = runtime_data.portfolio_id
     edge = runtime_data.edge
-    portfolios = coordinator.data.get("portfolios", [])
-    local_currency = "USD"
-    if portfolios and isinstance(portfolios[0], dict):
-        local_currency = portfolios[0].get("currency_code", "USD")
-    elif isinstance(coordinator.data.get("report", {}).get("currency"), dict):
-        local_currency = coordinator.data.get("report", {}).get("currency", {}).get("code", "USD")
+    resource_id = f"developer_{portfolio_id}" if edge else str(portfolio_id)
+    # The portfolio's own currency, resolved once by the coordinator.  This
+    # used to read portfolios[0].currency_code, i.e. whichever portfolio the
+    # account happened to list first - the wrong currency for every entry but
+    # the first on a multi-portfolio account.
+    local_currency = coordinator.portfolio_currency
 
-    entry_id = entry.entry_id  # noqa: F841 — retained for logging/debug parity
     # runtime-data (Bronze): the three fan-out tracking lists live on
     # entry.runtime_data (created in __init__.async_setup_entry, cleared with
     # the entry on unload).  The update_sensors closure below appends the
@@ -598,17 +543,25 @@ async def async_setup_entry(
     sensors = []
     seen_unique_ids: set[str] = set()
 
-    for sensor in SENSOR_DESCRIPTIONS:
-        sensors.append(SharesightSensor(sensor, entry, coordinator,
-                                        local_currency, portfolio_id, edge))
+    descriptions = list(SENSOR_DESCRIPTIONS)
+    if entry.options.get(
+        CONF_ENABLE_EXTENDED_PERFORMANCE,
+        DEFAULT_ENABLE_EXTENDED_PERFORMANCE,
+    ):
+        descriptions.extend(EXTENDED_SENSOR_DESCRIPTIONS)
+    for sensor in descriptions:
+        sensors.append(
+            SharesightSensor(sensor, entry, coordinator, local_currency, portfolio_id, edge)
+        )
 
     # Capital gains tax sensors: the underlying V2 reports are AU-only, so
     # only create them for Australian portfolios.
     portfolio_detail = coordinator.data.get("portfolio_detail", {})
     if str(portfolio_detail.get("country_code", "")).upper() == "AU":
         for sensor in TAX_SENSOR_DESCRIPTIONS:
-            sensors.append(SharesightSensor(sensor, entry, coordinator,
-                                            local_currency, portfolio_id, edge))
+            sensors.append(
+                SharesightSensor(sensor, entry, coordinator, local_currency, portfolio_id, edge)
+            )
 
     # Benchmark sensors: only once the benchmark report has returned data
     # (requires a benchmark to be configured on the portfolio).  If it shows
@@ -621,32 +574,37 @@ async def async_setup_entry(
 
     if _has_benchmark_data(coordinator.data):
         for sensor in BENCHMARK_SENSOR_DESCRIPTIONS:
-            sensors.append(SharesightSensor(sensor, entry, coordinator,
-                                            local_currency, portfolio_id, edge))
+            sensors.append(
+                SharesightSensor(sensor, entry, coordinator, local_currency, portfolio_id, edge)
+            )
             benchmark_added.append(str(sensor.name))
 
-    # Portfolio Totals sensors: only once the v3 /totals endpoint has returned
-    # data.  It parks via the optional-endpoint backoff for scope-gated tokens,
-    # so gating on key-presence (like benchmark) avoids phantom entities.  If it
-    # comes online later, update_sensors() below adds them dynamically.
+    # All-time sensors are created only once the public inception-to-today
+    # performance window has returned. Gating on key-presence avoids phantom
+    # entities when that slow-tier request fails during first setup.
     totals_added: list[str] = []
 
     def _has_totals_data(coordinator_data) -> bool:
-        totals = coordinator_data.get("totals")
-        return isinstance(totals, dict) and bool(totals)
+        """Whether all-time (including sold) figures are available.
+
+        The internal-scoped /totals endpoint is deliberately not consumed.
+        """
+        payload = coordinator_data.get("all_time")
+        return isinstance(payload, dict) and bool(payload)
 
     if _has_totals_data(coordinator.data):
         for sensor in TOTALS_SENSOR_DESCRIPTIONS:
-            sensors.append(SharesightSensor(sensor, entry, coordinator,
-                                            local_currency, portfolio_id, edge))
+            sensors.append(
+                SharesightSensor(sensor, entry, coordinator, local_currency, portfolio_id, edge)
+            )
             totals_added.append(str(sensor.name))
 
     # Deduplicate sub_totals by group_name (API may return duplicates)
     seen_markets: set[str] = set()
     __index_market = 0
     report = coordinator.data.get("report", {})
-    for market in report.get('sub_totals', []):
-        local_name = market.get('group_name', 'Unknown Market')
+    for market in report.get("sub_totals", []):
+        local_name = market.get("group_name", "Unknown Market")
         if local_name in seen_markets:
             _LOGGER.debug("Skipping duplicate market sub_total: %s", local_name)
             __index_market += 1
@@ -654,13 +612,22 @@ async def async_setup_entry(
         seen_markets.add(local_name)
         for market_sensor in MARKET_SENSOR_DESCRIPTIONS:
             display_name = f"{local_name} {market_sensor.sub_key.replace('_', ' ')}"
-            uid = f"{portfolio_id}_{local_name}_{market_sensor.sub_key}_{market_sensor.key}_{APP_VERSION}"
+            uid = f"{resource_id}_{local_name}_{market_sensor.sub_key}_{market_sensor.key}_{APP_VERSION}"
             if uid in seen_unique_ids:
                 _LOGGER.debug("Skipping duplicate market sensor unique_id: %s", uid)
                 continue
             seen_unique_ids.add(uid)
-            new_sensor = SharesightSensor(market_sensor, entry, coordinator,
-                                          local_currency, portfolio_id, edge, __index_market, local_name, display_name)
+            new_sensor = SharesightSensor(
+                market_sensor,
+                entry,
+                coordinator,
+                local_currency,
+                portfolio_id,
+                edge,
+                __index_market,
+                local_name,
+                display_name,
+            )
             sensors.append(new_sensor)
             market_sensors.append(display_name)
         __index_market += 1
@@ -668,8 +635,8 @@ async def async_setup_entry(
     # Deduplicate cash_accounts by name
     seen_cash: set[str] = set()
     __index_cash = 0
-    for cash in report.get('cash_accounts', []):
-        local_name = cash.get('name', 'Unknown Cash Account')
+    for cash in report.get("cash_accounts", []):
+        local_name = cash.get("name", "Unknown Cash Account")
         if local_name in seen_cash:
             _LOGGER.debug("Skipping duplicate cash account: %s", local_name)
             __index_cash += 1
@@ -677,81 +644,84 @@ async def async_setup_entry(
         seen_cash.add(local_name)
         for cash_sensor in CASH_SENSOR_DESCRIPTIONS:
             display_name = f"{local_name} cash balance"
-            uid = f"{portfolio_id}_{local_name}_{cash_sensor.sub_key}_{cash_sensor.key}_{APP_VERSION}"
+            uid = (
+                f"{resource_id}_{local_name}_{cash_sensor.sub_key}_{cash_sensor.key}_{APP_VERSION}"
+            )
             if uid in seen_unique_ids:
                 _LOGGER.debug("Skipping duplicate cash sensor unique_id: %s", uid)
                 continue
             seen_unique_ids.add(uid)
-            new_sensor = SharesightSensor(cash_sensor, entry, coordinator,
-                                          local_currency, portfolio_id, edge, __index_cash, local_name, display_name)
+            new_sensor = SharesightSensor(
+                cash_sensor,
+                entry,
+                coordinator,
+                local_currency,
+                portfolio_id,
+                edge,
+                __index_cash,
+                local_name,
+                display_name,
+            )
             sensors.append(new_sensor)
             cash_sensors.append(display_name)
         __index_cash += 1
 
-    # Create per-holding individual sensors
+    # Create per-holding individual sensors.  This family is by far the
+    # biggest contributor to the entity count (about 31 entities per
+    # holding), so users who only want portfolio-level figures can switch
+    # the whole thing off in the options.  Existing entities are left in
+    # the registry rather than deleted, so turning it back on restores them
+    # with their history intact.
+    create_holding_entities = entry.options.get(
+        CONF_ENABLE_HOLDING_ENTITIES, DEFAULT_ENABLE_HOLDING_ENTITIES
+    )
     seen_holding_symbols: set[str] = set()
     holdings_data = coordinator.data.get("holdings", {})
     holdings_list = holdings_data.get("holdings", []) if isinstance(holdings_data, dict) else []
-    for holding in holdings_list:
+    for holding in holdings_list if create_holding_entities else []:
         symbol = _get_holding_symbol(holding)
         if not symbol or symbol in seen_holding_symbols:
             continue
         seen_holding_symbols.add(symbol)
+        instrument_currency = analytics.holding_currency(holding) or local_currency
+        logo = _holding_logo(holding)
         for holding_sensor in ALL_HOLDING_DESCRIPTIONS:
             display_name = f"{symbol} {holding_sensor.sub_key.replace('_', ' ')}"
-            uid = f"{portfolio_id}_{symbol}_{holding_sensor.sub_key}_{holding_sensor.key}_{APP_VERSION}"
+            uid = f"{resource_id}_holding_{symbol}_{holding_sensor.sub_key}_{holding_sensor.key}_{APP_VERSION}"
             if uid in seen_unique_ids:
                 continue
             seen_unique_ids.add(uid)
-            new_sensor = SharesightSensor(holding_sensor, entry, coordinator,
-                                          local_currency, portfolio_id, edge, 0, symbol, display_name)
+            new_sensor = SharesightSensor(
+                holding_sensor,
+                entry,
+                coordinator,
+                _holding_sensor_currency(holding_sensor, instrument_currency, local_currency),
+                portfolio_id,
+                edge,
+                0,
+                symbol,
+                display_name,
+                # Only the anchor value sensor carries the logo, so a
+                # holding device shows one picture rather than 31.
+                entity_picture=logo if holding_sensor.key == "value" else None,
+            )
             sensors.append(new_sensor)
             holding_sensors.append(display_name)
 
     # Portfolio sector/industry allocation + account + watchlist + analytics
     # devices.  These are fixed sensor sets (no per-item fan-out).  Analytics
     # is derived every poll at zero API cost, so it is always created.
-    # NEWS + VALUE_TREND are portfolio-device sensors that read the optional
-    # instrument_news / value_trend keys; like the watchlist overview they are
-    # always created and simply report None until their endpoint comes online.
+    # VALUE_TREND reads the slow-tier value series.
     for sensor in (
         SECTOR_SENSOR_DESCRIPTIONS
         + ACCOUNT_SENSOR_DESCRIPTIONS
         + WATCHLIST_SENSOR_DESCRIPTIONS
         + ANALYTICS_SENSOR_DESCRIPTIONS
-        + NEWS_SENSOR_DESCRIPTIONS
         + VALUE_TREND_SENSOR_DESCRIPTIONS
     ):
-        sensors.append(SharesightSensor(sensor, entry, coordinator,
-                                        local_currency, portfolio_id, edge))
-
-    # Dynamic FX rate sensors — one per foreign currency held.
-    fx_sensors: list[str] = []
-    base_currency = local_currency
-    for code in _foreign_currency_codes(coordinator.data, base_currency):
-        for fx_sensor in FX_SENSOR_DESCRIPTIONS:
-            display_name = f"{code} to {base_currency} rate"
-            uid = f"{portfolio_id}_fx_{code}_{fx_sensor.key}_{APP_VERSION}"
-            if uid in seen_unique_ids:
-                continue
-            seen_unique_ids.add(uid)
-            sensors.append(SharesightSensor(fx_sensor, entry, coordinator,
-                                            local_currency, portfolio_id, edge, 0, code, display_name))
-            fx_sensors.append(display_name)
-
-    # Dynamic market trading-hours sensors — one set per held market.
-    market_hours_sensors: list[str] = []
-    for market_code in _held_market_codes(coordinator.data):
-        for mh_sensor in MARKET_HOURS_SENSOR_DESCRIPTIONS:
-            display_name = f"{market_code} {mh_sensor.name}"
-            uid = f"{portfolio_id}_market_hours_{market_code}_{mh_sensor.key}_{APP_VERSION}"
-            if uid in seen_unique_ids:
-                continue
-            seen_unique_ids.add(uid)
-            sensors.append(SharesightSensor(mh_sensor, entry, coordinator,
-                                            local_currency, portfolio_id, edge, 0, market_code, display_name))
-            market_hours_sensors.append(display_name)
-
+        sensors.append(
+            SharesightSensor(sensor, entry, coordinator, local_currency, portfolio_id, edge)
+        )
     # Dynamic per-watchlist-instrument price + day-change sensors (W1) — one set
     # per watched instrument (capped), sharing the single watchlist device.
     watchlist_instrument_sensors: list[str] = []
@@ -759,12 +729,23 @@ async def async_setup_entry(
         inst_currency = wl_currency or local_currency
         for wl_sensor in WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS:
             display_name = f"Watchlist {wl_code} {wl_sensor.name}"
-            uid = f"{portfolio_id}_watchlist_{_slug_symbol(wl_code)}_{wl_sensor.key}_{APP_VERSION}"
+            uid = f"{resource_id}_watchlist_{wl_code}_{wl_sensor.key}_{APP_VERSION}"
             if uid in seen_unique_ids:
                 continue
             seen_unique_ids.add(uid)
-            sensors.append(SharesightSensor(wl_sensor, entry, coordinator,
-                                            inst_currency, portfolio_id, edge, 0, wl_code, display_name))
+            sensors.append(
+                SharesightSensor(
+                    wl_sensor,
+                    entry,
+                    coordinator,
+                    inst_currency,
+                    portfolio_id,
+                    edge,
+                    0,
+                    wl_code,
+                    display_name,
+                )
+            )
             watchlist_instrument_sensors.append(display_name)
 
     # Dynamic per-label value + percent sensors (W7) in the "labels" device
@@ -781,15 +762,39 @@ async def async_setup_entry(
                 continue
             for label_sensor in LABEL_SENSOR_DESCRIPTIONS:
                 display_name = f"{label_name} {label_sensor.name}"
-                uid = f"{portfolio_id}_label_{_slug_symbol(label_name)}_{label_sensor.key}_{APP_VERSION}"
+                uid = f"{resource_id}_label_{label_name}_{label_sensor.key}_{APP_VERSION}"
                 if uid in seen_unique_ids:
                     continue
                 seen_unique_ids.add(uid)
-                sensors.append(SharesightSensor(label_sensor, entry, coordinator,
-                                                local_currency, portfolio_id, edge, 0, label_name, display_name))
+                sensors.append(
+                    SharesightSensor(
+                        label_sensor,
+                        entry,
+                        coordinator,
+                        local_currency,
+                        portfolio_id,
+                        edge,
+                        0,
+                        label_name,
+                        display_name,
+                    )
+                )
                 label_sensors.append(display_name)
 
-    async_add_entities(sensors, True)
+    async_add_entities(sensors)
+
+    # Membership set mirroring the three display-name lists.  The discovery
+    # callback below runs after every coordinator refresh and tests one name
+    # per (item x description) pair - roughly 500 tests a poll on a 15-holding
+    # portfolio - and a list scan made that quadratic in the number of
+    # entities.  The lists themselves stay, because __init__'s stale-device
+    # pruning rewrites them in place.
+    created_names: set[str] = runtime_data.created_unique_ids
+    created_names.update(market_sensors)
+    created_names.update(cash_sensors)
+    created_names.update(holding_sensors)
+    created_names.update(watchlist_instrument_sensors)
+    created_names.update(label_sensors)
 
     @callback
     def update_sensors() -> None:
@@ -805,41 +810,61 @@ async def async_setup_entry(
         # Deduplicate by group_name when checking for new markets
         seen_update_markets: set[str] = set()
         __update_index_market = 0
-        for update_market in update_report.get('sub_totals', []):
-            __local_name = update_market.get('group_name', 'Unknown Market')
+        for update_market in update_report.get("sub_totals", []):
+            __local_name = update_market.get("group_name", "Unknown Market")
             if __local_name in seen_update_markets:
                 __update_index_market += 1
                 continue
             seen_update_markets.add(__local_name)
             for update_market_sensor in MARKET_SENSOR_DESCRIPTIONS:
-                update_display_name = f"{__local_name} {update_market_sensor.sub_key.replace('_', ' ')}"
-                if update_display_name not in market_sensors:
+                update_display_name = (
+                    f"{__local_name} {update_market_sensor.sub_key.replace('_', ' ')}"
+                )
+                if update_display_name not in created_names:
                     local_market_currency = local_currency
-                    update_new_sensor = SharesightSensor(update_market_sensor, entry, update_coordinator,
-                                                         local_market_currency, portfolio_id, edge,
-                                                         __update_index_market, __local_name, update_display_name)
-                    async_add_entities([update_new_sensor], True)
+                    update_new_sensor = SharesightSensor(
+                        update_market_sensor,
+                        entry,
+                        update_coordinator,
+                        local_market_currency,
+                        portfolio_id,
+                        edge,
+                        __update_index_market,
+                        __local_name,
+                        update_display_name,
+                    )
+                    async_add_entities([update_new_sensor])
                     market_sensors.append(update_display_name)
+                    created_names.add(update_display_name)
             __update_index_market += 1
 
         # Deduplicate by name when checking for new cash accounts
         seen_update_cash: set[str] = set()
         __update_index_cash = 0
-        for update_cash in update_report.get('cash_accounts', []):
-            __local_name = update_cash.get('name', 'Unknown Cash Account')
+        for update_cash in update_report.get("cash_accounts", []):
+            __local_name = update_cash.get("name", "Unknown Cash Account")
             if __local_name in seen_update_cash:
                 __update_index_cash += 1
                 continue
             seen_update_cash.add(__local_name)
             for update_cash_sensor in CASH_SENSOR_DESCRIPTIONS:
                 update_display_name = f"{__local_name} cash balance"
-                if update_display_name not in cash_sensors:
+                if update_display_name not in created_names:
                     local_cash_currency = local_currency
-                    update_new_sensor = SharesightSensor(update_cash_sensor, entry, update_coordinator,
-                                                         local_cash_currency, portfolio_id, edge, __update_index_cash,
-                                                         __local_name, update_display_name)
+                    update_new_sensor = SharesightSensor(
+                        update_cash_sensor,
+                        entry,
+                        update_coordinator,
+                        local_cash_currency,
+                        portfolio_id,
+                        edge,
+                        __update_index_cash,
+                        __local_name,
+                        update_display_name,
+                    )
                     cash_sensors.append(update_display_name)
-                    async_add_entities([update_new_sensor], True)
+                    created_names.add(update_display_name)
+                    async_add_entities([update_new_sensor])
             __update_index_cash += 1
 
         # Benchmark sensors appear once the user configures a benchmark
@@ -847,72 +872,96 @@ async def async_setup_entry(
             new_benchmark_sensors = []
             for benchmark_sensor in BENCHMARK_SENSOR_DESCRIPTIONS:
                 new_benchmark_sensors.append(
-                    SharesightSensor(benchmark_sensor, entry, update_coordinator,
-                                     local_currency, portfolio_id, edge))
+                    SharesightSensor(
+                        benchmark_sensor,
+                        entry,
+                        update_coordinator,
+                        local_currency,
+                        portfolio_id,
+                        edge,
+                    )
+                )
                 benchmark_added.append(str(benchmark_sensor.name))
-            async_add_entities(new_benchmark_sensors, True)
+            async_add_entities(new_benchmark_sensors)
 
-        # Portfolio Totals sensors appear once the /totals endpoint comes online
+        # All-time sensors appear once the public performance window is present.
         if _has_totals_data(update_coordinator.data) and not totals_added:
             new_totals_sensors = []
             for totals_sensor in TOTALS_SENSOR_DESCRIPTIONS:
                 new_totals_sensors.append(
-                    SharesightSensor(totals_sensor, entry, update_coordinator,
-                                     local_currency, portfolio_id, edge))
+                    SharesightSensor(
+                        totals_sensor, entry, update_coordinator, local_currency, portfolio_id, edge
+                    )
+                )
                 totals_added.append(str(totals_sensor.name))
-            async_add_entities(new_totals_sensors, True)
+            async_add_entities(new_totals_sensors)
 
         # Check for new holdings
         update_holdings_data = update_coordinator.data.get("holdings", {})
-        update_holdings_list = update_holdings_data.get("holdings", []) if isinstance(update_holdings_data, dict) else []
-        for update_holding in update_holdings_list:
+        update_holdings_list = (
+            update_holdings_data.get("holdings", [])
+            if isinstance(update_holdings_data, dict)
+            else []
+        )
+        for update_holding in update_holdings_list if create_holding_entities else []:
             __holding_symbol = _get_holding_symbol(update_holding)
             if not __holding_symbol:
                 continue
+            __instrument_currency = analytics.holding_currency(update_holding) or local_currency
+            __logo = _holding_logo(update_holding)
             for update_holding_sensor in ALL_HOLDING_DESCRIPTIONS:
-                update_holding_display_name = f"{__holding_symbol} {update_holding_sensor.sub_key.replace('_', ' ')}"
-                if update_holding_display_name not in holding_sensors:
+                update_holding_display_name = (
+                    f"{__holding_symbol} {update_holding_sensor.sub_key.replace('_', ' ')}"
+                )
+                if update_holding_display_name not in created_names:
                     update_new_holding_sensor = SharesightSensor(
-                        update_holding_sensor, entry, update_coordinator,
-                        local_currency, portfolio_id, edge, 0, __holding_symbol,
-                        update_holding_display_name)
-                    async_add_entities([update_new_holding_sensor], True)
+                        update_holding_sensor,
+                        entry,
+                        update_coordinator,
+                        _holding_sensor_currency(
+                            update_holding_sensor,
+                            __instrument_currency,
+                            local_currency,
+                        ),
+                        portfolio_id,
+                        edge,
+                        0,
+                        __holding_symbol,
+                        update_holding_display_name,
+                        entity_picture=(__logo if update_holding_sensor.key == "value" else None),
+                    )
+                    async_add_entities([update_new_holding_sensor])
                     holding_sensors.append(update_holding_display_name)
-
-        # New foreign currencies (FX rate sensors)
-        for __code in _foreign_currency_codes(update_coordinator.data, local_currency):
-            __fx_display = f"{__code} to {local_currency} rate"
-            if __fx_display not in fx_sensors:
-                for fx_sensor in FX_SENSOR_DESCRIPTIONS:
-                    async_add_entities([SharesightSensor(
-                        fx_sensor, entry, update_coordinator, local_currency,
-                        portfolio_id, edge, 0, __code, __fx_display)], True)
-                    fx_sensors.append(__fx_display)
-
-        # New held markets (trading-hours sensors)
-        for __market_code in _held_market_codes(update_coordinator.data):
-            for mh_sensor in MARKET_HOURS_SENSOR_DESCRIPTIONS:
-                __mh_display = f"{__market_code} {mh_sensor.name}"
-                if __mh_display not in market_hours_sensors:
-                    async_add_entities([SharesightSensor(
-                        mh_sensor, entry, update_coordinator, local_currency,
-                        portfolio_id, edge, 0, __market_code, __mh_display)], True)
-                    market_hours_sensors.append(__mh_display)
+                    created_names.add(update_holding_display_name)
 
         # New watchlist instruments (per-instrument price + day-change sensors, W1).
         # Dedupe on the computed unique_id (as setup does) — distinct codes can
         # slugify to the same token (e.g. "BRK.B" vs "BRK-B"), so a display-name
         # guard would let a colliding unique_id through and HA would reject it.
-        for __wl_code, __wl_currency in _watchlist_instruments_for_discovery(update_coordinator.data):
+        for __wl_code, __wl_currency in _watchlist_instruments_for_discovery(
+            update_coordinator.data
+        ):
             __inst_currency = __wl_currency or local_currency
             for wl_sensor in WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS:
                 __wl_display = f"Watchlist {__wl_code} {wl_sensor.name}"
-                __wl_uid = f"{portfolio_id}_watchlist_{_slug_symbol(__wl_code)}_{wl_sensor.key}_{APP_VERSION}"
+                __wl_uid = f"{resource_id}_watchlist_{__wl_code}_{wl_sensor.key}_{APP_VERSION}"
                 if __wl_uid not in seen_unique_ids:
                     seen_unique_ids.add(__wl_uid)
-                    async_add_entities([SharesightSensor(
-                        wl_sensor, entry, update_coordinator, __inst_currency,
-                        portfolio_id, edge, 0, __wl_code, __wl_display)], True)
+                    async_add_entities(
+                        [
+                            SharesightSensor(
+                                wl_sensor,
+                                entry,
+                                update_coordinator,
+                                __inst_currency,
+                                portfolio_id,
+                                edge,
+                                0,
+                                __wl_code,
+                                __wl_display,
+                            )
+                        ]
+                    )
                     watchlist_instrument_sensors.append(__wl_display)
 
         # New labels (per-label value + percent sensors, W7).  Gated on the
@@ -931,12 +980,26 @@ async def async_setup_entry(
                     # Dedupe on the computed unique_id (as setup does): distinct
                     # labels can slugify to the same token, so a display-name
                     # guard would let a colliding unique_id through.
-                    __label_uid = f"{portfolio_id}_label_{_slug_symbol(__label_name)}_{label_sensor.key}_{APP_VERSION}"
+                    __label_uid = (
+                        f"{resource_id}_label_{__label_name}_{label_sensor.key}_{APP_VERSION}"
+                    )
                     if __label_uid not in seen_unique_ids:
                         seen_unique_ids.add(__label_uid)
-                        async_add_entities([SharesightSensor(
-                            label_sensor, entry, update_coordinator, local_currency,
-                            portfolio_id, edge, 0, __label_name, __label_display)], True)
+                        async_add_entities(
+                            [
+                                SharesightSensor(
+                                    label_sensor,
+                                    entry,
+                                    update_coordinator,
+                                    local_currency,
+                                    portfolio_id,
+                                    edge,
+                                    0,
+                                    __label_name,
+                                    __label_display,
+                                )
+                            ]
+                        )
                         label_sensors.append(__label_display)
 
     # Piggy-back on the coordinator's own update cycle rather than running a
@@ -946,9 +1009,82 @@ async def async_setup_entry(
     entry.async_on_unload(coordinator.async_add_listener(update_sensors))
 
 
+# Families whose values come from a single optional endpoint.  When that
+# endpoint is parked on its backoff (and its last good payload has aged
+# out of the carry-forward cache) the key is simply absent, and reporting
+# Unknown forever is less honest than going unavailable.
+# Allocation payloads all share the same {breakdown: [...]} shape, so one
+# ranked-lookup branch serves every axis.  The value is the prefix its
+# sensor keys use (sector_1_name, currency_2_percent, ...).
+_ALLOCATION_PREFIXES = {
+    "sector_allocation": "sector",
+    "industry_allocation": "industry",
+    "currency_allocation": "currency",
+    "type_allocation": "instrument_type",
+}
+
+_BACKING_KEYS = {
+    "daily": "one-day",
+    "weekly": "one-week",
+    "financial_year": "financial-year",
+    "monthly": "one-month",
+    "ytd": "ytd",
+    "totals": "all_time",
+    "three-month": "three-month",
+    "six-month": "six-month",
+    "one-year": "one-year",
+    "three-year": "three-year",
+    "five-year": "five-year",
+    "watchlist": "watchlist",
+    "value_trend": "value_series",
+    "value_analytics": "value_series",
+    "my_user": "my_user",
+    "benchmark": "benchmark",
+    "watchlist_instrument": "watchlist",
+}
+
+
 class SharesightSensor(SharesightBaseEntity, SensorEntity):
-    def __init__(self, sensor, entry, coordinator, currency, portfolio_id, edge, index=0, local_name="", display_name=""):
+    """One Sharesight figure, read straight from the coordinator payload."""
+
+    # Attributes that are large, change on every poll, or both.  Home
+    # Assistant's recorder writes every attribute into the database on
+    # every state change, so a 3 KB ranked-holdings blob written every
+    # five minutes is roughly 850 KB a day of history nobody queries.
+    # These stay live in the state machine (templates and dashboards see
+    # them exactly as before) but are no longer persisted.
+    _unrecorded_attributes = frozenset(
+        {
+            "holdings",
+            "top_gainers",
+            "top_losers",
+            "all_upcoming",
+            "breakdown",
+            "articles",
+            "series",
+            "by_month",
+            "parcels",
+        }
+    )
+
+    def __init__(
+        self,
+        sensor,
+        entry,
+        coordinator,
+        currency,
+        portfolio_id,
+        edge,
+        index=0,
+        local_name="",
+        display_name="",
+        entity_picture=None,
+    ):
         super().__init__(coordinator, portfolio_id, edge)
+        # Sharesight ships a logo for every instrument; using it as the
+        # entity picture turns a wall of identical sensor icons into
+        # something recognisable at a glance.
+        self._attr_entity_picture = entity_picture
         self._state_class = sensor.state_class
         self._coordinator = coordinator
         self._entity_category = sensor.entity_category
@@ -962,7 +1098,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         self._entry = entry
         self._device_class = sensor.device_class
         self._sub_key = sensor.sub_key
-        self._device_group = getattr(sensor, 'device_group', 'portfolio')
+        self._device_group = getattr(sensor, "device_group", "portfolio")
         self._local_name = local_name
         self._currency_code = currency
 
@@ -970,46 +1106,53 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         # description's translated entity name.  entity_id is still hand-assigned
         # below (slug of self._name), so switching to translations renames no
         # existing entity.  Per-item families that share one device with their
-        # siblings (FX rates, market hours, watchlist instruments, labels) carry
+        # siblings (watchlist instruments and labels) carry
         # the varying item in the name through a per-entity placeholder; the
         # per-item-device families (market/cash/holding) need none because their
         # own device already names the item.
         self._attr_translation_key = sensor.translation_key
-        if self._device_group == "fx":
-            self._attr_translation_placeholders = {
-                "code": local_name,
-                "base": self._currency_code,
-            }
-        elif self._device_group == "market_hours":
-            self._attr_translation_placeholders = {"market": local_name}
-        elif self._sub_key == "watchlist_instrument":
+        if self._sub_key == "watchlist_instrument":
             self._attr_translation_placeholders = {"code": local_name}
         elif self._sub_key == "label_allocation":
             self._attr_translation_placeholders = {"label": local_name}
+        elif self._device_group == "extended":
+            self._attr_translation_placeholders = {
+                "period": {
+                    "three-month": "3 Month",
+                    "six-month": "6 Month",
+                    "one-year": "1 Year",
+                    "three-year": "3 Year",
+                    "five-year": "5 Year",
+                }.get(self._sub_key, str(self._sub_key))
+            }
 
         # Propagate entity_registry_enabled_default from description
-        if hasattr(sensor, 'entity_registry_enabled_default') and not sensor.entity_registry_enabled_default:
+        if (
+            hasattr(sensor, "entity_registry_enabled_default")
+            and not sensor.entity_registry_enabled_default
+        ):
             self._attr_entity_registry_enabled_default = False
         else:
             self._attr_entity_registry_enabled_default = True
 
         if sensor.native_unit_of_measurement == CURRENCY_DOLLAR:
             self._native_unit_of_measurement = currency
+            self._uses_portfolio_currency = not (
+                (
+                    sensor.device_group == "holding"
+                    and (sensor.key, sensor.sub_key) in _INSTRUMENT_CURRENCY_RECIPES
+                )
+                or sensor.sub_key == "watchlist_instrument"
+            )
         else:
             self._native_unit_of_measurement = sensor.native_unit_of_measurement
+            self._uses_portfolio_currency = False
 
-        # Sanitise to a valid entity_id slug: lowercase, only [a-z0-9_], no
-        # leading/trailing/duplicate underscores. Names like
-        # "Total Non-Resident Withholding Tax" or "Update Interval (s)" would
-        # otherwise produce invalid IDs (rejected by HA from 2027.2.0).
-        slug = "".join(
-            c if c.isalnum() else "_"
-            for c in self._name.lower().replace(" ", "_")
-        )
-        while "__" in slug:
-            slug = slug.replace("__", "_")
-        slug = slug.strip("_")
-        base_entity_id = f"{slug}_{self._portfolio_id}"
+        # HA's slugifier transliterates non-ASCII text and strips unsupported
+        # code points. Keep a non-empty fallback for emoji-only labels/names.
+        name_slug = slugify(self._name) or slugify(str(self._key)) or "sharesight"
+        resource_slug = slugify(self._resource_id) or "portfolio"
+        base_entity_id = f"{name_slug}_{resource_slug}"
         self.entity_id = f"sensor.{base_entity_id}"
 
         # edge_name / base_model mirror the base class's edge infix and are
@@ -1024,121 +1167,116 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         device_group_config = {
             "portfolio": {
                 "name": f"Sharesight{edge_name}Portfolio {self._portfolio_id}",
-                "identifier": f"{self._portfolio_id}_portfolio",
+                "identifier": f"{self._resource_id}_portfolio",
                 "model": f"{base_model} - Portfolio",
             },
             "daily": {
                 "name": f"Sharesight{edge_name}Daily Performance",
-                "identifier": f"{self._portfolio_id}_daily",
+                "identifier": f"{self._resource_id}_daily",
                 "model": f"{base_model} - Daily Performance",
             },
             "weekly": {
                 "name": f"Sharesight{edge_name}Weekly Performance",
-                "identifier": f"{self._portfolio_id}_weekly",
+                "identifier": f"{self._resource_id}_weekly",
                 "model": f"{base_model} - Weekly Performance",
             },
             "financial_year": {
                 "name": f"Sharesight{edge_name}Financial Year",
-                "identifier": f"{self._portfolio_id}_financial_year",
+                "identifier": f"{self._resource_id}_financial_year",
                 "model": f"{base_model} - Financial Year",
             },
             "holdings": {
                 "name": f"Sharesight{edge_name}Holdings",
-                "identifier": f"{self._portfolio_id}_holdings",
+                "identifier": f"{self._resource_id}_holdings",
                 "model": f"{base_model} - Holdings",
             },
             "income": {
                 "name": f"Sharesight{edge_name}Income",
-                "identifier": f"{self._portfolio_id}_income",
+                "identifier": f"{self._resource_id}_income",
                 "model": f"{base_model} - Income",
             },
             "diversity": {
                 "name": f"Sharesight{edge_name}Diversity",
-                "identifier": f"{self._portfolio_id}_diversity",
+                "identifier": f"{self._resource_id}_diversity",
                 "model": f"{base_model} - Diversity",
             },
             "trades": {
                 "name": f"Sharesight{edge_name}Trades",
-                "identifier": f"{self._portfolio_id}_trades",
+                "identifier": f"{self._resource_id}_trades",
                 "model": f"{base_model} - Trades",
             },
             "contributions": {
                 "name": f"Sharesight{edge_name}Contributions",
-                "identifier": f"{self._portfolio_id}_contributions",
+                "identifier": f"{self._resource_id}_contributions",
                 "model": f"{base_model} - Contributions",
             },
             "monthly": {
                 "name": f"Sharesight{edge_name}Monthly Performance",
-                "identifier": f"{self._portfolio_id}_monthly",
+                "identifier": f"{self._resource_id}_monthly",
                 "model": f"{base_model} - Monthly Performance",
             },
             "ytd": {
                 "name": f"Sharesight{edge_name}YTD Performance",
-                "identifier": f"{self._portfolio_id}_ytd",
+                "identifier": f"{self._resource_id}_ytd",
                 "model": f"{base_model} - YTD Performance",
             },
             "tax": {
                 "name": f"Sharesight{edge_name}Tax (CGT)",
-                "identifier": f"{self._portfolio_id}_tax",
+                "identifier": f"{self._resource_id}_tax",
                 "model": f"{base_model} - Capital Gains Tax",
             },
             "benchmark": {
                 "name": f"Sharesight{edge_name}Benchmark",
-                "identifier": f"{self._portfolio_id}_benchmark",
+                "identifier": f"{self._resource_id}_benchmark",
                 "model": f"{base_model} - Benchmark",
             },
             "sector": {
                 "name": f"Sharesight{edge_name}Sector Allocation",
-                "identifier": f"{self._portfolio_id}_sector",
+                "identifier": f"{self._resource_id}_sector",
                 "model": f"{base_model} - Sector Allocation",
             },
             "account": {
                 "name": f"Sharesight{edge_name}Account",
-                "identifier": f"{self._portfolio_id}_account",
+                "identifier": f"{self._resource_id}_account",
                 "model": f"{base_model} - Account",
             },
             "watchlist": {
                 "name": f"Sharesight{edge_name}Watchlist",
-                "identifier": f"{self._portfolio_id}_watchlist",
+                "identifier": f"{self._resource_id}_watchlist",
                 "model": f"{base_model} - Watchlist",
             },
-            "fx": {
-                "name": f"Sharesight{edge_name}Exchange Rates",
-                "identifier": f"{self._portfolio_id}_fx",
-                "model": f"{base_model} - Exchange Rates",
-            },
-            "market_hours": {
-                "name": f"Sharesight{edge_name}Market Hours",
-                "identifier": f"{self._portfolio_id}_market_hours",
-                "model": f"{base_model} - Market Hours",
+            "extended": {
+                "name": f"Sharesight{edge_name}Extended Performance",
+                "identifier": f"{self._resource_id}_extended_performance",
+                "model": f"{base_model} - Extended Performance",
             },
             "analytics": {
                 "name": f"Sharesight{edge_name}Analytics",
-                "identifier": f"{self._portfolio_id}_analytics",
+                "identifier": f"{self._resource_id}_analytics",
                 "model": f"{base_model} - Analytics",
             },
             "totals": {
                 "name": f"Sharesight{edge_name}Portfolio Totals",
-                "identifier": f"{self._portfolio_id}_totals",
+                "identifier": f"{self._resource_id}_totals",
                 "model": f"{base_model} - Portfolio Totals",
             },
             "labels": {
                 "name": f"Sharesight{edge_name}Labels",
-                "identifier": f"{self._portfolio_id}_labels",
+                "identifier": f"{self._resource_id}_labels",
                 "model": f"{base_model} - Labels",
             },
         }
 
         if self._device_group == "market" and local_name:
-            device_id = f"{self._portfolio_id}_market_{local_name}"
+            device_id = f"{self._resource_id}_market_{local_name}"
             device_name = f"Sharesight{edge_name}{local_name}"
             device_model = f"{base_model} - Market: {local_name}"
         elif self._device_group == "cash" and local_name:
-            device_id = f"{self._portfolio_id}_cash_{local_name}"
+            device_id = f"{self._resource_id}_cash_{local_name}"
             device_name = f"Sharesight{edge_name}Cash: {local_name}"
             device_model = f"{base_model} - Cash: {local_name}"
         elif self._device_group == "holding" and local_name:
-            device_id = f"{self._portfolio_id}_holding_{local_name}"
+            device_id = f"{self._resource_id}_holding_{local_name}"
             device_name = f"Sharesight{edge_name}Holding: {local_name}"
             device_model = f"{base_model} - Holding: {local_name}"
         else:
@@ -1151,107 +1289,83 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
             identifier=device_id, name=device_name, model=device_model
         )
 
-        try:
-            if self._extension_key == "Extension":
-                self._state = self._coordinator.data[self._sub_key][self._key]
-                self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            elif self._key == "holdings_list":
-                # Per-holding individual sensor
-                holdings_list = self._coordinator.data.get('holdings', {}).get('holdings', [])
-                holding = _find_holding_by_symbol(holdings_list, local_name)
-                if holding and self._sub_key == "cost_base":
-                    val = _get_holding_value(holding)
-                    cg = _get_holding_gain(holding)
-                    self._state = round(val - cg, 2) if val else None
-                elif holding and self._sub_key == "annualised_return_percent":
-                    report_data = self._coordinator.data.get('report', {})
-                    self._state = _calculate_annualised_percent(
-                        holding.get("total_gain_percent"),
-                        report_data.get("start_date"),
-                        report_data.get("end_date"),
-                        bool(report_data.get("percentages_annualised", False)),
-                    )
-                elif holding:
-                    self._state = holding.get(self._sub_key)
-                else:
-                    self._state = None
-                self._unique_id = f"{self._portfolio_id}_holding_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            elif self._key in ("holding_fundamental", "holding_income", "holding_trade"):
-                # Per-holding derived sensor — state computed in native_value.
-                self._state = None
-                self._unique_id = f"{self._portfolio_id}_holding_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            elif self._device_group in ("fx", "market_hours"):
-                # Dynamic per-currency / per-market sensor.
-                self._state = None
-                self._unique_id = f"{self._portfolio_id}_{self._device_group}_{local_name}_{self._key}_{APP_VERSION}"
-            elif self._sub_key == "watchlist_instrument":
-                # Per-watchlist-instrument sensor (W1). Slugify the instrument
-                # code so codes like "BRK.B" produce a registry-safe unique_id.
-                self._state = None
-                self._unique_id = f"{self._portfolio_id}_watchlist_{_slug_symbol(local_name)}_{self._key}_{APP_VERSION}"
-            elif self._sub_key == "label_allocation":
-                # Per-label allocation sensor (W7). Slugify the (user-defined)
-                # label name for a registry-safe unique_id.
-                self._state = None
-                self._unique_id = f"{self._portfolio_id}_label_{_slug_symbol(local_name)}_{self._key}_{APP_VERSION}"
-            elif self._sub_key in ("sector_allocation", "industry_allocation", "my_user", "watchlist", "value_trend", "instrument_news"):
-                self._state = None
-                self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            elif self._sub_key == "report" and self._key != "sub_totals" and self._key != "cash_accounts":
-                self._state = self._coordinator.data[self._sub_key][self._key]
-                self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
-            elif self._sub_key == "user_setting":
-                user_setting = self._coordinator.data.get("user_setting", {})
-                if isinstance(user_setting, dict):
-                    portfolio_user_setting = user_setting.get("portfolio_user_setting", {})
-                    if isinstance(portfolio_user_setting, dict):
-                        self._state = portfolio_user_setting.get(self._key)
-                    else:
-                        self._state = None
-                else:
-                    self._state = None
-                self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            elif self._sub_key == "portfolio_detail":
-                detail = self._coordinator.data.get("portfolio_detail", {})
-                self._state = detail.get(self._key) if isinstance(detail, dict) else None
-                self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            elif self._key == "user_id":
-                self._state = self._coordinator.data[self._sub_key][0][self._key]
-                self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
-            elif "sub_totals" in self._key or "cash_accounts" in self._key:
-                sub_entry = self._report_sub_entry() or {}
-                if self._sub_key == "holding_count":
-                    self._state = len(sub_entry.get('holdings', []))
-                elif self._sub_key == "cost_base":
-                    val = sub_entry.get('value')
-                    cg = sub_entry.get('capital_gain')
-                    if val is not None and cg is not None:
-                        self._state = round(float(val) - float(cg), 2)
-                    else:
-                        self._state = None
-                elif self._sub_key == "annualised_return_percent":
-                    self._state = _calculate_annualised_percent(
-                        sub_entry.get("total_gain_percent"),
-                        self._coordinator.data.get("report", {}).get("start_date"),
-                        self._coordinator.data.get("report", {}).get("end_date"),
-                        bool(self._coordinator.data.get("report", {}).get("percentages_annualised", False)),
-                    )
-                else:
-                    self._state = sub_entry.get(self._sub_key)
-                self._unique_id = f"{self._portfolio_id}_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            else:
-                self._state = self._coordinator.data[self._sub_key][0][self._key]
-                self._unique_id = f"{self._portfolio_id}_{self._key}_{APP_VERSION}"
+        # Identity must never depend on whether a live response contains a field.
+        # Prefer one deterministic recipe, while adopting either historical
+        # variant already owned by this entry so recorder history is preserved.
+        prefix = self._resource_id
+        self._state = None
+        if self._extension_key == "Extension":
+            candidates = [f"{prefix}_{self._sub_key}_{self._key}_{APP_VERSION}"]
+        elif self._key == "holdings_list" or self._key in (
+            "holding_fundamental",
+            "holding_income",
+            "holding_trade",
+        ):
+            candidates = [
+                f"{prefix}_holding_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
+            ]
+        elif self._sub_key == "watchlist_instrument":
+            candidates = [
+                f"{prefix}_watchlist_{local_name}_{self._key}_{APP_VERSION}",
+                f"{prefix}_watchlist_{_slug_symbol(local_name)}_{self._key}_{APP_VERSION}",
+            ]
+        elif self._sub_key == "label_allocation":
+            candidates = [
+                f"{prefix}_label_{local_name}_{self._key}_{APP_VERSION}",
+                f"{prefix}_label_{_slug_symbol(local_name)}_{self._key}_{APP_VERSION}",
+            ]
+        elif local_name and ("sub_totals" in self._key or "cash_accounts" in self._key):
+            candidates = [f"{prefix}_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"]
+        elif self._sub_key in (
+            "sector_allocation",
+            "industry_allocation",
+            "my_user",
+            "watchlist",
+            "value_trend",
+            "user_setting",
+            "portfolio_detail",
+        ):
+            candidates = [f"{prefix}_{self._sub_key}_{self._key}_{APP_VERSION}"]
+        elif self._sub_key == "report":
+            candidates = [
+                f"{prefix}_{self._key}_{APP_VERSION}",
+                f"{prefix}_report_{self._key}_{APP_VERSION}",
+            ]
+        else:
+            namespace = self._sub_key or self._device_group or "sensor"
+            candidates = [
+                f"{prefix}_{namespace}_{self._key}_{APP_VERSION}",
+                # Historical success-path recipe. Adopt it only if a registry
+                # row already exists and no other entity in this setup claimed
+                # it first; never mint it for a new entity.
+                f"{prefix}_{self._key}_{APP_VERSION}",
+            ]
+        self._unique_id = self._registered_unique_id(candidates)
 
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.debug("Could not initialize sensor '%s': %s: %s", self._key, type(e).__name__, e)
-            self._state = None
-            if local_name and ("sub_totals" in self._key or "cash_accounts" in self._key):
-                self._unique_id = f"{self._portfolio_id}_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            elif self._key == "holdings_list" and local_name:
-                self._unique_id = f"{self._portfolio_id}_holding_{local_name}_{self._sub_key}_{self._key}_{APP_VERSION}"
-            else:
-                self._unique_id = f"{self._portfolio_id}_{self._sub_key}_{self._key}_{APP_VERSION}"
+    def _registered_unique_id(self, candidates: list[str]) -> str:
+        """Use an existing historical candidate owned by this entry, if any."""
+        runtime_data = getattr(self._entry, "runtime_data", None)
+        claimed: set[str] = getattr(runtime_data, "claimed_sensor_unique_ids", set())
+        hass = getattr(self._coordinator, "hass", None)
+        entry_id = getattr(self._entry, "entry_id", None)
+        if hass is not None and entry_id is not None:
+            registry = er.async_get(hass)
+            for candidate in candidates:
+                if candidate in claimed:
+                    continue
+                entity_id = registry.async_get_entity_id("sensor", DOMAIN, candidate)
+                if entity_id is None:
+                    continue
+                registry_entry = registry.async_get(entity_id)
+                if registry_entry is not None and registry_entry.config_entry_id == entry_id:
+                    claimed.add(candidate)
+                    return candidate
+
+        canonical = candidates[0]
+        if canonical in claimed:
+            raise ValueError(f"Duplicate Sharesight sensor unique_id: {canonical}")
+        claimed.add(canonical)
+        return canonical
 
     def _report_sub_entry(self) -> dict | None:
         """This market / cash sensor's row in the report, matched by name.
@@ -1264,14 +1378,12 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         for payloads whose rows carry no name at all.  None means the item is
         gone, which ``available`` turns into an unavailable entity.
         """
-        report = self._coordinator.data.get('report') or {}
+        report = self._coordinator.data.get("report") or {}
         rows = report.get(self._key) or []
         name_field = "group_name" if self._key == "sub_totals" else "name"
         named = [row for row in rows if isinstance(row, dict) and row.get(name_field)]
         if named:
-            return next(
-                (row for row in named if row[name_field] == self._local_name), None
-            )
+            return next((row for row in named if row[name_field] == self._local_name), None)
         if isinstance(self._index, int) and 0 <= self._index < len(rows):
             row = rows[self._index]
             return row if isinstance(row, dict) else None
@@ -1280,8 +1392,8 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
     def _dynamic_item_present(self) -> bool | None:
         """Whether this entity's dynamically-discovered item still exists.
 
-        Every per-item family — holding, market, cash account, FX pair, market
-        hours, watchlist instrument, label — is discovered from a list in the
+        Every per-item family — holding, market, cash account, watchlist
+        instrument, label — is discovered from a list in the
         coordinator payload, and any of them can disappear: a holding sold, a
         market exited, an account closed, an instrument dropped from the
         watchlist, a label removed from the last holding carrying it.
@@ -1296,40 +1408,31 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         data = self._coordinator.data
         if self._device_group == "holding":
             holdings_data = data.get("holdings")
-            holdings = (
-                holdings_data.get("holdings") or []
-                if isinstance(holdings_data, dict)
-                else []
-            )
-            if not holdings:
+            if not isinstance(holdings_data, dict) or not isinstance(
+                holdings_data.get("holdings"), list
+            ):
                 return None
+            holdings = holdings_data["holdings"]
             return _find_holding_by_symbol(holdings, self._local_name) is not None
         if self._device_group in ("market", "cash"):
-            report = data.get("report") or {}
-            rows = report.get(self._key) or []
+            report = data.get("report")
+            if not isinstance(report, dict) or not isinstance(report.get(self._key), list):
+                return None
+            rows = report[self._key]
             name_field = "group_name" if self._key == "sub_totals" else "name"
             names = {
-                row.get(name_field)
-                for row in rows
-                if isinstance(row, dict) and row.get(name_field)
+                row.get(name_field) for row in rows if isinstance(row, dict) and row.get(name_field)
             }
-            if not names:
+            if rows and not names:
+                # Some legacy responses omitted names. We cannot safely map a
+                # specific entity to those rows, so keep availability unknown.
                 return None
             return self._local_name in names
-        if self._device_group == "fx":
-            codes = analytics.portfolio_currency_codes(data)
-            if not codes:
-                return None
-            return str(self._local_name).upper() in codes
-        if self._device_group == "market_hours":
-            codes = _held_market_codes(data)
-            if not codes:
-                return None
-            return self._local_name in codes
         if self._sub_key == "watchlist_instrument":
-            codes = [code for code, _ in _watchlist_instruments_for_discovery(data)]
-            if not codes:
+            watchlist = data.get("watchlist")
+            if not isinstance(watchlist, dict) or not isinstance(watchlist.get("watchlist"), list):
                 return None
+            codes = [code for code, _ in _watchlist_instruments_for_discovery(data)]
             return self._local_name in codes
         if self._sub_key == "label_allocation":
             # The coordinator emits this list on every poll its analytics run,
@@ -1345,6 +1448,33 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
 
     @property
     def native_value(self):
+        """The sensor's value, coerced to what its device class requires.
+
+        Home Assistant demands a real ``date`` for SensorDeviceClass.DATE
+        and a timezone-aware ``datetime`` for TIMESTAMP, while every
+        Sharesight payload carries them as ISO strings.  Converting in one
+        place keeps the thirty-odd value branches free of parsing, and the
+        published state string is unchanged either way.
+        """
+        value = self._raw_native_value()
+        if value is None or self._device_class is None:
+            return value
+        if self._device_class == SensorDeviceClass.DATE:
+            if isinstance(value, datetime):
+                return value.date()
+            if isinstance(value, date):
+                return value
+            parsed = dt_util.parse_date(str(value)[:10])
+            return parsed
+        if self._device_class == SensorDeviceClass.TIMESTAMP:
+            if isinstance(value, datetime):
+                return dt_util.as_utc(value) if value.tzinfo else None
+            parsed = dt_util.parse_datetime(str(value))
+            return dt_util.as_utc(parsed) if parsed and parsed.tzinfo else None
+        return value
+
+    def _raw_native_value(self):
+        """The value straight off the coordinator payload."""
         try:
             if self._extension_key == "Extension":
                 # Used for one-day, one-week, one-month, ytd and current financial year
@@ -1376,9 +1506,13 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             pass
                     return None
                 return data.get(self._key)
-            elif self._sub_key == "report" and self._key != "sub_totals" and self._key != "cash_accounts":
+            elif (
+                self._sub_key == "report"
+                and self._key != "sub_totals"
+                and self._key != "cash_accounts"
+            ):
                 # Used for direct report fields (cost_base, unrealised_gain, etc.)
-                report_data = self._coordinator.data.get('report', {})
+                report_data = self._coordinator.data.get("report", {})
 
                 # Try exact key first
                 if self._key in report_data:
@@ -1389,18 +1523,22 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
 
                 # Compute derived fields from available report data
                 try:
-                    if self._key == 'cost_base':
-                        value = report_data.get('value')
-                        capital_gain = report_data.get('capital_gain')
+                    if self._key == "cost_base":
+                        value = report_data.get("value")
+                        capital_gain = report_data.get("capital_gain")
                         if value is not None and capital_gain is not None:
                             return round(float(value) - float(capital_gain), 2)
                         # Fallback: try summing from holdings
-                        holdings_data = self._coordinator.data.get('holdings', {})
-                        holdings_list = holdings_data.get('holdings', []) if isinstance(holdings_data, dict) else []
+                        holdings_data = self._coordinator.data.get("holdings", {})
+                        holdings_list = (
+                            holdings_data.get("holdings", [])
+                            if isinstance(holdings_data, dict)
+                            else []
+                        )
                         if holdings_list:
                             total_cost = 0
                             for h in holdings_list:
-                                for f in ('cost_base', 'cost_basis', 'cost'):
+                                for f in ("cost_base", "cost_basis", "cost"):
                                     cv = h.get(f)
                                     if cv is not None:
                                         try:
@@ -1412,73 +1550,75 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                                 return round(total_cost, 2)
                         return None
 
-                    elif self._key == 'unrealised_gain':
-                        capital_gain = report_data.get('capital_gain')
+                    elif self._key == "unrealised_gain":
+                        capital_gain = report_data.get("capital_gain")
                         if capital_gain is not None:
                             return round(float(capital_gain), 2)
                         return None
 
-                    elif self._key == 'unrealised_gain_percent':
-                        capital_gain_percent = report_data.get('capital_gain_percent')
+                    elif self._key == "unrealised_gain_percent":
+                        capital_gain_percent = report_data.get("capital_gain_percent")
                         if capital_gain_percent is not None:
                             return round(float(capital_gain_percent), 2)
                         return None
 
-                    elif self._key == 'start_value':
-                        value = report_data.get('value')
-                        total_gain = report_data.get('total_gain')
+                    elif self._key == "start_value":
+                        value = report_data.get("value")
+                        total_gain = report_data.get("total_gain")
                         if value is not None and total_gain is not None:
                             return round(float(value) - float(total_gain), 2)
                         return None
-                    elif self._key == 'annualised_return_percent':
+                    elif self._key == "annualised_return_percent":
                         return _calculate_annualised_percent(
-                            report_data.get('total_gain_percent'),
-                            report_data.get('start_date'),
-                            report_data.get('end_date'),
-                            bool(report_data.get('percentages_annualised', False)),
+                            report_data.get("total_gain_percent"),
+                            report_data.get("start_date"),
+                            report_data.get("end_date"),
+                            bool(report_data.get("percentages_annualised", False)),
                         )
-                    elif self._key in ('cash_accounts_count', 'total_cash_value'):
+                    elif self._key in ("cash_accounts_count", "total_cash_value"):
                         cash_summary = _get_cash_accounts_summary(report_data)
                         return cash_summary.get(self._key)
-                    elif self._key == 'market_count':
-                        return len(report_data.get('sub_totals', []))
+                    elif self._key == "market_count":
+                        return len(report_data.get("sub_totals", []))
                     elif self._key in (
-                        'largest_market_name',
-                        'largest_market_value',
-                        'largest_market_percent',
+                        "largest_market_name",
+                        "largest_market_value",
+                        "largest_market_percent",
                     ):
-                        sub_totals = report_data.get('sub_totals', [])
+                        sub_totals = report_data.get("sub_totals", [])
                         if not sub_totals:
                             return None
                         largest_market = max(
                             sub_totals,
-                            key=lambda s: float(s.get('value', 0) or 0),
+                            key=lambda s: float(s.get("value", 0) or 0),
                         )
-                        if self._key == 'largest_market_name':
-                            return largest_market.get('group_name')
-                        if self._key == 'largest_market_value':
-                            return largest_market.get('value')
-                        total_value = float(report_data.get('value', 0) or 0)
-                        largest_value = float(largest_market.get('value', 0) or 0)
-                        return round((largest_value / total_value * 100), 2) if total_value else None
-                    elif self._key == 'equity_value':
-                        total_value = report_data.get('value')
+                        if self._key == "largest_market_name":
+                            return largest_market.get("group_name")
+                        if self._key == "largest_market_value":
+                            return largest_market.get("value")
+                        total_value = float(report_data.get("value", 0) or 0)
+                        largest_value = float(largest_market.get("value", 0) or 0)
+                        return (
+                            round((largest_value / total_value * 100), 2) if total_value else None
+                        )
+                    elif self._key == "equity_value":
+                        total_value = report_data.get("value")
                         cash_summary = _get_cash_accounts_summary(report_data)
-                        total_cash = cash_summary.get('total_cash_value', 0)
+                        total_cash = cash_summary.get("total_cash_value", 0)
                         if total_value is not None:
                             return round(float(total_value) - float(total_cash), 2)
                         return None
-                    elif self._key == 'cash_allocation_percent':
-                        total_value = report_data.get('value')
+                    elif self._key == "cash_allocation_percent":
+                        total_value = report_data.get("value")
                         cash_summary = _get_cash_accounts_summary(report_data)
-                        total_cash = cash_summary.get('total_cash_value', 0)
+                        total_cash = cash_summary.get("total_cash_value", 0)
                         if total_value and float(total_value) != 0:
                             return round(float(total_cash) / float(total_value) * 100, 2)
                         return None
-                    elif self._key == 'equity_allocation_percent':
-                        total_value = report_data.get('value')
+                    elif self._key == "equity_allocation_percent":
+                        total_value = report_data.get("value")
                         cash_summary = _get_cash_accounts_summary(report_data)
-                        total_cash = cash_summary.get('total_cash_value', 0)
+                        total_cash = cash_summary.get("total_cash_value", 0)
                         if total_value and float(total_value) != 0:
                             equity = float(total_value) - float(total_cash)
                             return round(equity / float(total_value) * 100, 2)
@@ -1491,7 +1631,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 return None
             elif self._key == "holdings_list":
                 # Per-holding individual sensor - look up by symbol
-                holdings_list = self._coordinator.data.get('holdings', {}).get('holdings', [])
+                holdings_list = self._coordinator.data.get("holdings", {}).get("holdings", [])
                 holding = _find_holding_by_symbol(holdings_list, self._local_name)
                 if holding is None:
                     return None
@@ -1502,7 +1642,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return round(val - cg, 2)
                     return None
                 if self._sub_key == "annualised_return_percent":
-                    report_data = self._coordinator.data.get('report', {})
+                    report_data = self._coordinator.data.get("report", {})
                     return _calculate_annualised_percent(
                         holding.get("total_gain_percent"),
                         report_data.get("start_date"),
@@ -1531,25 +1671,25 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     return None
                 if self._sub_key == "holding_count":
                     # Count holdings nested inside this sub_total or from report holdings
-                    holdings = sub_entry.get('holdings', [])
+                    holdings = sub_entry.get("holdings", [])
                     if holdings:
                         return len(holdings)
-                    report_holdings = self._coordinator.data.get('report', {}).get('holdings', [])
+                    report_holdings = self._coordinator.data.get("report", {}).get("holdings", [])
                     if report_holdings and self._local_name:
                         count = 0
                         for h in report_holdings:
-                            group_name = h.get('group_name')
+                            group_name = h.get("group_name")
                             if not group_name:
-                                instrument = h.get('instrument', {}) or {}
-                                group_name = instrument.get('market_code') or h.get('market')
+                                instrument = h.get("instrument", {}) or {}
+                                group_name = instrument.get("market_code") or h.get("market")
                             if group_name == self._local_name:
                                 count += 1
                         return count
                     return 0
                 if self._sub_key == "cost_base":
                     # cost_base is not in the API response; derive it
-                    val = sub_entry.get('value')
-                    cg = sub_entry.get('capital_gain')
+                    val = sub_entry.get("value")
+                    cg = sub_entry.get("capital_gain")
                     if val is not None and cg is not None:
                         try:
                             return round(float(val) - float(cg), 2)
@@ -1561,20 +1701,24 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         sub_entry.get("total_gain_percent"),
                         self._coordinator.data.get("report", {}).get("start_date"),
                         self._coordinator.data.get("report", {}).get("end_date"),
-                        bool(self._coordinator.data.get("report", {}).get("percentages_annualised", False)),
+                        bool(
+                            self._coordinator.data.get("report", {}).get(
+                                "percentages_annualised", False
+                            )
+                        ),
                     )
                 return sub_entry.get(self._sub_key)
 
             elif self._sub_key == "holdings":
-                holdings_data = self._coordinator.data.get('holdings', {})
+                holdings_data = self._coordinator.data.get("holdings", {})
                 if self._key == "holding_count":
-                    return len(holdings_data.get('holdings', []))
+                    return len(holdings_data.get("holdings", []))
                 elif self._key == "unconfirmed_transactions":
                     # Sum unconfirmed transactions across all report holdings
-                    report_holdings = self._coordinator.data.get('report', {}).get('holdings', [])
+                    report_holdings = self._coordinator.data.get("report", {}).get("holdings", [])
                     total = 0
                     for h in report_holdings:
-                        val = h.get('number_of_unconfirmed_transactions', 0)
+                        val = h.get("number_of_unconfirmed_transactions", 0)
                         if val:
                             try:
                                 total += int(val)
@@ -1583,39 +1727,39 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     return total
                 elif self._key == "largest_holding_symbol":
                     largest = _get_largest_holding(holdings_data)
-                    return largest.get('symbol') if largest else None
+                    return largest.get("symbol") if largest else None
                 elif self._key == "largest_holding_value":
                     largest = _get_largest_holding(holdings_data)
-                    return largest.get('value') if largest else None
+                    return largest.get("value") if largest else None
                 elif self._key == "largest_holding_percent":
                     largest = _get_largest_holding(holdings_data)
-                    return largest.get('percent') if largest else None
+                    return largest.get("percent") if largest else None
                 elif self._key == "top_gain_symbol":
                     top_gain = _get_top_gain_holding(holdings_data)
-                    return top_gain.get('symbol') if top_gain else None
+                    return top_gain.get("symbol") if top_gain else None
                 elif self._key == "top_gain_amount":
                     top_gain = _get_top_gain_holding(holdings_data)
-                    return top_gain.get('amount') if top_gain else None
+                    return top_gain.get("amount") if top_gain else None
                 elif self._key == "top_gain_percent":
                     top_gain = _get_top_gain_holding(holdings_data)
-                    return top_gain.get('percent') if top_gain else None
+                    return top_gain.get("percent") if top_gain else None
                 elif self._key == "worst_gain_symbol":
                     worst_gain = _get_worst_gain_holding(holdings_data)
-                    return worst_gain.get('symbol') if worst_gain else None
+                    return worst_gain.get("symbol") if worst_gain else None
                 elif self._key == "worst_gain_amount":
                     worst_gain = _get_worst_gain_holding(holdings_data)
-                    return worst_gain.get('amount') if worst_gain else None
+                    return worst_gain.get("amount") if worst_gain else None
                 elif self._key == "worst_gain_percent":
                     worst_gain = _get_worst_gain_holding(holdings_data)
-                    return worst_gain.get('percent') if worst_gain else None
+                    return worst_gain.get("percent") if worst_gain else None
                 elif self._key == "positive_holdings_count":
-                    holdings_list = holdings_data.get('holdings', [])
+                    holdings_list = holdings_data.get("holdings", [])
                     return sum(1 for h in holdings_list if _get_holding_gain(h) > 0)
                 elif self._key == "negative_holdings_count":
-                    holdings_list = holdings_data.get('holdings', [])
+                    holdings_list = holdings_data.get("holdings", [])
                     return sum(1 for h in holdings_list if _get_holding_gain(h) < 0)
                 elif self._key in ("positive_holdings_percent", "negative_holdings_percent"):
-                    holdings_list = holdings_data.get('holdings', [])
+                    holdings_list = holdings_data.get("holdings", [])
                     if not holdings_list:
                         return None
                     total_count = len(holdings_list)
@@ -1627,29 +1771,29 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         matching = sum(1 for h in holdings_list if _get_holding_gain(h) < 0)
                     return round(matching / total_count * 100, 2)
                 elif self._key == "average_holding_value":
-                    holdings_list = holdings_data.get('holdings', [])
+                    holdings_list = holdings_data.get("holdings", [])
                     if not holdings_list:
                         return None
                     total_val = sum(_get_holding_value(h) for h in holdings_list)
                     return round(total_val / len(holdings_list), 2)
                 elif self._key == "total_holdings_value":
-                    holdings_list = holdings_data.get('holdings', [])
+                    holdings_list = holdings_data.get("holdings", [])
                     if not holdings_list:
                         return 0
                     return round(sum(_get_holding_value(h) for h in holdings_list), 2)
                 elif self._key == "total_holdings_gain":
-                    holdings_list = holdings_data.get('holdings', [])
+                    holdings_list = holdings_data.get("holdings", [])
                     if not holdings_list:
                         return 0
                     return round(sum(_get_holding_gain(h) for h in holdings_list), 2)
                 elif self._key == "smallest_holding_symbol":
                     smallest = _get_smallest_holding(holdings_data)
-                    return smallest.get('symbol') if smallest else None
+                    return smallest.get("symbol") if smallest else None
                 elif self._key == "smallest_holding_value":
                     smallest = _get_smallest_holding(holdings_data)
-                    return smallest.get('value') if smallest else None
+                    return smallest.get("value") if smallest else None
                 elif self._key == "median_holding_value":
-                    holdings_list = holdings_data.get('holdings', [])
+                    holdings_list = holdings_data.get("holdings", [])
                     if not holdings_list:
                         return None
                     values = sorted(_get_holding_value(h) for h in holdings_list)
@@ -1663,10 +1807,10 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     return round(median, 2)
                 elif self._key in ("top_3_holdings_percent", "top_5_holdings_percent"):
                     n = 3 if self._key == "top_3_holdings_percent" else 5
-                    holdings_list = holdings_data.get('holdings', [])
+                    holdings_list = holdings_data.get("holdings", [])
                     if not holdings_list:
                         return None
-                    portfolio_value = float(holdings_data.get('value', 0) or 0)
+                    portfolio_value = float(holdings_data.get("value", 0) or 0)
                     if portfolio_value <= 0:
                         return None
                     top_n = sorted(holdings_list, key=_get_holding_value, reverse=True)[:n]
@@ -1674,15 +1818,15 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     return round(top_value / portfolio_value * 100, 2)
             # Income Report sensors
             elif self._sub_key == "income_report":
-                income_data = self._coordinator.data.get('income_report', {})
-                report_data = self._coordinator.data.get('report', {})
+                income_data = self._coordinator.data.get("income_report", {})
+                report_data = self._coordinator.data.get("report", {})
                 income_summary = _get_income_summary(income_data, report_data)
                 if self._key == "total_income":
-                    return income_summary.get('total_income')
+                    return income_summary.get("total_income")
                 elif self._key == "dividend_count":
-                    return income_summary.get('dividend_count')
+                    return income_summary.get("dividend_count")
                 elif self._key == "last_dividend_date":
-                    payouts = income_data.get('payouts', [])
+                    payouts = income_data.get("payouts", [])
                     if payouts:
                         # Sort by date descending, return the most recent
                         try:
@@ -1690,24 +1834,26 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                                 [
                                     p
                                     for p in payouts
-                                    if p.get('paid_on') or p.get('date') or p.get('ex_date')
+                                    if p.get("paid_on") or p.get("date") or p.get("ex_date")
                                 ],
-                                key=lambda p: p.get('paid_on') or p.get('date') or p.get('ex_date', ''),
-                                reverse=True
+                                key=lambda p: (
+                                    p.get("paid_on") or p.get("date") or p.get("ex_date", "")
+                                ),
+                                reverse=True,
                             )
                             if sorted_payouts:
                                 return (
-                                    sorted_payouts[0].get('paid_on')
-                                    or sorted_payouts[0].get('date')
-                                    or sorted_payouts[0].get('ex_date')
+                                    sorted_payouts[0].get("paid_on")
+                                    or sorted_payouts[0].get("date")
+                                    or sorted_payouts[0].get("ex_date")
                                 )
                         except (TypeError, ValueError):
                             pass
                     return None
                 elif self._key == "average_dividend_amount":
                     income_summary = _get_income_summary(income_data, report_data)
-                    total = income_summary.get('total_income')
-                    count = income_summary.get('dividend_count', 0)
+                    total = income_summary.get("total_income")
+                    count = income_summary.get("dividend_count", 0)
                     if total is not None and count and count > 0:
                         try:
                             return round(float(total) / count, 2)
@@ -1715,25 +1861,27 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             pass
                     return None
                 elif self._key == "largest_dividend_symbol":
-                    payouts = income_data.get('payouts', [])
+                    payouts = income_data.get("payouts", [])
                     if payouts:
                         try:
-                            largest = max(payouts, key=lambda p: float(p.get('amount', 0) or 0))
+                            largest = max(payouts, key=lambda p: float(p.get("amount", 0) or 0))
                             return (
-                                largest.get('symbol')
-                                or largest.get('instrument_code')
-                                or (largest.get('holding', {}) or {}).get('instrument', {}).get('code', '')
-                                or largest.get('company_name', '')
+                                largest.get("symbol")
+                                or largest.get("instrument_code")
+                                or (largest.get("holding", {}) or {})
+                                .get("instrument", {})
+                                .get("code", "")
+                                or largest.get("company_name", "")
                             )
                         except (ValueError, TypeError):
                             pass
                     return None
                 elif self._key == "largest_dividend_amount":
-                    payouts = income_data.get('payouts', [])
+                    payouts = income_data.get("payouts", [])
                     if payouts:
                         try:
-                            largest = max(payouts, key=lambda p: float(p.get('amount', 0) or 0))
-                            return round(float(largest.get('amount', 0) or 0), 2)
+                            largest = max(payouts, key=lambda p: float(p.get("amount", 0) or 0))
+                            return round(float(largest.get("amount", 0) or 0), 2)
                         except (ValueError, TypeError):
                             pass
                     return None
@@ -1749,43 +1897,77 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     "total_capital_gains_distributions",
                     "drp_reinvestment_count",
                 ):
-                    payouts = income_data.get('payouts', [])
+                    payouts = income_data.get("payouts", [])
                     if not payouts:
                         return 0 if self._key == "drp_reinvestment_count" else None
+                    # Field names verified against live payouts.  Two of
+                    # these used to point at keys the API has never
+                    # returned: "tax_credit" (the real field is
+                    # franking_credits) and "capital_gains" (which the API
+                    # splits across the discounted and non-discounted
+                    # distributions), so both sensors sat at Unknown
+                    # forever on every real portfolio.
                     field_map = {
-                        "total_gross_income": "gross_amount",
-                        "total_resident_withholding_tax": "resident_withholding_tax",
-                        "total_non_resident_withholding_tax": "non_resident_withholding_tax",
-                        "total_tax_credits": "tax_credit",
-                        "total_franked_amount": "franked_amount",
-                        "total_unfranked_amount": "unfranked_amount",
-                        "total_foreign_source_income": "foreign_source_income",
-                        "total_capital_gains_distributions": "capital_gains",
+                        "total_gross_income": ("gross_amount",),
+                        "total_resident_withholding_tax": ("resident_withholding_tax",),
+                        "total_non_resident_withholding_tax": ("non_resident_withholding_tax",),
+                        "total_tax_credits": ("franking_credits", "tax_credit"),
+                        "total_franked_amount": ("franked_amount",),
+                        "total_unfranked_amount": ("unfranked_amount",),
+                        "total_foreign_source_income": ("foreign_source_income",),
+                        "total_capital_gains_distributions": (
+                            "discounted_capital_gains",
+                            "non_discounted_capital_gains",
+                        ),
                     }
+                    # Withholding tax and franking credits are documented
+                    # as already being in the portfolio currency; the
+                    # gross/net amounts are not, so those get converted.
+                    converted = {
+                        "total_gross_income",
+                        "total_franked_amount",
+                        "total_unfranked_amount",
+                        "total_foreign_source_income",
+                        "total_capital_gains_distributions",
+                    }
+                    # Only one spelling of the tax-credit field is ever
+                    # present, so stop at the first hit rather than
+                    # double-counting an account that returns both.
+                    first_only = {"total_tax_credits"}
                     if self._key == "drp_reinvestment_count":
                         count = 0
                         for p in payouts:
-                            drp = p.get('drp_trade_attributes')
-                            if isinstance(drp, dict) and drp.get('dividend_reinvested'):
+                            drp = p.get("drp_trade_attributes")
+                            if isinstance(drp, dict) and drp.get("dividend_reinvested"):
                                 count += 1
                         return count
-                    payout_field = field_map.get(self._key)
+                    payout_fields = field_map.get(self._key, ())
+                    convert = self._key in converted
+                    stop_at_first = self._key in first_only
                     total = 0.0
                     has_any = False
                     for p in payouts:
                         if not isinstance(p, dict):
                             continue
-                        val = p.get(payout_field)
-                        if val is not None:
-                            try:
-                                total += float(val)
-                                has_any = True
-                            except (ValueError, TypeError):
-                                pass
+                        for payout_field in payout_fields:
+                            raw = p.get(payout_field)
+                            if raw is None:
+                                continue
+                            val = (
+                                analytics.to_portfolio_currency(p, raw)
+                                if convert
+                                else analytics._f(raw)
+                            )
+                            if val is None:
+                                continue
+                            total += val
+                            has_any = True
+                            if stop_at_first:
+                                break
                     return round(total, 2) if has_any else None
                 elif self._key == "dividend_yield_percent":
-                    total = income_summary.get('total_income')
-                    portfolio_value = report_data.get('value')
+                    total = income_summary.get("total_income")
+                    portfolio_value = report_data.get("value")
                     if total is None or portfolio_value in (None, 0, 0.0):
                         return None
                     try:
@@ -1798,10 +1980,10 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     "dividends_ttm",
                     "dividends_prev_year",
                 ):
-                    payouts = income_data.get('payouts', [])
+                    payouts = income_data.get("payouts", [])
                     if not payouts:
                         return 0
-                    today = dt_util.now().date()
+                    today = self._coordinator.current_date
                     cutoff_low = None
                     cutoff_high = None
                     if self._key == "dividends_30d":
@@ -1817,7 +1999,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     for p in payouts:
                         if not isinstance(p, dict):
                             continue
-                        date = p.get('paid_on') or p.get('date') or p.get('ex_date')
+                        date = p.get("paid_on") or p.get("date") or p.get("ex_date")
                         if not date:
                             continue
                         d = str(date)[:10]
@@ -1826,25 +2008,25 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         if cutoff_high and d >= cutoff_high:
                             continue
                         try:
-                            total += float(p.get('amount', 0) or 0)
+                            total += float(p.get("amount", 0) or 0)
                         except (ValueError, TypeError):
                             continue
                     return round(total, 2)
                 elif self._key == "dividend_yield_ttm_percent":
-                    payouts = income_data.get('payouts', [])
-                    portfolio_value = report_data.get('value')
+                    payouts = income_data.get("payouts", [])
+                    portfolio_value = report_data.get("value")
                     if not payouts or portfolio_value in (None, 0, 0.0):
                         return None
-                    cutoff = (dt_util.now().date() - timedelta(days=365)).isoformat()
+                    cutoff = (self._coordinator.current_date - timedelta(days=365)).isoformat()
                     total = 0.0
                     for p in payouts:
                         if not isinstance(p, dict):
                             continue
-                        date = p.get('paid_on') or p.get('date') or p.get('ex_date')
+                        date = p.get("paid_on") or p.get("date") or p.get("ex_date")
                         if not date or str(date)[:10] < cutoff:
                             continue
                         try:
-                            total += float(p.get('amount', 0) or 0)
+                            total += float(p.get("amount", 0) or 0)
                         except (ValueError, TypeError):
                             continue
                     try:
@@ -1854,66 +2036,76 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 elif self._key == "upcoming_dividends_count":
                     # Historic payouts (inception→today) plus the dedicated
                     # forward window (today→+1y) the coordinator fetches.
-                    payouts = (income_data.get('payouts', []) or []) + (
-                        income_data.get('upcoming_payouts', []) or []
+                    payouts = (income_data.get("payouts", []) or []) + (
+                        income_data.get("upcoming_payouts", []) or []
                     )
                     if not payouts:
                         return 0
-                    today_iso = dt_util.now().date().isoformat()
+                    today_iso = self._coordinator.current_date.isoformat()
                     seen: set[tuple] = set()
                     count = 0
                     for p in payouts:
                         if not isinstance(p, dict):
                             continue
-                        ex = (
-                            p.get('goes_ex_on')
-                            or p.get('ex_date')
-                            or p.get('paid_on')
-                        )
+                        ex = p.get("goes_ex_on") or p.get("ex_date") or p.get("paid_on")
                         if not ex or str(ex)[:10] < today_iso:
                             continue
-                        dedupe_key = (p.get('id'), str(ex)[:10], p.get('amount'))
+                        dedupe_key = (p.get("id"), str(ex)[:10], p.get("amount"))
                         if dedupe_key in seen:
                             continue
                         seen.add(dedupe_key)
                         count += 1
                     return count
                 elif self._key == "dividends_received_cash":
-                    cash_tx_data = self._coordinator.data.get('cash_account_transactions', {})
+                    cash_tx_data = self._coordinator.data.get("cash_account_transactions", {})
                     transactions = []
                     if isinstance(cash_tx_data, dict):
-                        transactions = cash_tx_data.get('cash_account_transactions', [])
+                        transactions = cash_tx_data.get("cash_account_transactions", [])
                     if not transactions:
                         return 0
                     total = 0.0
                     for tx in transactions:
                         if not isinstance(tx, dict):
                             continue
-                        tx_type = tx.get('type_name')
+                        tx_type = tx.get("type_name")
                         if not tx_type:
-                            tx_type_obj = tx.get('cash_account_transaction_type')
+                            tx_type_obj = tx.get("cash_account_transaction_type")
                             if isinstance(tx_type_obj, dict):
-                                tx_type = tx_type_obj.get('name')
+                                tx_type = tx_type_obj.get("name")
                         tx_type = str(tx_type or "").upper()
-                        if 'DIVIDEND' not in tx_type and 'INTEREST' not in tx_type:
+                        # Broker-synced cash accounts do not carry a DIVIDEND
+                        # or INTEREST transaction type at all — real portfolios
+                        # only ever return DEPOSIT / WITHDRAWAL / null — so this
+                        # summed nothing and reported $0.00 forever.  A row is
+                        # now counted when it is either typed as income or
+                        # explicitly linked to a payout.
+                        if (
+                            "DIVIDEND" not in tx_type
+                            and "INTEREST" not in tx_type
+                            and tx.get("payout_id") is None
+                        ):
                             continue
                         try:
-                            total += float(tx.get('amount') or 0)
+                            total += float(tx.get("amount") or 0)
                         except (ValueError, TypeError):
                             continue
                     return round(total, 2)
-                elif self._key in ("next_dividend_date", "next_dividend_amount", "next_dividend_symbol"):
-                    payouts = (income_data.get('payouts', []) or []) + (
-                        income_data.get('upcoming_payouts', []) or []
+                elif self._key in (
+                    "next_dividend_date",
+                    "next_dividend_amount",
+                    "next_dividend_symbol",
+                ):
+                    payouts = (income_data.get("payouts", []) or []) + (
+                        income_data.get("upcoming_payouts", []) or []
                     )
                     if not payouts:
                         return None
-                    today_iso = dt_util.now().date().isoformat()
+                    today_iso = self._coordinator.current_date.isoformat()
                     upcoming = []
                     for p in payouts:
                         if not isinstance(p, dict):
                             continue
-                        ex = p.get('goes_ex_on') or p.get('ex_date') or p.get('paid_on')
+                        ex = p.get("goes_ex_on") or p.get("ex_date") or p.get("paid_on")
                         if ex and str(ex)[:10] >= today_iso:
                             upcoming.append((str(ex)[:10], p))
                     if not upcoming:
@@ -1924,14 +2116,16 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return next_date
                     if self._key == "next_dividend_amount":
                         try:
-                            return round(float(next_payout.get('amount', 0) or 0), 2)
+                            return round(float(next_payout.get("amount", 0) or 0), 2)
                         except (ValueError, TypeError):
                             return None
                     return (
-                        next_payout.get('symbol')
-                        or next_payout.get('instrument_code')
-                        or (next_payout.get('holding', {}) or {}).get('instrument', {}).get('code', '')
-                        or next_payout.get('company_name', '')
+                        next_payout.get("symbol")
+                        or next_payout.get("instrument_code")
+                        or (next_payout.get("holding", {}) or {})
+                        .get("instrument", {})
+                        .get("code", "")
+                        or next_payout.get("company_name", "")
                         or None
                     )
                 elif self._key in (
@@ -1947,7 +2141,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     return income_data.get(self._key)
             # Diversity sensors
             elif self._sub_key == "diversity":
-                diversity_data = self._coordinator.data.get('diversity', {})
+                diversity_data = self._coordinator.data.get("diversity", {})
                 top_markets = _get_diversity_top_markets(diversity_data, n=5)
                 # Pattern: market_<N>_<field>
                 if self._key.startswith("market_") and "_" in self._key[7:]:
@@ -1962,59 +2156,65 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return m.get(field) if m else None
                     return None
                 if self._key == "diversity_group_count":
-                    breakdown = diversity_data.get('breakdown', [])
+                    breakdown = diversity_data.get("breakdown", [])
                     return len(breakdown)
                 if self._key in ("top_3_markets_percent", "top_5_markets_percent"):
                     n = 3 if self._key == "top_3_markets_percent" else 5
                     breakdown = sorted(
-                        diversity_data.get('breakdown', []),
-                        key=lambda x: float(x.get('percentage', 0) or 0),
+                        diversity_data.get("breakdown", []),
+                        key=lambda x: float(x.get("percentage", 0) or 0),
                         reverse=True,
                     )[:n]
                     if not breakdown:
                         return None
                     try:
-                        return round(sum(float(m.get('percentage', 0) or 0) for m in breakdown), 2)
+                        return round(sum(float(m.get("percentage", 0) or 0) for m in breakdown), 2)
                     except (ValueError, TypeError):
                         return None
             # Trades sensors
             elif self._sub_key == "trades":
-                trades_data = self._coordinator.data.get('trades', {})
-                trades_list = trades_data.get('trades', [])
+                trades_data = self._coordinator.data.get("trades", {})
+                trades_list = trades_data.get("trades", [])
 
                 def _trade_value(t):
-                    """Best-effort extraction of a trade's monetary value."""
-                    for f in ('value', 'cost_base', 'amount'):
+                    """A trade's monetary magnitude in the portfolio currency.
+
+                    Sharesight signs a SELL's ``value`` negatively (a sale
+                    is money coming back out of the position).  Every
+                    aggregate below wants a magnitude - a total sell value
+                    is not a negative number, and the largest trade must be
+                    able to be a sale - so the sign is dropped here and
+                    applied explicitly by the one aggregate that needs it,
+                    net trade flow.
+                    """
+                    for f in ("value", "cost_base", "amount"):
                         v = t.get(f)
                         if v is not None:
                             try:
-                                return float(v)
+                                return abs(float(v))
                             except (ValueError, TypeError):
                                 pass
-                    price = t.get('price', 0)
-                    quantity = t.get('quantity', 0)
+                    price = t.get("price", 0)
+                    quantity = t.get("quantity", 0)
                     if price and quantity:
                         try:
-                            return float(price) * float(quantity)
+                            return abs(float(price) * float(quantity))
                         except (ValueError, TypeError):
                             pass
                     return 0.0
 
                 def _trade_type(t):
                     return (
-                        t.get('trade_type')
-                        or t.get('type')
-                        or t.get('transaction_type')
-                        or ''
+                        t.get("trade_type") or t.get("type") or t.get("transaction_type") or ""
                     ).upper()
 
                 def _trade_symbol(t):
                     return (
-                        t.get('symbol')
-                        or t.get('code')
-                        or t.get('instrument_code')
-                        or (t.get('instrument', {}) or {}).get('code', '')
-                        or (t.get('instrument', {}) or {}).get('symbol', '')
+                        t.get("symbol")
+                        or t.get("code")
+                        or t.get("instrument_code")
+                        or (t.get("instrument", {}) or {}).get("code", "")
+                        or (t.get("instrument", {}) or {}).get("symbol", "")
                     )
 
                 if self._key == "total_trades":
@@ -2022,28 +2222,32 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 elif self._key == "buy_count":
                     count = 0
                     for t in trades_list:
-                        tt = (t.get('trade_type') or t.get('type') or t.get('transaction_type') or '').upper()
-                        if tt in ('BUY', 'OPENING BALANCE', 'SPLIT'):
+                        tt = (
+                            t.get("trade_type") or t.get("type") or t.get("transaction_type") or ""
+                        ).upper()
+                        if tt in ("BUY", "OPENING BALANCE", "SPLIT"):
                             count += 1
                     return count
                 elif self._key == "sell_count":
                     count = 0
                     for t in trades_list:
-                        tt = (t.get('trade_type') or t.get('type') or t.get('transaction_type') or '').upper()
-                        if tt in ('SELL',):
+                        tt = (
+                            t.get("trade_type") or t.get("type") or t.get("transaction_type") or ""
+                        ).upper()
+                        if tt in ("SELL",):
                             count += 1
                     return count
                 elif self._key == "trade_count_30d":
                     if not trades_list:
                         return 0
-                    cutoff = (dt_util.now().date() - timedelta(days=30)).isoformat()
+                    cutoff = (self._coordinator.current_date - timedelta(days=30)).isoformat()
                     count = 0
                     for t in trades_list:
                         trade_date = (
-                            t.get('transaction_date')
-                            or t.get('trade_date')
-                            or t.get('date')
-                            or t.get('traded_at', '')
+                            t.get("transaction_date")
+                            or t.get("trade_date")
+                            or t.get("date")
+                            or t.get("traded_at", "")
                         )
                         if trade_date and str(trade_date)[:10] >= cutoff:
                             count += 1
@@ -2053,7 +2257,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return 0
                     total = 0.0
                     for t in trades_list:
-                        if _trade_type(t) in ('BUY', 'OPENING BALANCE'):
+                        if _trade_type(t) in ("BUY", "OPENING BALANCE"):
                             total += _trade_value(t)
                     return round(total, 2)
                 elif self._key == "total_sell_value":
@@ -2061,19 +2265,19 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return 0
                     total = 0.0
                     for t in trades_list:
-                        if _trade_type(t) == 'SELL':
+                        if _trade_type(t) == "SELL":
                             total += _trade_value(t)
                     return round(total, 2)
                 elif self._key == "net_trade_flow":
                     if not trades_list:
                         return 0
                     buy_total = sum(
-                        _trade_value(t) for t in trades_list
-                        if _trade_type(t) in ('BUY', 'OPENING BALANCE')
+                        _trade_value(t)
+                        for t in trades_list
+                        if _trade_type(t) in ("BUY", "OPENING BALANCE")
                     )
                     sell_total = sum(
-                        _trade_value(t) for t in trades_list
-                        if _trade_type(t) == 'SELL'
+                        _trade_value(t) for t in trades_list if _trade_type(t) == "SELL"
                     )
                     return round(buy_total - sell_total, 2)
                 elif self._key in ("largest_trade_value", "largest_trade_symbol"):
@@ -2089,14 +2293,14 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 elif self._key == "trade_count_7d":
                     if not trades_list:
                         return 0
-                    cutoff = (dt_util.now().date() - timedelta(days=7)).isoformat()
+                    cutoff = (self._coordinator.current_date - timedelta(days=7)).isoformat()
                     count = 0
                     for t in trades_list:
                         td = (
-                            t.get('transaction_date')
-                            or t.get('trade_date')
-                            or t.get('date')
-                            or t.get('traded_at', '')
+                            t.get("transaction_date")
+                            or t.get("trade_date")
+                            or t.get("date")
+                            or t.get("traded_at", "")
                         )
                         if td and str(td)[:10] >= cutoff:
                             count += 1
@@ -2104,25 +2308,31 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 elif self._key == "trade_count_ytd":
                     if not trades_list:
                         return 0
-                    cutoff = f"{dt_util.now().year}-01-01"
+                    cutoff = f"{self._coordinator.current_date.year}-01-01"
                     count = 0
                     for t in trades_list:
                         td = (
-                            t.get('transaction_date')
-                            or t.get('trade_date')
-                            or t.get('date')
-                            or t.get('traded_at', '')
+                            t.get("transaction_date")
+                            or t.get("trade_date")
+                            or t.get("date")
+                            or t.get("traded_at", "")
                         )
                         if td and str(td)[:10] >= cutoff:
                             count += 1
                     return count
-                elif self._key in ("average_trade_value", "average_buy_value", "average_sell_value"):
+                elif self._key in (
+                    "average_trade_value",
+                    "average_buy_value",
+                    "average_sell_value",
+                ):
                     if not trades_list:
                         return None
                     if self._key == "average_buy_value":
-                        relevant = [t for t in trades_list if _trade_type(t) in ('BUY', 'OPENING BALANCE')]
+                        relevant = [
+                            t for t in trades_list if _trade_type(t) in ("BUY", "OPENING BALANCE")
+                        ]
                     elif self._key == "average_sell_value":
-                        relevant = [t for t in trades_list if _trade_type(t) == 'SELL']
+                        relevant = [t for t in trades_list if _trade_type(t) == "SELL"]
                     else:
                         relevant = trades_list
                     if not relevant:
@@ -2135,8 +2345,17 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     total = 0.0
                     has_any = False
                     for t in trades_list:
-                        for f in ('brokerage', 'fee', 'commission', 'fees'):
-                            v = t.get(f)
+                        for f in ("brokerage", "fee", "commission", "fees"):
+                            # Brokerage is charged in the trade's own
+                            # currency (brokerage_currency_code), so it has
+                            # to be converted before joining a
+                            # portfolio-currency total - a raw sum mixed
+                            # AUD/USD/GBP/CAD/DKK figures together.
+                            v = analytics.brokerage_to_portfolio_currency(
+                                t,
+                                t.get(f),
+                                self._coordinator.portfolio_currency,
+                            )
                             if v is not None:
                                 try:
                                     total += float(v)
@@ -2160,7 +2379,9 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     if not trades_list:
                         return None
                     # Span from portfolio inception (preferred) or earliest trade to today.
-                    inception = (self._coordinator.data.get('portfolio_detail', {}) or {}).get('inception_date')
+                    inception = (self._coordinator.data.get("portfolio_detail", {}) or {}).get(
+                        "inception_date"
+                    )
                     start_date = None
                     if inception:
                         try:
@@ -2171,10 +2392,10 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         earliest = None
                         for t in trades_list:
                             td = (
-                                t.get('transaction_date')
-                                or t.get('trade_date')
-                                or t.get('date')
-                                or t.get('traded_at', '')
+                                t.get("transaction_date")
+                                or t.get("trade_date")
+                                or t.get("date")
+                                or t.get("traded_at", "")
                             )
                             td10 = str(td or "")[:10]
                             if td10 and (earliest is None or td10 < earliest):
@@ -2186,44 +2407,50 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                                 start_date = None
                     if start_date is None:
                         return None
-                    days = max((dt_util.now().date() - start_date).days, 1)
+                    days = max((self._coordinator.current_date - start_date).days, 1)
                     months = days / 30.4375
                     if months <= 0:
                         return None
                     return round(len(trades_list) / months, 2)
                 elif self._key in (
-                    "last_buy_date", "last_buy_symbol", "last_buy_value",
-                    "last_sell_date", "last_sell_symbol", "last_sell_value",
+                    "last_buy_date",
+                    "last_buy_symbol",
+                    "last_buy_value",
+                    "last_sell_date",
+                    "last_sell_symbol",
+                    "last_sell_value",
                 ):
-                    target = 'BUY' if self._key.startswith('last_buy') else 'SELL'
-                    if target == 'BUY':
-                        relevant = [t for t in trades_list if _trade_type(t) in ('BUY', 'OPENING BALANCE')]
+                    target = "BUY" if self._key.startswith("last_buy") else "SELL"
+                    if target == "BUY":
+                        relevant = [
+                            t for t in trades_list if _trade_type(t) in ("BUY", "OPENING BALANCE")
+                        ]
                     else:
-                        relevant = [t for t in trades_list if _trade_type(t) == 'SELL']
+                        relevant = [t for t in trades_list if _trade_type(t) == "SELL"]
                     if not relevant:
                         return None
                     try:
                         sorted_rel = sorted(
                             relevant,
                             key=lambda t: (
-                                t.get('transaction_date')
-                                or t.get('trade_date')
-                                or t.get('date')
-                                or t.get('traded_at', '')
+                                t.get("transaction_date")
+                                or t.get("trade_date")
+                                or t.get("date")
+                                or t.get("traded_at", "")
                             ),
                             reverse=True,
                         )
                         last = sorted_rel[0]
                     except (TypeError, ValueError, IndexError):
                         return None
-                    if self._key.endswith('_date'):
+                    if self._key.endswith("_date"):
                         return (
-                            last.get('transaction_date')
-                            or last.get('trade_date')
-                            or last.get('date')
-                            or last.get('traded_at')
+                            last.get("transaction_date")
+                            or last.get("trade_date")
+                            or last.get("date")
+                            or last.get("traded_at")
                         )
-                    if self._key.endswith('_symbol'):
+                    if self._key.endswith("_symbol"):
                         return _trade_symbol(last) or None
                     return round(_trade_value(last), 2)
                 else:
@@ -2234,41 +2461,45 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         sorted_trades = sorted(
                             trades_list,
                             key=lambda t: (
-                                t.get('transaction_date')
-                                or t.get('trade_date')
-                                or t.get('date')
-                                or t.get('traded_at', '')
+                                t.get("transaction_date")
+                                or t.get("trade_date")
+                                or t.get("date")
+                                or t.get("traded_at", "")
                             ),
-                            reverse=True
+                            reverse=True,
                         )
                         last = sorted_trades[0]
                         if self._key == "last_trade_date":
                             return (
-                                last.get('transaction_date')
-                                or last.get('trade_date')
-                                or last.get('date')
-                                or last.get('traded_at')
+                                last.get("transaction_date")
+                                or last.get("trade_date")
+                                or last.get("date")
+                                or last.get("traded_at")
                             )
                         elif self._key == "last_trade_symbol":
                             return (
-                                last.get('symbol')
-                                or last.get('code')
-                                or last.get('instrument_code')
-                                or (last.get('instrument', {}) or {}).get('code', '')
-                                or (last.get('instrument', {}) or {}).get('symbol', '')
+                                last.get("symbol")
+                                or last.get("code")
+                                or last.get("instrument_code")
+                                or (last.get("instrument", {}) or {}).get("code", "")
+                                or (last.get("instrument", {}) or {}).get("symbol", "")
                             )
                         elif self._key == "last_trade_type":
-                            return last.get('trade_type') or last.get('type') or last.get('transaction_type')
+                            return (
+                                last.get("trade_type")
+                                or last.get("type")
+                                or last.get("transaction_type")
+                            )
                         elif self._key == "last_trade_value":
-                            val = last.get('value') or last.get('cost_base') or last.get('amount')
+                            val = last.get("value") or last.get("cost_base") or last.get("amount")
                             if val is not None:
                                 try:
                                     return round(float(val), 2)
                                 except (ValueError, TypeError):
                                     pass
                             # Compute from price * quantity
-                            price = last.get('price', 0)
-                            quantity = last.get('quantity', 0)
+                            price = last.get("price", 0)
+                            quantity = last.get("quantity", 0)
                             if price and quantity:
                                 try:
                                     return round(float(price) * float(quantity), 2)
@@ -2284,8 +2515,8 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 )
                 if self._key == "net_investment_gain":
                     # Portfolio value minus net contributions
-                    portfolio_value = self._coordinator.data.get('report', {}).get('value')
-                    net_contrib = summary.get('net_contributions', 0)
+                    portfolio_value = self._coordinator.data.get("report", {}).get("value")
+                    net_contrib = summary.get("net_contributions", 0)
                     if portfolio_value is not None:
                         try:
                             return round(float(portfolio_value) - float(net_contrib), 2)
@@ -2293,8 +2524,8 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             pass
                     return None
                 elif self._key == "net_investment_gain_percent":
-                    portfolio_value = self._coordinator.data.get('report', {}).get('value')
-                    net_contrib = summary.get('net_contributions', 0)
+                    portfolio_value = self._coordinator.data.get("report", {}).get("value")
+                    net_contrib = summary.get("net_contributions", 0)
                     if portfolio_value is not None and net_contrib and float(net_contrib) != 0:
                         try:
                             gain = float(portfolio_value) - float(net_contrib)
@@ -2305,7 +2536,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 return summary.get(self._key)
             # Portfolio metadata sensors
             elif self._sub_key == "portfolio_detail":
-                detail = self._coordinator.data.get('portfolio_detail', {})
+                detail = self._coordinator.data.get("portfolio_detail", {})
                 if not isinstance(detail, dict):
                     return None
                 if self._key == "portfolio_age_days":
@@ -2314,16 +2545,16 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return None
                     try:
                         start = datetime.strptime(str(inception)[:10], "%Y-%m-%d").date()
-                        return (dt_util.now().date() - start).days
+                        return (self._coordinator.current_date - start).days
                     except (ValueError, TypeError):
                         return None
                 return detail.get(self._key)
             # Cash account transaction analytics
             elif self._sub_key == "cash_account_transactions":
-                cash_tx_data = self._coordinator.data.get('cash_account_transactions', {})
+                cash_tx_data = self._coordinator.data.get("cash_account_transactions", {})
                 transactions = []
                 if isinstance(cash_tx_data, dict):
-                    transactions = cash_tx_data.get('cash_account_transactions', []) or []
+                    transactions = cash_tx_data.get("cash_account_transactions", []) or []
                 if self._key == "cash_transaction_count":
                     return len(transactions)
                 if not transactions:
@@ -2331,7 +2562,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 try:
                     sorted_tx = sorted(
                         transactions,
-                        key=lambda t: str(t.get('date_time') or t.get('date') or ''),
+                        key=lambda t: str(t.get("date_time") or t.get("date") or ""),
                         reverse=True,
                     )
                     last = sorted_tx[0] if sorted_tx else None
@@ -2340,10 +2571,10 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 if not last:
                     return None
                 if self._key == "last_cash_transaction_date":
-                    dt = last.get('date_time') or last.get('date')
+                    dt = last.get("date_time") or last.get("date")
                     return str(dt)[:10] if dt else None
                 if self._key == "last_cash_transaction_amount":
-                    amt = last.get('amount')
+                    amt = last.get("amount")
                     try:
                         return round(float(amt), 2) if amt is not None else None
                     except (ValueError, TypeError):
@@ -2351,17 +2582,25 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 return None
             # Per-holding fundamentals (joined from user_instruments)
             elif self._key == "holding_fundamental":
-                lookup = self._coordinator.data.get('instrument_lookup', {})
-                holdings_list = self._coordinator.data.get('holdings', {}).get('holdings', [])
+                lookup = self._coordinator.data.get("instrument_lookup", {})
+                holdings_list = self._coordinator.data.get("holdings", {}).get("holdings", [])
                 holding = _find_holding_by_symbol(holdings_list, self._local_name)
                 if holding is None:
                     return None
                 instrument = analytics.lookup_instrument(lookup, holding) or {}
-                field = "current_price_updated_at" if self._sub_key == "price_updated_at" else self._sub_key
+                if self._sub_key == "currency_code":
+                    # Comes off the holding row itself, so it resolves even
+                    # when the optional user_instruments feed is parked.
+                    return analytics.holding_currency(holding)
+                field = (
+                    "current_price_updated_at"
+                    if self._sub_key == "price_updated_at"
+                    else self._sub_key
+                )
                 return instrument.get(field)
             # Per-holding dividend income (grouped from payouts)
             elif self._key == "holding_income":
-                income_map = self._coordinator.data.get('holding_income', {})
+                income_map = self._coordinator.data.get("holding_income", {})
                 entry = income_map.get(self._local_name)
                 if not isinstance(entry, dict):
                     return None
@@ -2369,7 +2608,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 return entry.get(field)
             # Per-holding trade activity (grouped from trades)
             elif self._key == "holding_trade":
-                trades_map = self._coordinator.data.get('holding_trades', {})
+                trades_map = self._coordinator.data.get("holding_trades", {})
                 entry = trades_map.get(self._local_name)
                 if not isinstance(entry, dict):
                     return None
@@ -2382,18 +2621,22 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 }
                 return entry.get(trade_field_map.get(self._sub_key, self._sub_key))
             # Portfolio sector / industry allocation
-            elif self._sub_key in ("sector_allocation", "industry_allocation"):
+            elif self._sub_key in _ALLOCATION_PREFIXES:
                 alloc = self._coordinator.data.get(self._sub_key, {})
-                breakdown = alloc.get('breakdown', []) if isinstance(alloc, dict) else []
-                prefix = "sector" if self._sub_key == "sector_allocation" else "industry"
+                breakdown = alloc.get("breakdown", []) if isinstance(alloc, dict) else []
+                prefix = _ALLOCATION_PREFIXES[self._sub_key]
                 if self._key == f"{prefix}_count":
                     return len(breakdown)
                 if self._key in ("top_3_sectors_percent", "top_5_sectors_percent"):
                     n = 3 if "3" in self._key else 5
-                    return round(sum(float(b.get('percentage', 0) or 0) for b in breakdown[:n]), 2)
+                    return round(sum(float(b.get("percentage", 0) or 0) for b in breakdown[:n]), 2)
                 # Ranked entries: <prefix>_<rank>_<name|percent|value>
                 for rank in range(1, 6):
-                    for attr, out in (("name", "group_name"), ("percent", "percentage"), ("value", "value")):
+                    for attr, out in (
+                        ("name", "group_name"),
+                        ("percent", "percentage"),
+                        ("value", "value"),
+                    ):
                         if self._key == f"{prefix}_{rank}_{attr}":
                             if len(breakdown) >= rank:
                                 return breakdown[rank - 1].get(out)
@@ -2401,182 +2644,175 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 return None
             # Account / subscription (my_user.json)
             elif self._sub_key == "my_user":
-                my_user = self._coordinator.data.get('my_user', {})
+                my_user = self._coordinator.data.get("my_user", {})
                 if not isinstance(my_user, dict):
                     return None
-                user = my_user.get('user') if isinstance(my_user.get('user'), dict) else my_user
+                user = my_user.get("user") if isinstance(my_user.get("user"), dict) else my_user
                 if self._key == "subscription_status":
-                    if user.get('is_expired'):
+                    if user.get("is_expired"):
                         return "Expired"
-                    if user.get('is_cancelled'):
+                    if user.get("is_cancelled"):
                         return "Cancelled"
                     return "Active"
                 return user.get(self._key)
             # Watchlist overview
             elif self._sub_key == "watchlist":
-                watchlist_data = self._coordinator.data.get('watchlist', {})
-                items = watchlist_data.get('watchlist', []) if isinstance(watchlist_data, dict) else []
+                watchlist_data = self._coordinator.data.get("watchlist", {})
+                items = (
+                    watchlist_data.get("watchlist", []) if isinstance(watchlist_data, dict) else []
+                )
                 return _watchlist_metric(items, self._key)
             # Watchlist per-instrument price + day change (W1)
             elif self._sub_key == "watchlist_instrument":
-                watchlist_data = self._coordinator.data.get('watchlist', {})
-                items = watchlist_data.get('watchlist', []) if isinstance(watchlist_data, dict) else []
+                watchlist_data = self._coordinator.data.get("watchlist", {})
+                items = (
+                    watchlist_data.get("watchlist", []) if isinstance(watchlist_data, dict) else []
+                )
                 item = next(
                     (
-                        it for it in items
+                        it
+                        for it in items
                         if isinstance(it, dict)
-                        and ((it.get('instrument') or {}).get('code') or it.get('code')) == self._local_name
+                        and ((it.get("instrument") or {}).get("code") or it.get("code"))
+                        == self._local_name
                     ),
                     None,
                 )
                 if not isinstance(item, dict):
                     return None
-                price = item.get('price') or {}
+                price = item.get("price") or {}
                 if self._key == "watchlist_instrument_price":
-                    return price.get('value')
+                    return price.get("value")
                 if self._key == "watchlist_instrument_day_change_percent":
-                    return price.get('diff_percent')
+                    return price.get("diff_percent")
+                if self._key == "watchlist_instrument_day_change":
+                    return price.get("diff_value")
                 return None
-            # Latest instrument-news headline (W2), truncated to HA's 255-char cap
-            elif self._sub_key == "instrument_news":
-                news_container = self._coordinator.data.get('instrument_news', {})
-                articles = news_container.get('instrument_news', []) if isinstance(news_container, dict) else []
-                articles = [a for a in articles if isinstance(a, dict)]
-                if not articles:
-                    return None
-                latest = max(articles, key=lambda a: str(a.get('published_at') or ''))
-                title = latest.get('title')
-                if title is None:
-                    return None
-                return str(title)[:255]
             # Portfolio value-trend 7d/30d change (W6)
             elif self._sub_key == "value_trend":
-                trend = self._coordinator.data.get('value_trend', {})
+                trend = self._coordinator.data.get("value_trend", {})
                 if not isinstance(trend, dict):
                     return None
                 return trend.get(self._key)
             # Per-label allocation value / percent (W7)
             elif self._sub_key == "label_allocation":
-                allocation = self._coordinator.data.get('label_allocation', [])
+                allocation = self._coordinator.data.get("label_allocation", [])
                 if not isinstance(allocation, list):
                     return None
                 entry = next(
-                    (e for e in allocation if isinstance(e, dict) and e.get('label') == self._local_name),
+                    (
+                        e
+                        for e in allocation
+                        if isinstance(e, dict) and e.get("label") == self._local_name
+                    ),
                     None,
                 )
                 if not isinstance(entry, dict):
                     return None
                 if self._key == "label_value":
-                    return entry.get('value')
+                    return entry.get("value")
                 if self._key == "label_percent":
-                    return entry.get('percentage')
-                return None
-            # FX rate (foreign currency -> base currency)
-            elif self._device_group == "fx":
-                fx_data = self._coordinator.data.get('exchange_rates', {})
-                rates = fx_data.get('exchange_rates', {}) if isinstance(fx_data, dict) else {}
-                # local_name is the foreign code; pair is FOREIGN/BASE
-                pair = f"{self._local_name}/{str(self._currency_code).upper()}"
-                entry = rates.get(pair) if isinstance(rates, dict) else None
-                if isinstance(entry, dict):
-                    return entry.get('rate')
-                return None
-            # Market trading hours
-            elif self._device_group == "market_hours":
-                markets_data = self._coordinator.data.get('markets', {})
-                markets = markets_data.get('markets', []) if isinstance(markets_data, dict) else []
-                market = next(
-                    (m for m in markets if isinstance(m, dict) and str(m.get('code')) == str(self._local_name)),
-                    None,
-                )
-                if market is None:
-                    return None
-                is_open, next_open, next_close = _market_hours_status(market, dt_util.now())
-                if self._key == "market_status":
-                    if is_open is None:
-                        return None
-                    return "Open" if is_open else "Closed"
-                if self._key == "market_next_open":
-                    return next_open
-                if self._key == "market_next_close":
-                    return next_close
+                    return entry.get("percentage")
+                if self._key == "label_holding_count":
+                    return entry.get("holding_count")
                 return None
             # Capital gains tax reports (AU portfolios)
             elif self._sub_key in ("capital_gains", "unrealised_cgt"):
                 tax_data = self._coordinator.data.get(self._sub_key, {})
-                if not isinstance(tax_data, dict) or 'error' in tax_data:
+                if not isinstance(tax_data, dict) or "error" in tax_data:
                     return None
                 val = tax_data.get(self._key)
                 return val if isinstance(val, (int, float, str)) else None
             elif self._sub_key == "benchmark":
-                bench = self._coordinator.data.get('benchmark', {})
+                bench = self._coordinator.data.get("benchmark", {})
                 if not isinstance(bench, dict):
                     return None
-                instrument = bench.get('instrument') or {}
+                instrument = bench.get("instrument") or {}
                 if self._key == "benchmark_name":
-                    return instrument.get('name')
+                    return instrument.get("name")
                 if self._key == "benchmark_code":
-                    code = instrument.get('code')
-                    market = instrument.get('market_code')
+                    code = instrument.get("code")
+                    market = instrument.get("market_code")
                     if code and market:
                         return f"{code}.{market}"
                     return code
                 if self._key == "benchmark_total_gain_percent":
-                    return bench.get('total_gain_percent')
+                    return bench.get("total_gain_percent")
                 if self._key == "benchmark_capital_gain_percent":
                     # The API names this one field 'percentage', not 'percent'
-                    return bench.get('capital_gain_percentage')
+                    # The apiDoc spells this field 'percentage'; every
+                    # live response spells it 'percent'.  Prefer what the
+                    # API really returns and keep the documented name as a
+                    # fallback in case the two ever converge.
+                    value = bench.get("capital_gain_percent")
+                    if value is None:
+                        value = bench.get("capital_gain_percentage")
+                    return value
                 if self._key == "benchmark_payout_gain_percent":
-                    return bench.get('payout_gain_percent')
+                    return bench.get("payout_gain_percent")
                 if self._key == "benchmark_currency_gain_percent":
-                    return bench.get('currency_gain_percent')
+                    return bench.get("currency_gain_percent")
                 if self._key == "benchmark_excess_return_percent":
                     # Both percentages are since-inception (the benchmark call
                     # uses the portfolio inception date as start_date), so a
                     # simple difference is meaningful.
-                    report_data = self._coordinator.data.get('report', {})
+                    report_data = self._coordinator.data.get("report", {})
                     try:
-                        portfolio_pct = float(report_data.get('total_gain_percent'))
-                        benchmark_pct = float(bench.get('total_gain_percent'))
+                        portfolio_pct = float(report_data.get("total_gain_percent"))
+                        benchmark_pct = float(bench.get("total_gain_percent"))
                     except (TypeError, ValueError):
                         return None
                     return round(portfolio_pct - benchmark_pct, 2)
                 return None
             # Portfolio analytics (concentration / quality / composition)
             elif self._sub_key == "portfolio_analytics":
-                analytics_data = self._coordinator.data.get('portfolio_analytics', {})
+                analytics_data = self._coordinator.data.get("portfolio_analytics", {})
                 if not isinstance(analytics_data, dict):
                     return None
                 return analytics_data.get(self._key)
-            # All-time totals incl. sold positions (raw v3 /totals payload)
+            # All-time totals including sold positions.
             elif self._sub_key == "totals":
-                totals_data = self._coordinator.data.get('totals', {})
-                if not isinstance(totals_data, dict):
-                    return None
-                # Tolerate both {"portfolio": {...}} and a flat payload.
-                portfolio = totals_data.get('portfolio')
-                source = portfolio if isinstance(portfolio, dict) else totals_data
-                if self._key == "percentage_annualised":
-                    # The API example spells this correctly; the doc field
-                    # table misspells it as "percentage_annulaised" — accept both.
-                    flag = source.get('percentage_annualised')
-                    if flag is None:
-                        flag = source.get('percentage_annulaised')
-                    if flag is None:
-                        return None
-                    return "Yes" if flag else "No"
-                val = source.get(self._key)
-                return val if isinstance(val, (int, float)) else None
+                # Primary source is the inception-to-today V3 performance
+                # window fetched with include_sales=true, which is on the
+                # PUBLIC API tier. The dedicated /totals endpoint is
+                # internal-scoped and deliberately never called.
+                all_time = self._coordinator.data.get("all_time")
+                if isinstance(all_time, dict) and all_time:
+                    mapped = {
+                        "value": all_time.get("value"),
+                        "total_return": all_time.get("total_gain"),
+                        "total_return_percent": all_time.get("total_gain_percent"),
+                        "percentage_annualised": all_time.get("percentages_annualised"),
+                    }
+                    if self._key in mapped and mapped[self._key] is not None:
+                        if self._key == "percentage_annualised":
+                            return "Yes" if mapped[self._key] else "No"
+                        value = mapped[self._key]
+                        return value if isinstance(value, (int, float)) else None
+                return None
             # Integration diagnostics
+            # Risk metrics derived from the daily value series, and the
+            # CGT figures derived from the two tax reports.  Both are
+            # flat dicts keyed exactly as the descriptions are.
+            elif self._sub_key in ("value_analytics", "cgt_analytics"):
+                source = self._coordinator.data.get(self._sub_key)
+                if not isinstance(source, dict):
+                    return None
+                return source.get(self._key)
             elif self._sub_key == "_integration":
                 if self._key == "last_update_timestamp":
                     # Stamped by TimestampDataUpdateCoordinator after every
                     # successful poll; None until the first one lands.  The old
                     # getattr() chain silently returned None forever, because
                     # neither attribute exists on a plain DataUpdateCoordinator.
-                    return self._coordinator.last_update_success_time
+                    # data_timestamp is when the payload was really
+                    # fetched.  last_update_success_time is re-stamped by
+                    # the base class on every poll that returns without
+                    # raising - degraded, carry-forward ones included - so
+                    # it reported 'now' while serving hours-old numbers.
+                    return self._coordinator.data_timestamp
                 if self._key == "update_interval_seconds":
-                    interval = getattr(self._coordinator, 'update_interval', None)
+                    interval = getattr(self._coordinator, "update_interval", None)
                     if interval is None:
                         return None
                     try:
@@ -2584,8 +2820,8 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     except AttributeError:
                         return None
                 if self._key == "optional_endpoints_on_cooldown":
-                    cooldown = getattr(self._coordinator, '_optional_endpoint_cooldowns', None)
-                    cash_cooldown = getattr(self._coordinator, '_cash_tx_account_cooldowns', None)
+                    cooldown = getattr(self._coordinator, "_optional_endpoint_cooldowns", None)
+                    cash_cooldown = getattr(self._coordinator, "_cash_tx_account_cooldowns", None)
                     now = monotonic()
                     active = 0
                     if isinstance(cooldown, dict):
@@ -2601,8 +2837,10 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
             else:
                 return self._coordinator.data[self._sub_key][0][self._key]
 
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.debug("Error accessing data for key '%s': %s: %s", self._key, type(e).__name__, e)
+        except Exception as e:
+            _LOGGER.debug(
+                "Error accessing data for key '%s': %s: %s", self._key, type(e).__name__, e
+            )
             return None
 
     @property
@@ -2622,28 +2860,40 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
             if self._sub_key == "report" and self._key == "value":
                 report_data = data.get("report", {}) if isinstance(data.get("report"), dict) else {}
                 holdings_data = data.get("holdings", {})
-                holdings_list = holdings_data.get("holdings", []) if isinstance(holdings_data, dict) else []
+                holdings_list = (
+                    holdings_data.get("holdings", []) if isinstance(holdings_data, dict) else []
+                )
                 portfolio_value = float(report_data.get("value", 0) or 0)
                 ranked = sorted(holdings_list, key=_get_holding_value, reverse=True)[:25]
                 holdings_attr = []
                 for h in ranked:
                     value = _get_holding_value(h)
-                    holdings_attr.append({
-                        "symbol": _get_holding_symbol(h),
-                        "value": round(value, 2),
-                        "percent": round(value / portfolio_value * 100, 2) if portfolio_value else None,
-                        "gain": round(_get_holding_gain(h), 2),
-                        "gain_percent": _get_holding_gain_percent(h),
-                    })
+                    holdings_attr.append(
+                        {
+                            "symbol": _get_holding_symbol(h),
+                            "value": round(value, 2),
+                            "percent": round(value / portfolio_value * 100, 2)
+                            if portfolio_value
+                            else None,
+                            "gain": round(_get_holding_gain(h), 2),
+                            "gain_percent": _get_holding_gain_percent(h),
+                        }
+                    )
                 by_gain = sorted(holdings_list, key=_get_holding_gain, reverse=True)
                 top_gainers = [
-                    {"symbol": _get_holding_symbol(h), "gain": round(_get_holding_gain(h), 2),
-                     "gain_percent": _get_holding_gain_percent(h)}
+                    {
+                        "symbol": _get_holding_symbol(h),
+                        "gain": round(_get_holding_gain(h), 2),
+                        "gain_percent": _get_holding_gain_percent(h),
+                    }
                     for h in by_gain[:5]
                 ]
                 top_losers = [
-                    {"symbol": _get_holding_symbol(h), "gain": round(_get_holding_gain(h), 2),
-                     "gain_percent": _get_holding_gain_percent(h)}
+                    {
+                        "symbol": _get_holding_symbol(h),
+                        "gain": round(_get_holding_gain(h), 2),
+                        "gain_percent": _get_holding_gain_percent(h),
+                    }
                     for h in reversed(by_gain[-5:])
                 ]
                 cash_summary = _get_cash_accounts_summary(report_data)
@@ -2672,7 +2922,9 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
             # Number of Holdings — the ranked holdings list.
             if self._sub_key == "holdings" and self._key == "holding_count":
                 holdings_data = data.get("holdings", {})
-                holdings_list = holdings_data.get("holdings", []) if isinstance(holdings_data, dict) else []
+                holdings_list = (
+                    holdings_data.get("holdings", []) if isinstance(holdings_data, dict) else []
+                )
                 portfolio_value = float(holdings_data.get("value", 0) or 0)
                 ranked = sorted(holdings_list, key=_get_holding_value, reverse=True)[:25]
                 return {
@@ -2680,7 +2932,9 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         {
                             "symbol": _get_holding_symbol(h),
                             "value": round(_get_holding_value(h), 2),
-                            "percent": round(_get_holding_value(h) / portfolio_value * 100, 2) if portfolio_value else None,
+                            "percent": round(_get_holding_value(h) / portfolio_value * 100, 2)
+                            if portfolio_value
+                            else None,
                             "gain": round(_get_holding_gain(h), 2),
                         }
                         for h in ranked
@@ -2689,9 +2943,15 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
 
             # Next Dividend Amount — the next payout's detail plus upcoming list.
             if self._sub_key == "income_report" and self._key == "next_dividend_amount":
-                income_data = data.get("income_report", {}) if isinstance(data.get("income_report"), dict) else {}
-                payouts = (income_data.get("payouts", []) or []) + (income_data.get("upcoming_payouts", []) or [])
-                today_iso = dt_util.now().date().isoformat()
+                income_data = (
+                    data.get("income_report", {})
+                    if isinstance(data.get("income_report"), dict)
+                    else {}
+                )
+                payouts = (income_data.get("payouts", []) or []) + (
+                    income_data.get("upcoming_payouts", []) or []
+                )
+                today_iso = self._coordinator.current_date.isoformat()
                 upcoming = []
                 for p in payouts:
                     if not isinstance(p, dict):
@@ -2710,9 +2970,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     "gross_amount": nxt.get("gross_amount") or nxt.get("amount"),
                     "state": nxt.get("state") or nxt.get("status"),
                     "company": (
-                        nxt.get("company_name")
-                        or nxt.get("symbol")
-                        or nxt.get("instrument_code")
+                        nxt.get("company_name") or nxt.get("symbol") or nxt.get("instrument_code")
                     ),
                     "all_upcoming": [
                         {
@@ -2734,7 +2992,11 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 )[:25]
                 return {
                     "breakdown": [
-                        {"name": b.get("group_name"), "percent": b.get("percentage"), "value": b.get("value")}
+                        {
+                            "name": b.get("group_name"),
+                            "percent": b.get("percentage"),
+                            "value": b.get("value"),
+                        }
                         for b in ordered
                     ]
                 }
@@ -2747,7 +3009,11 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 breakdown = (data.get(self._sub_key, {}) or {}).get("breakdown", [])
                 return {
                     "breakdown": [
-                        {"name": b.get("group_name"), "percent": b.get("percentage"), "value": b.get("value")}
+                        {
+                            "name": b.get("group_name"),
+                            "percent": b.get("percentage"),
+                            "value": b.get("value"),
+                        }
                         for b in breakdown[:25]
                     ]
                 }
@@ -2772,41 +3038,12 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     "quantity": last.get("quantity"),
                     "price": last.get("price"),
                     "brokerage": last.get("brokerage") or last.get("fee") or last.get("commission"),
-                    "market": last.get("market") or (last.get("instrument", {}) or {}).get("market_code"),
+                    "market": last.get("market")
+                    or (last.get("instrument", {}) or {}).get("market_code"),
                     "value": last.get("value") or last.get("cost_base") or last.get("amount"),
-                    "type": last.get("transaction_type") or last.get("trade_type") or last.get("type"),
-                }
-
-            # Latest News — the capped list of recent articles (W2).
-            if self._sub_key == "instrument_news" and self._key == "latest_news":
-                news_container = data.get("instrument_news", {})
-                articles = news_container.get("instrument_news", []) if isinstance(news_container, dict) else []
-                articles = [a for a in articles if isinstance(a, dict)]
-                if not articles:
-                    return None
-                # Cap at 10 (matching the news event cap) so the serialized
-                # attribute payload stays well under HA's 16 KiB recorder limit;
-                # 25 long-title/long-URL articles can overflow it and the
-                # recorder then stores {} instead.
-                ordered = sorted(articles, key=lambda a: str(a.get("published_at") or ""), reverse=True)[:10]
-                latest = ordered[0]
-                return {
-                    "source": latest.get("source"),
-                    "published_at": latest.get("published_at"),
-                    "link": latest.get("link"),
-                    "author": latest.get("author"),
-                    "instrument_id": latest.get("instrument_id"),
-                    "articles": [
-                        {
-                            "title": (str(a.get("title"))[:255] if a.get("title") is not None else None),
-                            "source": a.get("source"),
-                            "published_at": a.get("published_at"),
-                            "link": a.get("link"),
-                            "author": a.get("author"),
-                            "instrument_id": a.get("instrument_id"),
-                        }
-                        for a in ordered
-                    ],
+                    "type": last.get("transaction_type")
+                    or last.get("trade_type")
+                    or last.get("type"),
                 }
 
             # Value Change 30d — the value-trend sparkline series (W6).
@@ -2820,8 +3057,10 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 return {"series": series[:31]}
 
             return None
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.debug("Error building attributes for '%s': %s: %s", self._key, type(e).__name__, e)
+        except Exception as e:
+            _LOGGER.debug(
+                "Error building attributes for '%s': %s: %s", self._key, type(e).__name__, e
+            )
             return None
 
     # No ``name`` property: the display name now comes from HA's translation
@@ -2863,6 +3102,8 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self):
         """Return the native unit of measurement of the sensor."""
+        if self._uses_portfolio_currency:
+            return self._coordinator.portfolio_currency
         return self._native_unit_of_measurement
 
     @property
@@ -2883,17 +3124,21 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         left the portfolio — a holding sold, a market exited, a cash account
         closed.  Reporting Unknown (or worse, a stale history-derived figure)
         makes a closed position look live, so those go unavailable instead,
-        which is the cue that the device is ready to delete.  As with the
+        which is the cue that the device is ready to delete. As with the
         holding_closed activity event, that is only ever concluded from a
-        populated source list; a missing one means the endpoint failed, not
-        that everything vanished.  See ``_dynamic_item_present``.
+        valid source list (including an authoritative empty list); a missing
+        or malformed one means the endpoint failed, not that everything
+        vanished. See ``_dynamic_item_present``.
         """
         if self._sub_key == "_integration":
             return True
-        if self._coordinator.data:
-            present = self._dynamic_item_present()
-            return True if present is None else present
-        # Fall back to HA's default: check last_update_success.  This only
-        # matters on the very first poll cycle before any data exists.
-        return self._coordinator.last_update_success
-
+        if not super().available:
+            return False
+        if not self._coordinator.data:
+            # Very first poll cycle, before any data exists.
+            return self._coordinator.last_update_success
+        backing = _BACKING_KEYS.get(self._device_group) or _BACKING_KEYS.get(self._sub_key)
+        if backing and backing not in self._coordinator.data:
+            return False
+        present = self._dynamic_item_present()
+        return True if present is None else present

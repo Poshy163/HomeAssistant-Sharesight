@@ -20,14 +20,13 @@ SECURITY: get_login_link returns a URL that grants a logged-in Sharesight
 session; it is treated like a password and is NEVER logged here (or by the
 coordinator method it calls) at any level.
 """
+
 from __future__ import annotations
 
+from datetime import datetime
 import functools
 import logging
-from datetime import datetime
 from typing import Any
-
-import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID
@@ -38,7 +37,9 @@ from homeassistant.core import (
     SupportsResponse,
 )
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+import voluptuous as vol
 
 from . import analytics
 from .const import DOMAIN
@@ -52,7 +53,7 @@ from .sensor import (
     _get_worst_gain_holding,
 )
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 SERVICE_GET_PORTFOLIO_SUMMARY = "get_portfolio_summary"
 SERVICE_GET_HOLDINGS = "get_holdings"
@@ -188,12 +189,30 @@ def _resolve_coordinator(hass: HomeAssistant, call: ServiceCall) -> Any:
         )
     if len(entries) > 1:
         raise ServiceValidationError(
-            "Multiple Sharesight portfolios are configured; specify "
-            "config_entry_id or device_id",
+            "Multiple Sharesight portfolios are configured; specify config_entry_id or device_id",
             translation_domain=DOMAIN,
             translation_key="multiple_portfolios",
         )
     return entries[0].runtime_data.coordinator
+
+
+def _reject_while_on_cooldown(coordinator: Any) -> None:
+    """Refuse an on-demand call while the API is in a global cooldown.
+
+    The poll loop already skips its own requests during a lockout, but the
+    service and button paths went straight through - so a user hammering a
+    service during a rate-limit or brute-force lockout kept the lockout
+    alive.  Failing fast with a clear message is better than a silent
+    error block in the response.
+    """
+    remaining = getattr(coordinator, "lockout_seconds_remaining", 0)
+    if remaining > 0:
+        raise ServiceValidationError(
+            f"The Sharesight API is on cooldown for another {remaining}s",
+            translation_domain=DOMAIN,
+            translation_key="api_lockout",
+            translation_placeholders={"seconds": str(remaining)},
+        )
 
 
 def _validate_date(value: str, field: str) -> str:
@@ -208,18 +227,6 @@ def _validate_date(value: str, field: str) -> str:
             translation_placeholders={"field": field, "value": str(value)},
         ) from err
     return value
-
-
-def _portfolio_currency(data: dict[str, Any]) -> str:
-    """Best-effort portfolio base currency, mirroring the sensor platform."""
-    portfolios = data.get("portfolios", [])
-    if portfolios and isinstance(portfolios[0], dict):
-        return portfolios[0].get("currency_code", "USD")
-    report = data.get("report", {})
-    currency = report.get("currency") if isinstance(report, dict) else None
-    if isinstance(currency, dict):
-        return currency.get("code", "USD")
-    return "USD"
 
 
 def _period_gain(data: dict[str, Any], key: str) -> dict[str, Any]:
@@ -247,9 +254,7 @@ def _total_cash(report: dict[str, Any]) -> float:
     return round(total, 2)
 
 
-def _resolve_instrument(
-    coordinator: Any, symbol: str
-) -> tuple[Any, Any, str | None]:
+def _resolve_instrument(coordinator: Any, symbol: str) -> tuple[Any, Any, str | None]:
     """Resolve a symbol to its (instrument_id, holding_id, symbol) in-portfolio.
 
     Matches case-insensitively against the coordinator's current holdings.  The
@@ -361,9 +366,7 @@ def _extract_cost_base(resp: Any) -> Any:
     }
 
 
-async def _get_portfolio_summary(
-    hass: HomeAssistant, call: ServiceCall
-) -> ServiceResponse:
+async def _get_portfolio_summary(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     coordinator = _resolve_coordinator(hass, call)
     data: dict[str, Any] = coordinator.data or {}
     report = data.get("report", {}) if isinstance(data.get("report"), dict) else {}
@@ -399,7 +402,10 @@ async def _get_portfolio_summary(
         "top_mover": _get_top_gain_holding(holdings_data),
         "worst_mover": _get_worst_gain_holding(holdings_data),
         "dividends_ttm": round(dividends_ttm, 2),
-        "currency": _portfolio_currency(data),
+        # Use the coordinator's entry-aware resolution. The account-wide
+        # portfolio list is not ordered around this config entry, so [0] can
+        # belong to another portfolio with a different base currency.
+        "currency": coordinator.portfolio_currency,
     }
 
 
@@ -408,7 +414,7 @@ async def _get_holdings(hass: HomeAssistant, call: ServiceCall) -> ServiceRespon
     data: dict[str, Any] = coordinator.data or {}
     holdings_data = data.get("holdings", {}) if isinstance(data.get("holdings"), dict) else {}
     holdings = holdings_data.get("holdings", []) or []
-    base_currency = _portfolio_currency(data)
+    base_currency = coordinator.portfolio_currency
 
     result: list[dict[str, Any]] = []
     for holding in holdings:
@@ -430,7 +436,7 @@ async def _get_holdings(hass: HomeAssistant, call: ServiceCall) -> ServiceRespon
 
     sort_by = call.data.get(CONF_SORT_BY, "value")
     if sort_by == "symbol":
-        result.sort(key=lambda h: (h.get("symbol") or ""))
+        result.sort(key=lambda h: h.get("symbol") or "")
     else:
         result.sort(
             key=lambda h: h[sort_by] if h.get(sort_by) is not None else float("-inf"),
@@ -470,21 +476,27 @@ async def _get_income(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse
         paid_on = payout.get("paid_on") or payout.get("date")
         if this_year and str(paid_on)[:4] != this_year:
             continue
-        try:
-            ytd += float(payout.get("amount", 0) or 0)
-        except (TypeError, ValueError):
-            continue
+        # Convert with the payout's own rate: a portfolio holding both
+        # local and foreign payers otherwise totals in no currency at all.
+        amount = analytics.to_portfolio_currency(payout, payout.get("amount"))
+        if amount is not None:
+            ytd += amount
 
     upcoming: list[dict[str, Any]] = []
     for payout in income_report.get("upcoming_payouts", []) or []:
         if not isinstance(payout, dict):
             continue
+        amount_details = analytics.monetary_amount_details(
+            payout,
+            payout.get("amount") or payout.get("gross_amount"),
+            coordinator.portfolio_currency,
+        )
         upcoming.append(
             {
                 "symbol": payout.get("symbol"),
-                "amount": payout.get("amount") or payout.get("gross_amount"),
-                "ex_date": payout.get("ex_date"),
-                "pay_date": payout.get("pay_date") or payout.get("paid_on"),
+                **amount_details,
+                "ex_date": analytics.payout_ex_date(payout),
+                "pay_date": analytics.payout_pay_date(payout),
             }
         )
 
@@ -493,13 +505,13 @@ async def _get_income(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse
         "ytd": round(ytd, 2),
         "next_30d": income_report.get("income_30d"),
         "upcoming": upcoming,
+        "currency": coordinator.portfolio_currency,
     }
 
 
-async def _generate_performance_report(
-    hass: HomeAssistant, call: ServiceCall
-) -> ServiceResponse:
+async def _generate_performance_report(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     coordinator = _resolve_coordinator(hass, call)
+    _reject_while_on_cooldown(coordinator)
     start_date = _validate_date(call.data[CONF_START_DATE], CONF_START_DATE)
     end_date = _validate_date(call.data[CONF_END_DATE], CONF_END_DATE)
 
@@ -517,14 +529,11 @@ async def _generate_performance_report(
     return {"result": response}
 
 
-async def _get_instrument_fundamentals(
-    hass: HomeAssistant, call: ServiceCall
-) -> ServiceResponse:
+async def _get_instrument_fundamentals(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     coordinator = _resolve_coordinator(hass, call)
+    _reject_while_on_cooldown(coordinator)
     symbol = call.data[CONF_SYMBOL]
-    instrument_id, holding_id, resolved_symbol = _resolve_instrument(
-        coordinator, symbol
-    )
+    instrument_id, holding_id, resolved_symbol = _resolve_instrument(coordinator, symbol)
     if instrument_id is None:
         raise ServiceValidationError(
             f"No holding found for symbol {symbol!r} in this portfolio",
@@ -560,6 +569,7 @@ async def _get_instrument_fundamentals(
 
 async def _get_login_link(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     coordinator = _resolve_coordinator(hass, call)
+    _reject_while_on_cooldown(coordinator)
     # SECURITY: async_get_sso_link never logs the URL/response, and neither
     # must this handler — do not add any _LOGGER call that touches `response`
     # or `login_url`.  The URL grants a logged-in Sharesight session and is
