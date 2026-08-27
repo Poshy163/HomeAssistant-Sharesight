@@ -124,7 +124,7 @@ def _finite_float(value):
         return None
     try:
         parsed = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return parsed if math.isfinite(parsed) else None
 
@@ -1469,7 +1469,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 return None
             try:
                 numeric_value = float(value)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return None
             if not math.isfinite(numeric_value):
                 return None

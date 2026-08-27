@@ -51,7 +51,7 @@ def async_custom_equivalent_units(
         coordinator = getattr(runtime_data, "coordinator", None)
         try:
             portfolio_currency = getattr(coordinator, "portfolio_currency", None)
-        except (AttributeError, TypeError, ValueError):
+        except AttributeError, TypeError, ValueError:
             # A not-yet-loaded or degraded entry must not prevent recorder
             # collecting safe migrations from every other Sharesight entry.
             portfolio_currency = None

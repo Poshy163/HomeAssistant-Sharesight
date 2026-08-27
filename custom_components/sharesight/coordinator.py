@@ -372,7 +372,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         if timezone_name:
             try:
                 return datetime(day.year, day.month, day.day, tzinfo=ZoneInfo(str(timezone_name)))
-            except (ZoneInfoNotFoundError, ValueError, TypeError):
+            except ZoneInfoNotFoundError, ValueError, TypeError:
                 pass
         return dt_util.start_of_local_day(day)
 
