@@ -231,6 +231,10 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         # Cooldowns (monotonic timestamps) for optional endpoints, keyed by
         # Endpoint.cooldown_key.  {"next_retry": float, "backoff": timedelta}.
         self._optional_endpoint_cooldowns: dict[str, dict[str, Any]] = {}
+        # Slow-moving optional endpoints that failed transiently before ever
+        # producing (or while lacking) a usable carried-forward source. These
+        # bypass their normal refresh modulus on the next eligible poll.
+        self._optional_retry_keys: set[str] = set()
         self._cash_tx_account_cooldowns: dict[int, dict[str, Any]] = {}
         self._unsupported_endpoints: set[str] = set()
         # V3 route -> equivalent V2 route, learned only from Sharesight's
@@ -260,6 +264,10 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         # Tiered polling.  Incremented once per genuinely successful poll.
         self._poll_count: int = 0
         self._slow_window_fy_bounds: tuple[str, str] | None = None
+        # Transient slow-tier failures with no usable carried-forward payload.
+        # Retry only these keys on the next eligible poll instead of waiting
+        # for the next hourly cadence or repeating every successful sibling.
+        self._slow_retry_keys: set[str] = set()
 
         # Degradation tracking.  ``data_timestamp`` is when the payload was
         # really fetched; the base class's last_update_success_time is stamped
@@ -281,6 +289,11 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         self._seen_payout_ids: set[Any] = set()
         self._seen_upcoming_ids: set[Any] = set()
         self._seen_cash_tx_ids: set[Any] = set()
+        # Optional activity feeds can be absent independently on the first
+        # otherwise-successful poll.  Each source therefore needs its own
+        # baseline: when a missing feed first recovers, seed its existing
+        # records silently instead of announcing the entire history as new.
+        self._activity_sources_seeded: set[str] = set()
         self._seen_holding_symbols: set[str] = set()
         self._holdings_snapshot_seeded: bool = False
         self._seen_daily_close_date: str | None = None
@@ -683,16 +696,19 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             ):
                 self._unsupported_endpoints.add(key)
                 self._optional_endpoint_cooldowns.pop(key, None)
+                self._optional_retry_keys.discard(key)
                 self._log_failure(
                     f"unsupported:{key}",
                     "Sharesight endpoint permanently disabled for this entry: %s",
                     error.detail,
                 )
                 return
-            # Rate limits use the shared gate. Transport and server failures
-            # should recover on the normal next poll, not be hidden for an hour.
-            if error.is_rate_limited or error.transport or error.is_retryable:
+            # Rate limits and lockouts use the shared gate. Transport and server
+            # failures remain eligible for the missing-source fast-retry policy
+            # instead of being hidden behind the one-hour endpoint backoff.
+            if error.is_rate_limited or error.transport or error.is_retryable or error.is_lockout:
                 return
+        self._optional_retry_keys.discard(key)
         info = self._optional_endpoint_cooldowns.get(key)
         backoff = (
             OPTIONAL_ENDPOINT_COOLDOWN
@@ -707,6 +723,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
     def _note_optional_success(self, key: str) -> None:
         self._optional_endpoint_cooldowns.pop(key, None)
         self._unsupported_endpoints.discard(key)
+        self._optional_retry_keys.discard(key)
 
     def _cash_tx_on_cooldown(self, account_id: int) -> bool:
         info = self._cash_tx_account_cooldowns.get(account_id)
@@ -1184,13 +1201,26 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         # --- Slow tier -------------------------------------------------
         current_fy_bounds = (self.start_financial_year, self.end_financial_year)
         slow_endpoints = self._slow_endpoints(today)
-        refresh_slow = (
+        slow_keys = {endpoint.key for endpoint in slow_endpoints if endpoint.key is not None}
+        self._slow_retry_keys.intersection_update(slow_keys)
+        refresh_all_slow = (
             self._poll_count % SLOW_PERIOD_REFRESH_EVERY == 0
             or self._slow_window_fy_bounds != current_fy_bounds
         )
-        if refresh_slow:
+        if refresh_all_slow:
             self._slow_window_fy_bounds = current_fy_bounds
-            for endpoint, result in await self._gather(slow_endpoints, access_token):
+            active_slow = slow_endpoints
+        else:
+            active_slow = [
+                endpoint for endpoint in slow_endpoints if endpoint.key in self._slow_retry_keys
+            ]
+
+        attempted_slow_keys: set[str] = set()
+        retryable_slow_failures: set[str] = set()
+        if active_slow:
+            for endpoint, result in await self._gather(active_slow, access_token):
+                if endpoint.key is not None:
+                    attempted_slow_keys.add(endpoint.key)
                 if isinstance(result, BaseException):
                     detail = (
                         result.detail
@@ -1202,6 +1232,14 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                         "Sharesight slow-tier request failed: %s",
                         detail,
                     )
+                    if endpoint.key is not None and (
+                        not isinstance(result, SharesightApiError)
+                        or result.transport
+                        or result.is_retryable
+                        or result.is_rate_limited
+                        or result.is_lockout
+                    ):
+                        retryable_slow_failures.add(endpoint.key)
                     continue
                 self._log_recovery(
                     f"slow:{endpoint.cooldown_key}",
@@ -1210,14 +1248,24 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 )
                 self._merge(combined, endpoint, result)
 
+        # Every attempted key now has a definitive outcome for this poll.
+        # Successful and permanent failures leave the fast-retry set; transient
+        # failures are added back below only if carry-forward cannot fill them.
+        self._slow_retry_keys.difference_update(attempted_slow_keys)
+
         # --- Optional tier ---------------------------------------------
         optional = self._optional_endpoints(today)
+        optional_keys = {endpoint.cooldown_key for endpoint in optional}
+        self._optional_retry_keys.intersection_update(optional_keys)
         active = [
             endpoint
             for endpoint in optional
             if endpoint.cooldown_key not in self._unsupported_endpoints
             and not self._endpoint_on_cooldown(endpoint.cooldown_key)
-            and self._poll_count % max(1, endpoint.refresh_every) == 0
+            and (
+                self._poll_count % max(1, endpoint.refresh_every) == 0
+                or endpoint.cooldown_key in self._optional_retry_keys
+            )
         ]
         parked = len(optional) - len(active)
         _LOGGER.debug(
@@ -1225,7 +1273,10 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             len(active),
             parked,
         )
+        attempted_optional_keys: set[str] = set()
+        retryable_optional_failures: dict[str, str] = {}
         for endpoint, result in await self._gather(active, access_token):
+            attempted_optional_keys.add(endpoint.cooldown_key)
             if isinstance(result, BaseException):
                 detail = (
                     result.detail
@@ -1237,15 +1288,40 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     endpoint.cooldown_key,
                     result if isinstance(result, SharesightApiError) else None,
                 )
+                source_key = endpoint.key or (
+                    "benchmark" if endpoint.path.endswith("/benchmark") else None
+                )
+                if (
+                    endpoint.refresh_every > 1
+                    and source_key is not None
+                    and isinstance(result, SharesightApiError)
+                    and (
+                        result.is_rate_limited
+                        or result.transport
+                        or result.is_retryable
+                        or result.is_lockout
+                    )
+                ):
+                    retryable_optional_failures[endpoint.cooldown_key] = source_key
                 continue
             self._note_optional_success(endpoint.cooldown_key)
             self._merge(combined, endpoint, result)
+
+        # As with the slow tier, only transient failures that remain genuinely
+        # source-less after carry-forward are re-added below.
+        self._optional_retry_keys.difference_update(attempted_optional_keys)
 
         # --- Per-account cash transactions (optional) ------------------
         await self._fetch_cash_transactions(combined, access_token)
 
         # --- Replay anything the poll could not fetch ------------------
         replayed = self._replay_missing(combined)
+        self._slow_retry_keys.update(key for key in retryable_slow_failures if key not in combined)
+        self._optional_retry_keys.update(
+            cooldown_key
+            for cooldown_key, source_key in retryable_optional_failures.items()
+            if source_key not in combined
+        )
         if replayed:
             _LOGGER.debug(
                 "Serving carried-forward Sharesight data for: %s",
@@ -1497,9 +1573,6 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         # --- Diversity -------------------------------------------------
         combined["diversity"] = self._build_diversity(combined, report)
 
-        if not isinstance(combined.get("trades"), dict):
-            combined["trades"] = self.data.get("trades") or {"trades": []}
-
         # --- Activity events (no extra API calls) ----------------------
         try:
             self._build_activity_events(
@@ -1704,10 +1777,23 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         income_report = combined_dict.get("income_report") or {}
         payouts = income_report.get("payouts") or []
         upcoming = income_report.get("upcoming_payouts") or []
-        trades = (combined_dict.get("trades") or {}).get("trades") or []
-        cash_txns = (combined_dict.get("cash_account_transactions") or {}).get(
-            "cash_account_transactions"
-        ) or []
+
+        trades_source = combined_dict.get("trades")
+        trades_valid = isinstance(trades_source, dict) and isinstance(
+            trades_source.get("trades"), list
+        )
+        trades = trades_source["trades"] if trades_valid else []
+
+        payouts_valid = bool(income_report.get("payouts_available")) and isinstance(payouts, list)
+        upcoming_valid = bool(income_report.get("upcoming_payouts_available")) and isinstance(
+            upcoming, list
+        )
+
+        cash_source = combined_dict.get("cash_account_transactions")
+        cash_valid = isinstance(cash_source, dict) and isinstance(
+            cash_source.get("cash_account_transactions"), list
+        )
+        cash_txns = cash_source["cash_account_transactions"] if cash_valid else []
         portfolio_currency = self._portfolio_currency_for(combined_dict)
 
         id_to_symbol: dict[str, str] = {}
@@ -1840,13 +1926,51 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 "native_balance": native_balance,
             }
 
+        if not hasattr(self, "_activity_sources_seeded"):
+            # Compatibility with coordinators constructed before this release
+            # during a development hot reload.  Failing closed here can at
+            # worst suppress one real event; treating unknown baselines as
+            # empty would replay every historical record instead.
+            self._activity_sources_seeded = set()
+
+        def _source_ready(
+            source: str,
+            valid: bool,
+            records: list[dict[str, Any]],
+            seen: set[Any],
+            key_of: Any,
+        ) -> bool:
+            """Whether a source has a prior valid baseline and can be diffed."""
+            if not valid:
+                return False
+            if source in self._activity_sources_seeded:
+                return True
+            seen.update(key_of(record) for record in records if isinstance(record, dict))
+            self._activity_sources_seeded.add(source)
+            return False
+
+        trades_ready = _source_ready(
+            "trades", trades_valid, trades, self._seen_trade_ids, _trade_key
+        )
+        payouts_ready = _source_ready(
+            "payouts", payouts_valid, payouts, self._seen_payout_ids, _payout_key
+        )
+        upcoming_ready = _source_ready(
+            "upcoming_payouts",
+            upcoming_valid,
+            upcoming,
+            self._seen_upcoming_ids,
+            self._upcoming_key,
+        )
+        cash_ready = _source_ready(
+            "cash_account_transactions",
+            cash_valid,
+            cash_txns,
+            self._seen_cash_tx_ids,
+            _cash_key,
+        )
+
         if not self._activity_seeded:
-            self._seen_trade_ids.update(_trade_key(t) for t in trades if isinstance(t, dict))
-            self._seen_payout_ids.update(_payout_key(p) for p in payouts if isinstance(p, dict))
-            self._seen_upcoming_ids.update(
-                self._upcoming_key(p) for p in upcoming if isinstance(p, dict)
-            )
-            self._seen_cash_tx_ids.update(_cash_key(t) for t in cash_txns if isinstance(t, dict))
             if holdings_snapshot_valid:
                 self._seen_holding_symbols = set(current_symbols)
                 self._holdings_snapshot_seeded = True
@@ -1887,38 +2011,42 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             for key, _ in fresh[:limit]:
                 seen.add(key)
 
-        _stage(
-            "trade_confirmed",
-            trades,
-            self._seen_trade_ids,
-            _trade_key,
-            _trade_event,
-            cap,
-        )
-        _stage(
-            "dividend_paid",
-            payouts,
-            self._seen_payout_ids,
-            _payout_key,
-            lambda payout: _payout_event(payout, announced=False),
-            cap,
-        )
-        _stage(
-            "dividend_announced",
-            upcoming,
-            self._seen_upcoming_ids,
-            self._upcoming_key,
-            lambda payout: _payout_event(payout, announced=True),
-            cap,
-        )
-        _stage(
-            "cash_transaction",
-            cash_txns,
-            self._seen_cash_tx_ids,
-            _cash_key,
-            _cash_event,
-            cap,
-        )
+        if trades_ready:
+            _stage(
+                "trade_confirmed",
+                trades,
+                self._seen_trade_ids,
+                _trade_key,
+                _trade_event,
+                cap,
+            )
+        if payouts_ready:
+            _stage(
+                "dividend_paid",
+                payouts,
+                self._seen_payout_ids,
+                _payout_key,
+                lambda payout: _payout_event(payout, announced=False),
+                cap,
+            )
+        if upcoming_ready:
+            _stage(
+                "dividend_announced",
+                upcoming,
+                self._seen_upcoming_ids,
+                self._upcoming_key,
+                lambda payout: _payout_event(payout, announced=True),
+                cap,
+            )
+        if cash_ready:
+            _stage(
+                "cash_transaction",
+                cash_txns,
+                self._seen_cash_tx_ids,
+                _cash_key,
+                _cash_event,
+                cap,
+            )
 
         # holding_opened / holding_closed. A valid empty holdings list is an
         # authoritative "the final position was sold" snapshot; a missing or

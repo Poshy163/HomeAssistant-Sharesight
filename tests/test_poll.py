@@ -23,6 +23,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 import pytest
 
 from custom_components.sharesight.api import Endpoint, SharesightApiError
+from custom_components.sharesight.const import SLOW_PERIOD_REFRESH_EVERY
 
 from . import fixtures as F
 from .test_coordinator import make_coordinator
@@ -121,6 +122,41 @@ def run(coro):
 
 def poll(coordinator):
     return run(coordinator._async_update_data())
+
+
+def _request_count(coordinator, endpoint: Endpoint) -> int:
+    """Count exact requests for one endpoint, including its window params."""
+    signature = (endpoint.version, endpoint.path, endpoint.params)
+    return coordinator.sharesight.requests.count(signature)
+
+
+def _fail_endpoint_once(
+    coordinator,
+    endpoint: Endpoint,
+    *,
+    status: int,
+    reason: str,
+) -> None:
+    """Make one exact endpoint attempt fail, then delegate normally."""
+    client = coordinator.sharesight
+    original_request = client.get_api_request
+    remaining = 1
+
+    async def get_api_request(request, access_token=None):
+        nonlocal remaining
+        version, path, params, _ = request
+        if (
+            remaining
+            and version == endpoint.version
+            and path == endpoint.path
+            and params == endpoint.params
+        ):
+            remaining -= 1
+            client.requests.append((version, path, params))
+            raise SharesightApiError(endpoint, status=status, reason=reason)
+        return await original_request(request, access_token)
+
+    client.get_api_request = get_api_request
 
 
 # --------------------------------------------------------------------------
@@ -243,6 +279,81 @@ def test_skipped_slow_windows_expire_instead_of_copying_forever() -> None:
     assert slow_keys.isdisjoint(coordinator._carry_forward)
 
 
+def test_missing_slow_windows_retry_after_shared_cooldown() -> None:
+    """Only transiently missing slow keys retry once the poll is eligible."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    slow_by_key = {
+        endpoint.key: endpoint
+        for endpoint in coordinator._slow_endpoints(coordinator.current_date)
+        if endpoint.key is not None
+    }
+    _fail_endpoint_once(
+        coordinator,
+        slow_by_key["one-month"],
+        status=429,
+        reason="shared budget exhausted",
+    )
+
+    first = poll(coordinator)
+    pending = set(coordinator._slow_retry_keys)
+    assert "one-month" in pending
+    assert "one-month" not in first
+    # The preceding sibling completed before the budget failure and must not
+    # join the retry set merely because later slow requests were suppressed.
+    assert "financial-year" in first
+    assert "financial-year" not in pending
+
+    coordinator.sharesight.requests.clear()
+    assert poll(coordinator) == first
+    assert coordinator.sharesight.requests == []
+    assert coordinator._slow_retry_keys == pending
+
+    # Expire the shared cooldown: this is the next poll on which requests are
+    # eligible, and it should fetch only the keys that remained missing.
+    coordinator._lockout_until = 0.0
+    coordinator.sharesight.requests.clear()
+    recovered = poll(coordinator)
+    assert pending <= recovered.keys()
+    assert coordinator._slow_retry_keys == set()
+    # Calendar-year portfolios make financial-year and YTD wire-identical, so
+    # compare each request signature with the number of pending logical keys
+    # that use it rather than attributing the shared request to both.
+    signatures: dict[tuple, list[str]] = {}
+    for key, endpoint in slow_by_key.items():
+        signature = (endpoint.version, endpoint.path, repr(endpoint.params))
+        signatures.setdefault(signature, []).append(key)
+    for (version, path, params_repr), keys in signatures.items():
+        actual = sum(
+            1
+            for request_version, request_path, request_params in coordinator.sharesight.requests
+            if (request_version, request_path, repr(request_params)) == (version, path, params_repr)
+        )
+        assert actual == sum(key in pending for key in keys)
+
+
+def test_failed_slow_window_with_carry_forward_keeps_hourly_cadence() -> None:
+    """A cached slow value avoids both Unknown and an unnecessary fast retry."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    first = poll(coordinator)
+    slow_endpoints = coordinator._slow_endpoints(coordinator.current_date)
+    one_month = next(endpoint for endpoint in slow_endpoints if endpoint.key == "one-month")
+    _fail_endpoint_once(coordinator, one_month, status=503, reason="temporary outage")
+
+    coordinator._poll_count = SLOW_PERIOD_REFRESH_EVERY
+    coordinator.sharesight.requests.clear()
+    scheduled = poll(coordinator)
+    assert _request_count(coordinator, one_month) == 1
+    assert scheduled["one-month"] == first["one-month"]
+    assert coordinator._slow_retry_keys == set()
+
+    coordinator.sharesight.requests.clear()
+    following = poll(coordinator)
+    assert following["one-month"] == first["one-month"]
+    assert all(_request_count(coordinator, endpoint) == 0 for endpoint in slow_endpoints)
+
+
 def test_poll_count_only_advances_on_real_data() -> None:
     coordinator = build()
     run(coordinator._async_setup())
@@ -266,6 +377,7 @@ def test_a_parked_optional_endpoint_does_not_fail_the_poll() -> None:
     assert coordinator.last_update_success is not False
     assert "report" in data
     assert any("watchlist" in key for key in coordinator._optional_endpoint_cooldowns)
+    assert coordinator._optional_retry_keys == set()
 
 
 def test_a_parked_endpoint_is_not_retried_next_poll() -> None:
@@ -275,6 +387,203 @@ def test_a_parked_endpoint_is_not_retried_next_poll() -> None:
     coordinator.sharesight.requests.clear()
     poll(coordinator)
     assert not any("watchlist" in path for _, path, _ in coordinator.sharesight.requests)
+
+
+def test_missing_slow_optional_sources_retry_independently_next_poll() -> None:
+    """CGT, fundamentals and one payout route bypass only their missed cadence."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    optional_by_key = {
+        endpoint.key: endpoint
+        for endpoint in coordinator._optional_endpoints(coordinator.current_date)
+        if endpoint.key is not None
+    }
+    missing_keys = {"capital_gains", "unrealised_cgt", "user_instruments", "payouts"}
+    for key in missing_keys:
+        _fail_endpoint_once(
+            coordinator,
+            optional_by_key[key],
+            status=503,
+            reason=f"temporary {key} outage",
+        )
+
+    first = poll(coordinator)
+    expected_retry_keys = {optional_by_key[key].cooldown_key for key in missing_keys}
+    assert missing_keys.isdisjoint(first)
+    assert coordinator._optional_retry_keys == expected_retry_keys
+
+    coordinator.sharesight.requests.clear()
+    recovered = poll(coordinator)
+    assert missing_keys <= recovered.keys()
+    assert coordinator._optional_retry_keys == set()
+    for key, endpoint in optional_by_key.items():
+        if endpoint.refresh_every > 1:
+            assert _request_count(coordinator, endpoint) == (1 if key in missing_keys else 0)
+
+    # Past and upcoming payouts share a URL; cooldown_key and params keep the
+    # healthy upcoming route out of the paid-payout retry.
+    assert _request_count(coordinator, optional_by_key["upcoming_payouts"]) == 0
+
+    coordinator.sharesight.requests.clear()
+    poll(coordinator)
+    assert all(_request_count(coordinator, optional_by_key[key]) == 0 for key in missing_keys)
+
+
+def test_failed_optional_source_with_carry_forward_keeps_hourly_cadence() -> None:
+    """A still-valid CGT snapshot does not turn a transient miss into polling spam."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    first = poll(coordinator)
+    capital_gains = next(
+        endpoint
+        for endpoint in coordinator._optional_endpoints(coordinator.current_date)
+        if endpoint.key == "capital_gains"
+    )
+    _fail_endpoint_once(coordinator, capital_gains, status=503, reason="temporary outage")
+
+    coordinator._poll_count = SLOW_PERIOD_REFRESH_EVERY
+    coordinator.sharesight.requests.clear()
+    scheduled = poll(coordinator)
+    assert _request_count(coordinator, capital_gains) == 1
+    assert scheduled["capital_gains"] == first["capital_gains"]
+    assert coordinator._optional_retry_keys == set()
+
+    coordinator.sharesight.requests.clear()
+    following = poll(coordinator)
+    assert following["capital_gains"] == first["capital_gains"]
+    assert _request_count(coordinator, capital_gains) == 0
+
+
+def test_missing_unkeyed_benchmark_source_retries_next_poll() -> None:
+    """The unkeyed benchmark response participates in the same retry policy."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    benchmark = next(
+        endpoint
+        for endpoint in coordinator._optional_endpoints(coordinator.current_date)
+        if endpoint.path.endswith("/benchmark")
+    )
+    _fail_endpoint_once(coordinator, benchmark, status=503, reason="temporary outage")
+
+    first = poll(coordinator)
+    assert "benchmark" not in first
+    assert coordinator._optional_retry_keys == {benchmark.cooldown_key}
+
+    coordinator.sharesight.requests.clear()
+    recovered = poll(coordinator)
+    assert "benchmark" in recovered
+    assert _request_count(coordinator, benchmark) == 1
+    assert coordinator._optional_retry_keys == set()
+
+
+def test_failed_first_trades_request_does_not_fabricate_an_empty_source() -> None:
+    """Missing trades must remain distinguishable from a real empty response."""
+    coordinator = build(failures={"trades": _api_error(403, "not entitled")})
+    run(coordinator._async_setup())
+
+    data = poll(coordinator)
+
+    assert "trades" not in data
+    assert data["holding_trades"] == {}
+
+
+def test_first_valid_trades_snapshot_after_cold_start_is_seeded_silently() -> None:
+    """A recovered trade feed must not replay the portfolio's whole history."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    trades = next(
+        endpoint
+        for endpoint in coordinator._optional_endpoints(coordinator.current_date)
+        if endpoint.key == "trades"
+    )
+    _fail_endpoint_once(coordinator, trades, status=503, reason="temporary outage")
+
+    first = poll(coordinator)
+    assert "trades" not in first
+    assert "trades" not in coordinator._activity_sources_seeded
+
+    recovered = poll(coordinator)
+    assert recovered["trades"]["trades"]
+    assert "trades" in coordinator._activity_sources_seeded
+    assert "trade_confirmed" not in recovered["activity_events"]
+
+
+@pytest.mark.parametrize(
+    ("source_key", "event_type"),
+    [
+        ("payouts", "dividend_paid"),
+        ("upcoming_payouts", "dividend_announced"),
+    ],
+)
+def test_first_valid_payout_snapshot_after_cold_start_is_seeded_silently(
+    source_key: str,
+    event_type: str,
+) -> None:
+    """Recovered paid/upcoming feeds establish a baseline without old events."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    endpoint = next(
+        endpoint
+        for endpoint in coordinator._optional_endpoints(coordinator.current_date)
+        if endpoint.key == source_key
+    )
+    _fail_endpoint_once(coordinator, endpoint, status=503, reason="temporary outage")
+
+    first = poll(coordinator)
+    assert source_key not in first
+    assert source_key not in coordinator._activity_sources_seeded
+
+    recovered = poll(coordinator)
+    assert recovered[source_key]["payouts"]
+    assert source_key in coordinator._activity_sources_seeded
+    assert event_type not in recovered["activity_events"]
+
+
+def test_first_complete_cash_snapshot_after_cold_start_is_seeded_silently() -> None:
+    """A failed account cannot turn recovered cash history into new events."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    account_id = F.CASH_ACCOUNTS_V2[0]["id"]
+    cash_transactions = Endpoint(
+        "v2",
+        f"cash_accounts/{account_id}/cash_account_transactions",
+        None,
+        None,
+    )
+    _fail_endpoint_once(
+        coordinator,
+        cash_transactions,
+        status=503,
+        reason="temporary cash outage",
+    )
+
+    first = poll(coordinator)
+    assert "cash_account_transactions" not in first
+    assert "cash_account_transactions" not in coordinator._activity_sources_seeded
+
+    coordinator._cash_tx_account_cooldowns[account_id]["next_retry"] = 0.0
+    recovered = poll(coordinator)
+    assert recovered["cash_account_transactions"]["cash_account_transactions"]
+    assert "cash_account_transactions" in coordinator._activity_sources_seeded
+    assert "cash_transaction" not in recovered["activity_events"]
+
+
+def test_expired_trades_snapshot_is_not_restored_from_previous_data() -> None:
+    """The 12-hour carry-forward limit must also apply to trade analytics."""
+    coordinator = build()
+    run(coordinator._async_setup())
+    first = poll(coordinator)
+    assert "trades" in first
+
+    payload, _ = coordinator._carry_forward["trades"]
+    coordinator._carry_forward["trades"] = (payload, -1e9)
+    coordinator.sharesight.failures = {"trades": _api_error(403, "gone")}
+
+    second = poll(coordinator)
+
+    assert "trades" not in second
+    assert "trades" not in coordinator._carry_forward
+    assert second["holding_trades"] == {}
 
 
 def test_a_parked_endpoints_last_payload_is_replayed() -> None:
@@ -303,9 +612,31 @@ def test_backoff_doubles_and_is_capped() -> None:
 
 def test_success_clears_the_backoff() -> None:
     coordinator = build()
-    coordinator._note_optional_failure("v3/watchlist.json#watchlist")
-    coordinator._note_optional_success("v3/watchlist.json#watchlist")
+    key = "v3/watchlist.json#watchlist"
+    coordinator._optional_retry_keys.add(key)
+    coordinator._note_optional_failure(key)
+    coordinator._optional_retry_keys.add(key)
+    coordinator._note_optional_success(key)
     assert coordinator._optional_endpoint_cooldowns == {}
+    assert coordinator._optional_retry_keys == set()
+
+
+def test_optional_lockout_uses_shared_gate_instead_of_endpoint_backoff() -> None:
+    coordinator = build()
+    key = "v3/watchlist.json#watchlist"
+    coordinator._optional_retry_keys.add(key)
+
+    error = SharesightApiError(
+        Endpoint("v3", "watchlist.json", None, "watchlist"),
+        status=401,
+        reason="Token incorrect, expired or locked out",
+    )
+    assert error.is_lockout
+
+    coordinator._note_optional_failure(key, error)
+
+    assert key not in coordinator._optional_endpoint_cooldowns
+    assert key in coordinator._optional_retry_keys
 
 
 # --------------------------------------------------------------------------

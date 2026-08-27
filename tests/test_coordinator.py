@@ -64,11 +64,14 @@ def make_coordinator(
     coordinator.start_financial_year = "2026-01-01"
     coordinator.end_financial_year = "2026-12-31"
     coordinator._poll_count = 0
+    coordinator._slow_window_fy_bounds = None
+    coordinator._slow_retry_keys = set()
     coordinator._degraded_polls = 0
     coordinator.degraded_reason = None
     coordinator._logged_failures = {}
     coordinator._carry_forward = {}
     coordinator._optional_endpoint_cooldowns = {}
+    coordinator._optional_retry_keys = set()
     coordinator._cash_tx_account_cooldowns = {}
     coordinator._unsupported_endpoints = set()
     coordinator._fallback_routes = set()
@@ -82,6 +85,7 @@ def make_coordinator(
     coordinator._seen_payout_ids = set()
     coordinator._seen_upcoming_ids = set()
     coordinator._seen_cash_tx_ids = set()
+    coordinator._activity_sources_seeded = set()
     coordinator._seen_holding_symbols = set()
     coordinator._holdings_snapshot_seeded = False
     coordinator._seen_daily_close_date = None

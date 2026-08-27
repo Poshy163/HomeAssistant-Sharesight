@@ -1046,6 +1046,29 @@ _BACKING_KEYS = {
     "watchlist_instrument": "watchlist",
 }
 
+# Derived CGT analytics are split across two independent optional reports.  A
+# present ``cgt_analytics`` dict is not proof that either report succeeded: the
+# coordinator deliberately builds that dict on every poll so downstream code
+# can read it defensively.  Track the real source for each published metric so
+# an absent report makes the entity Unavailable, while a present report whose
+# individual field is null remains Available/Unknown.
+_CGT_ANALYTICS_SOURCE_KEYS = {
+    "claimable_loss": "capital_gains",
+    "short_term_losses": "capital_gains",
+    "long_term_losses": "capital_gains",
+    "cgt_concession_rate": "capital_gains",
+    "largest_loss_symbol": "unrealised_cgt",
+    "largest_loss_amount": "unrealised_cgt",
+    "harvestable_loss": "unrealised_cgt",
+    "harvestable_parcel_count": "unrealised_cgt",
+}
+
+_HOLDING_OPTIONAL_SOURCE_KEYS = {
+    "holding_fundamental": "user_instruments",
+    "holding_income": "payouts",
+    "holding_trade": "trades",
+}
+
 
 class SharesightSensor(SharesightBaseEntity, SensorEntity):
     """One Sharesight figure, read straight from the coordinator payload."""
@@ -1448,6 +1471,31 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 for entry in allocation
             )
         return None
+
+    def _optional_source_present(self) -> bool | None:
+        """Whether this entity's optional source returned a usable block.
+
+        ``None`` means the entity is not backed by one of the independently
+        optional endpoint families handled here.  ``True`` only means the
+        source response itself exists; an individual null field is still a
+        valid Available/Unknown state rather than an endpoint failure.
+        """
+        source_key: str | None = None
+        if self._sub_key in ("capital_gains", "unrealised_cgt"):
+            source_key = self._sub_key
+        elif self._sub_key == "cgt_analytics":
+            source_key = _CGT_ANALYTICS_SOURCE_KEYS.get(self._key)
+        elif self._key in _HOLDING_OPTIONAL_SOURCE_KEYS:
+            # Currency is embedded in the required holding row and remains
+            # useful even when the optional user-instruments feed is absent.
+            if self._key == "holding_fundamental" and self._sub_key == "currency_code":
+                return None
+            source_key = _HOLDING_OPTIONAL_SOURCE_KEYS[self._key]
+
+        if source_key is None:
+            return None
+        payload = self._coordinator.data.get(source_key)
+        return isinstance(payload, dict) and "error" not in payload
 
     @property
     def native_value(self):
@@ -3176,6 +3224,8 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         if self._sub_key == "_integration":
             return True
         if not super().available:
+            return False
+        if self._optional_source_present() is False:
             return False
         if not self._coordinator.data:
             # Very first poll cycle, before any data exists.
