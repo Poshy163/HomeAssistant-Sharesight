@@ -23,6 +23,15 @@ def data_fixture() -> dict:
     return F.coordinator_data()
 
 
+@pytest.mark.parametrize(
+    "value",
+    [True, False, float("nan"), float("inf"), -float("inf")],
+)
+def test_float_coercion_rejects_non_finite_and_boolean_values(value) -> None:
+    """Invalid API scalars cannot contaminate derived numeric analytics."""
+    assert analytics._f(value) is None
+
+
 @pytest.fixture(name="holdings")
 def holdings_fixture(data) -> list[dict]:
     return data["holdings"]["holdings"]
@@ -500,7 +509,7 @@ def test_cgt_analytics_scalars(data) -> None:
     result = analytics.build_cgt_analytics(data["capital_gains"], data["unrealised_cgt"])
     assert result["short_term_losses"] == -50.0
     assert result["long_term_losses"] == -150.0
-    assert result["cgt_concession_rate"] == 0.5
+    assert result["cgt_concession_rate"] == 50.0
 
 
 def test_cgt_analytics_harvestable_losses() -> None:

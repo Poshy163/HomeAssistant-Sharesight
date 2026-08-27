@@ -325,7 +325,13 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         entry = self._own_portfolio_entry(data.get("portfolios"))
         if entry and entry.get("currency_code"):
             return str(entry["currency_code"])
-        return "USD"
+        # Never guess a currency for statistics-bearing sensors. The first
+        # numeric sample fixes recorder metadata permanently; publishing an
+        # AUD portfolio as USD during a malformed/cold payload would suppress
+        # statistics as soon as the real currency arrives. A normal poll has
+        # both the required report and portfolio list, so absence here is a
+        # malformed critical response and should degrade the poll.
+        raise ValueError("Sharesight payload did not identify the report currency")
 
     def _own_portfolio_entry(self, portfolios: Any) -> dict[str, Any] | None:
         """This entry's row in the account-wide ``GET /portfolios`` list.
@@ -357,6 +363,18 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     timezone_name,
                 )
         return dt_util.now().date()
+
+    def portfolio_start_of_day(self, day: date) -> datetime:
+        """Return portfolio-local midnight for a report cycle boundary."""
+        timezone_name = self._portfolio_detail.get("tz_name") or self._portfolio_detail.get(
+            "portfolio_tz_name"
+        )
+        if timezone_name:
+            try:
+                return datetime(day.year, day.month, day.day, tzinfo=ZoneInfo(str(timezone_name)))
+            except (ZoneInfoNotFoundError, ValueError, TypeError):
+                pass
+        return dt_util.start_of_local_day(day)
 
     @property
     def data_age(self) -> timedelta | None:

@@ -14,17 +14,19 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 import itertools
+import math
 from typing import Any
 
 
 def _f(value: Any) -> float | None:
-    """Best-effort float coercion (None on failure)."""
-    if value is None:
+    """Best-effort finite float coercion (None on failure)."""
+    if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)
+        result = float(value)
     except TypeError, ValueError:
         return None
+    return result if math.isfinite(result) else None
 
 
 def _fx_rate(record: dict[str, Any]) -> float | None:
@@ -1301,7 +1303,13 @@ def build_cgt_analytics(capital_gains: Any, unrealised_cgt: Any) -> dict[str, An
         result["claimable_loss"] = _f(capital_gains.get("claimable_loss"))
         result["short_term_losses"] = _f(capital_gains.get("short_term_losses"))
         result["long_term_losses"] = _f(capital_gains.get("long_term_losses"))
-        result["cgt_concession_rate"] = _f(capital_gains.get("cgt_concession_rate"))
+        concession_rate = _f(capital_gains.get("cgt_concession_rate"))
+        if concession_rate is not None:
+            # Sharesight reports this as a ratio (0.5 for the Australian 50%
+            # CGT discount).  Home Assistant percentage sensors conventionally
+            # publish percentage points, so normalise it before it reaches the
+            # state machine and long-term statistics.
+            result["cgt_concession_rate"] = round(concession_rate * 100, 4)
         result["realised_market_value"] = _f(capital_gains.get("market_value"))
 
     if isinstance(unrealised_cgt, dict):

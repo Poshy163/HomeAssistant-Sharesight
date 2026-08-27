@@ -3165,11 +3165,11 @@ TAX_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         sub_key="cgt_analytics",
         extension_key=None,
         name="CGT Concession Rate",
-        native_unit_of_measurement=None,
+        native_unit_of_measurement=PERCENTAGE,
         device_class=None,
-        state_class=None,
+        state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=None,
+        suggested_display_precision=2,
         entity_registry_enabled_default=False,
         device_group="tax",
     ),
@@ -3840,7 +3840,10 @@ HOLDING_INCOME_DESCRIPTIONS: list[SharesightSensorDescription] = [
         name="HOLDING franking credits TTM",
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.TOTAL,
+        # A moving trailing-365-day amount is an as-of-now measurement. Using
+        # TOTAL would make recorder accumulate changes as credits enter and
+        # leave the window, producing a mathematically meaningless sum.
+        state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
         device_group="holding",
     ),

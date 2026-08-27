@@ -47,7 +47,10 @@ from .coordinator import (
 from .data import SharesightConfigEntry, SharesightRuntimeData
 from .icons import async_load_entity_icons
 from .services import async_setup_services
-from .statistics_import import async_backfill_value_statistics
+from .statistics_import import (
+    async_backfill_value_statistics,
+    async_migrate_statistics_metadata,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -324,6 +327,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -
     local_coordinator.entity_icons = await async_load_entity_icons(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Update recorder metadata for statistics contracts that changed without
+    # deleting their history. This is idempotent and queues no statistic rows.
+    await async_migrate_statistics_metadata(hass, entry)
 
     # Auto-remove devices for sold holdings / exited markets / closed cash
     # accounts (opt-in).  Registered after the platforms so the first prune

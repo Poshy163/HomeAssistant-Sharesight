@@ -1,8 +1,9 @@
 from datetime import date, datetime, timedelta
 import logging
+import math
 from time import monotonic
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import CURRENCY_DOLLAR
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -108,6 +109,25 @@ _INSTRUMENT_CURRENCY_RECIPES = frozenset(
     }
 )
 
+_CGT_PERIOD_TOTAL_KEYS = frozenset(
+    {
+        "claimable_loss",
+        "long_term_losses",
+        "short_term_losses",
+    }
+)
+
+
+def _finite_float(value):
+    """Coerce one API scalar to a finite float, or return None."""
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
 
 def _holding_sensor_currency(description, instrument_currency: str, portfolio_currency: str) -> str:
     """The currency unit a per-holding sensor should carry."""
@@ -137,36 +157,24 @@ def _holding_logo(holding) -> str | None:
 def _get_holding_value(h):
     """Get the market value of a holding, trying multiple field names."""
     for field in ("value", "market_value", "total_value", "current_value", "last_value"):
-        val = h.get(field)
-        if val is not None:
-            try:
-                return float(val)
-            except ValueError, TypeError:
-                continue
+        if (value := _finite_float(h.get(field))) is not None:
+            return value
     return 0.0
 
 
 def _get_holding_gain(h):
     """Get the gain of a holding, trying multiple field names."""
     for field in ("capital_gain", "gain", "total_gain", "unrealised_gain"):
-        val = h.get(field)
-        if val is not None:
-            try:
-                return float(val)
-            except ValueError, TypeError:
-                continue
+        if (value := _finite_float(h.get(field))) is not None:
+            return value
     return 0.0
 
 
 def _get_holding_gain_percent(h):
     """Get the gain percent of a holding, trying multiple field names."""
     for field in ("capital_gain_percent", "gain_percent", "total_gain_percent"):
-        val = h.get(field)
-        if val is not None:
-            try:
-                return float(val)
-            except ValueError, TypeError:
-                continue
+        if (value := _finite_float(h.get(field))) is not None:
+            return value
     return None
 
 
@@ -195,7 +203,9 @@ def _get_largest_holding(holdings_data):
 
     try:
         largest = max(holdings, key=_get_holding_value)
-        portfolio_value = float(holdings_data.get("value", 0) or 1)
+        portfolio_value = _finite_float(holdings_data.get("value"))
+        if portfolio_value is None:
+            portfolio_value = 1.0
         largest_value = _get_holding_value(largest)
         percent = (largest_value / portfolio_value * 100) if portfolio_value else 0
         symbol = _get_holding_symbol(largest)
@@ -286,7 +296,8 @@ def _get_income_summary(income_data, report_data=None):
 
             if total_income is None and payouts:
                 try:
-                    total_income = sum(float(p.get("amount", 0)) for p in payouts)
+                    amounts = (_finite_float(p.get("amount")) for p in payouts)
+                    total_income = sum(amount for amount in amounts if amount is not None)
                 except ValueError, TypeError:
                     pass
 
@@ -321,7 +332,7 @@ def _get_diversity_top_markets(diversity_data, n=5):
     try:
         breakdown = sorted(
             diversity_data.get("breakdown", []),
-            key=lambda x: float(x.get("percentage", 0)),
+            key=lambda x: _finite_float(x.get("percentage")) or 0.0,
             reverse=True,
         )
 
@@ -355,9 +366,8 @@ def _calculate_annualised_percent(
     if total_gain_percent is None:
         return None
 
-    try:
-        total_gain_percent = float(total_gain_percent)
-    except ValueError, TypeError:
+    total_gain_percent = _finite_float(total_gain_percent)
+    if total_gain_percent is None:
         return None
 
     if percentages_annualised:
@@ -418,10 +428,8 @@ def _get_contributions_summary(cash_transactions_data):
         # portfolio was understating its contributions ten-fold - so an
         # untyped row is classified by the sign of its amount instead.
 
-        amount = tx.get("amount")
-        try:
-            amount = float(amount)
-        except ValueError, TypeError:
+        amount = _finite_float(tx.get("amount"))
+        if amount is None:
             continue
 
         if amount > 0:
@@ -446,7 +454,7 @@ def _get_contributions_summary(cash_transactions_data):
         "total_withdrawals": round(total_withdrawals, 2),
         "net_contributions": round(total_contributions - total_withdrawals, 2),
         "last_contribution_date": latest.get("date_time", "")[:10] if latest else None,
-        "last_contribution_amount": round(float(latest.get("amount")), 2) if latest else None,
+        "last_contribution_amount": round(latest["amount"], 2) if latest else None,
         "contribution_count": contribution_count,
         "withdrawal_count": withdrawal_count,
         "average_contribution_amount": avg_contribution,
@@ -463,10 +471,9 @@ def _get_cash_accounts_summary(report_data):
     for account in cash_accounts:
         if not isinstance(account, dict):
             continue
-        try:
-            total_value += float(account.get("value", 0) or 0)
-        except ValueError, TypeError:
-            continue
+        value = _finite_float(account.get("value"))
+        if value is not None:
+            total_value += value
 
     return {
         "cash_accounts_count": len(cash_accounts),
@@ -483,11 +490,7 @@ def _watchlist_metric(items, key):
         instrument = item.get("instrument") or {}
         price = item.get("price") or {}
         code = instrument.get("code") or item.get("code")
-        diff = price.get("diff_percent")
-        try:
-            diff = float(diff) if diff is not None else None
-        except ValueError, TypeError:
-            diff = None
+        diff = _finite_float(price.get("diff_percent"))
         parsed.append({"code": code, "diff": diff})
 
     if key == "watchlist_count":
@@ -1457,6 +1460,21 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         published state string is unchanged either way.
         """
         value = self._raw_native_value()
+        if self._state_class is not None and value is not None:
+            # Recorder statistics require a finite numeric state.  Normalise
+            # numeric strings/Decimals from API payloads and fail closed on
+            # booleans, NaN, infinities, or malformed values before HA writes
+            # a bad state and suppresses that statistic.
+            if isinstance(value, bool):
+                return None
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(numeric_value):
+                return None
+            if not isinstance(value, (int, float)):
+                value = numeric_value
         if value is None or self._device_class is None:
             return value
         if self._device_class == SensorDeviceClass.DATE:
@@ -3072,6 +3090,31 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
     @property
     def state_class(self):
         return self._state_class
+
+    @property
+    def last_reset(self):
+        """The real source-report boundary for current-FY CGT totals.
+
+        These three sensors already use ``TOTAL`` and may increase or
+        decrease.  Supplying the capital-gains report's own start date keeps
+        recorder from treating the financial-year rollover as a giant loss.
+        A carried-forward old report retains its old boundary, so a failed
+        rollover fetch cannot reset statistics ahead of the data.
+        """
+        if (
+            self._state_class != SensorStateClass.TOTAL
+            or self._sub_key != "cgt_analytics"
+            or self._key not in _CGT_PERIOD_TOTAL_KEYS
+        ):
+            return None
+        capital_gains = self._coordinator.data.get("capital_gains")
+        if not isinstance(capital_gains, dict):
+            return None
+        start = dt_util.parse_date(str(capital_gains.get("start_date") or "")[:10])
+        if start is None:
+            return None
+        boundary = getattr(self._coordinator, "portfolio_start_of_day", None)
+        return boundary(start) if boundary is not None else dt_util.start_of_local_day(start)
 
     @property
     def icon(self):

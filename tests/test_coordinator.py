@@ -364,10 +364,21 @@ def test_portfolio_currency_ignores_other_portfolios_in_the_account() -> None:
     assert coordinator.portfolio_currency == "NZD"
 
 
-def test_portfolio_currency_falls_back_to_usd() -> None:
+def test_portfolio_currency_never_guesses_when_metadata_is_missing() -> None:
     coordinator = make_coordinator()
     coordinator._portfolio_detail = {}
-    assert coordinator.portfolio_currency == "USD"
+    with pytest.raises(ValueError, match="did not identify"):
+        _ = coordinator.portfolio_currency
+
+
+def test_portfolio_report_boundary_uses_portfolio_timezone() -> None:
+    coordinator = make_coordinator()
+
+    boundary = coordinator.portfolio_start_of_day(date(2026, 8, 27))
+
+    assert boundary == datetime(2026, 8, 27, tzinfo=boundary.tzinfo)
+    assert boundary.tzname() == "AEST"
+    assert boundary.utcoffset() == timedelta(hours=10)
 
 
 # --------------------------------------------------------------------------
