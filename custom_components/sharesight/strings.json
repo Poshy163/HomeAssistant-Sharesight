@@ -1,6 +1,6 @@
 {
     "application_credentials": {
-        "description": "To use the Sharesight integration, create an API application at the [Sharesight Developer Portal](https://portfolio.sharesight.com/users/api_token). Set the **Redirect URI** in your Sharesight app to your Home Assistant redirect URL (e.g. `https://my.home-assistant.io/redirect/oauth`), then enter the **Client ID** and **Client Secret** below.\n\nStandard and developer accounts have separate application registries — a standard Client ID is not valid on the developer sandbox. If you use both, add a credential for each and name them so you can tell them apart."
+        "description": "To use the Sharesight integration, create an API application at the [Sharesight Developer Portal]({developer_portal_url}). Set the **Redirect URI** in your Sharesight app to your [Home Assistant redirect URL]({redirect_url}), then enter the **Client ID** and **Client Secret** below.\n\nStandard and developer accounts have separate application registries — a standard Client ID is not valid on the developer sandbox. If you use both, add a credential for each and name them so you can tell them apart."
     },
     "config": {
         "step": {
@@ -1369,10 +1369,10 @@
             "message": "No Sharesight activity event entity for portfolio {portfolio_id}."
         },
         "no_target_sensor": {
-            "message": "No target sensor for Sharesight trigger '{trigger_type}'."
+            "message": "No target sensor for Sharesight trigger `{trigger_type}`."
         },
         "numeric_trigger_needs_bound": {
-            "message": "The Sharesight '{trigger_type}' trigger requires at least one of '{above}' or '{below}'."
+            "message": "The Sharesight `{trigger_type}` trigger requires at least one of `{above}` or `{below}`."
         },
         "api_lockout": {
             "message": "The Sharesight API has temporarily locked this application out. It will retry automatically in {seconds} seconds."

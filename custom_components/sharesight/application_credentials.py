@@ -11,6 +11,9 @@ from homeassistant.core import HomeAssistant
 
 from .const import AUTHORIZATION_URL, DEFAULT_ACCOUNT_TYPE, DOMAIN, TOKEN_URL
 
+_DEVELOPER_PORTAL_URL = "https://portfolio.sharesight.com/users/api_token"
+_OAUTH_REDIRECT_URL = "https://my.home-assistant.io/redirect/oauth"
+
 # HA hands async_get_authorization_server() only `hass` — no ConfigEntry, no
 # credential — so the account type cannot be read from the entry that needs it.
 # Instead the config flow publishes the chosen account type here before it
@@ -18,6 +21,14 @@ from .const import AUTHORIZATION_URL, DEFAULT_ACCOUNT_TYPE, DOMAIN, TOKEN_URL
 # when it re-resolves the implementation on restart.  Core's
 # onedrive_for_business steers its tenant_id through this same pattern.
 _account_type_context: ContextVar[str] = ContextVar(f"{DOMAIN}_account_type")
+
+
+async def async_get_description_placeholders(_hass: HomeAssistant) -> dict[str, str]:
+    """Return links rendered in the application credentials instructions."""
+    return {
+        "developer_portal_url": _DEVELOPER_PORTAL_URL,
+        "redirect_url": _OAUTH_REDIRECT_URL,
+    }
 
 
 @contextmanager
