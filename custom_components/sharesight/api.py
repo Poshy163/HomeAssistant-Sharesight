@@ -323,18 +323,39 @@ class SharesightRequestGate:
     def observe_headers(self, headers: dict[str, str]) -> None:
         """Capture Sharesight's latest minute budget, case-insensitively."""
         normalised = {str(key).lower(): str(value) for key, value in headers.items()}
-        observed = False
+        limit_raw = normalised.get("x-minuterate-limit")
+        remaining_raw = normalised.get("x-minuterate-remaining")
+
+        # Some successful Sharesight responses carry ``0 / 0`` as a
+        # non-enforcing placeholder.  The response is still HTTP 200 and the
+        # next requests continue to return complete payloads, so treating that
+        # pair as an exhausted zero-request budget permanently starves every
+        # slow and optional endpoint.  A real exhausted budget retains a
+        # positive limit (normally 360) with zero remaining.
+        # Apply a complete pair atomically.  Partial or malformed metadata must
+        # not combine with an older response and manufacture a false budget.
+        if limit_raw is None or remaining_raw is None:
+            return
         try:
-            if value := normalised.get("x-minuterate-limit"):
-                self.minute_limit = int(value)
-                observed = True
-            if value := normalised.get("x-minuterate-remaining"):
-                self.minute_remaining = int(value)
-                observed = True
+            observed_limit = int(limit_raw)
+            observed_remaining = int(remaining_raw)
         except ValueError:
             return
-        if observed:
-            self.headers_observed_at = time.monotonic()
+
+        if observed_limit == 0 and observed_remaining == 0:
+            # Clear any earlier server remainder as well as ignoring this
+            # placeholder.  The local rolling 330/minute guard remains active.
+            self.minute_limit = SHARESIGHT_MAX_REQUESTS_PER_MINUTE
+            self.minute_remaining = None
+            self.headers_observed_at = None
+            return
+
+        if observed_limit <= 0 or observed_remaining < 0 or observed_remaining > observed_limit:
+            return
+
+        self.minute_limit = observed_limit
+        self.minute_remaining = observed_remaining
+        self.headers_observed_at = time.monotonic()
 
 
 async def async_request(

@@ -705,6 +705,41 @@ def test_request_gate_honours_case_insensitive_server_budget_headers() -> None:
     assert gate.reserve() is not None
 
 
+def test_request_gate_ignores_zero_limit_placeholder_headers() -> None:
+    gate = SharesightRequestGate()
+    gate.observe_headers({"X-MinuteRate-Limit": "360", "X-MinuteRate-Remaining": "0"})
+    assert gate.reserve() is not None
+
+    gate.observe_headers({"X-MinuteRate-Limit": "0", "X-MinuteRate-Remaining": "0"})
+
+    assert gate.minute_limit == 360
+    assert gate.minute_remaining is None
+    assert gate.headers_observed_at is None
+    assert gate.reserve() is None
+    assert len(gate.request_times) == 1
+
+
+def test_request_gate_honours_exhausted_positive_server_budget() -> None:
+    gate = SharesightRequestGate()
+    gate.observe_headers({"X-MinuteRate-Limit": "360", "X-MinuteRate-Remaining": "0"})
+
+    assert gate.reserve() is not None
+
+
+def test_request_gate_rejects_partial_or_malformed_budget_headers_atomically() -> None:
+    gate = SharesightRequestGate()
+    gate.observe_headers({"X-MinuteRate-Limit": "360", "X-MinuteRate-Remaining": "7"})
+    observed_at = gate.headers_observed_at
+
+    gate.observe_headers({"X-MinuteRate-Limit": "120"})
+    gate.observe_headers({"X-MinuteRate-Limit": "invalid", "X-MinuteRate-Remaining": "0"})
+    gate.observe_headers({"X-MinuteRate-Limit": "120", "X-MinuteRate-Remaining": "121"})
+
+    assert gate.minute_limit == 360
+    assert gate.minute_remaining == 7
+    assert gate.headers_observed_at == observed_at
+
+
 def test_async_request_returns_response_local_metadata() -> None:
     class RichResponse:
         data: ClassVar = {"portfolios": []}
