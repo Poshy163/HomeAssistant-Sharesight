@@ -34,7 +34,7 @@ def parse_financial_year_end(value: str | None) -> tuple[int, int]:
         return 6, 30
     try:
         month, day = int(parts[0]), int(parts[1])
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 6, 30
     if not 1 <= month <= 12 or not 1 <= day <= 31:
         return 6, 30

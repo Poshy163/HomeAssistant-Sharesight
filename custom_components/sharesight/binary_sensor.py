@@ -147,7 +147,7 @@ class SharesightUnconfirmedTransactions(SharesightBaseEntity, BinarySensorEntity
             if val:
                 try:
                     total += int(val)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass
         return total
 

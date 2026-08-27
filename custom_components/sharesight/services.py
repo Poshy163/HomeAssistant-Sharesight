@@ -249,7 +249,7 @@ def _total_cash(report: dict[str, Any]) -> float:
             continue
         try:
             total += float(account.get("value", 0) or 0)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
     return round(total, 2)
 
@@ -380,14 +380,14 @@ async def _get_portfolio_summary(hass: HomeAssistant, call: ServiceCall) -> Serv
             if isinstance(entry, dict):
                 try:
                     dividends_ttm += float(entry.get("ttm_income", 0) or 0)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     continue
     if not dividends_ttm:
         income_report = data.get("income_report", {})
         if isinstance(income_report, dict) and income_report.get("total_income"):
             try:
                 dividends_ttm = float(income_report.get("total_income") or 0)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 dividends_ttm = 0.0
 
     return {
@@ -464,7 +464,7 @@ async def _get_income(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse
             if isinstance(entry, dict):
                 try:
                     ttm += float(entry.get("ttm_income", 0) or 0)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     continue
 
     # Calendar-year-to-date received income from the historic payouts list.

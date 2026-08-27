@@ -111,8 +111,9 @@ reconfiguration is needed — but several sensors will start reporting different
   reproduce the entire payload, including the account holder's name; it now
   reports bounded summaries instead of copying raw financial records.
 
-**Minimum Home Assistant version is now 2025.3.0** (it was declared as 2024.8.0,
-which the code has not actually supported for some time).
+**Minimum Home Assistant version is now 2026.7.4.** This is the first Home
+Assistant release whose `aiohttp` 3.14.3 requirement matches SharesightAPI
+1.4.0.
 
 ---
 

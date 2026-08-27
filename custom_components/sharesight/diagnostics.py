@@ -271,5 +271,5 @@ def _summarise(value: Any) -> Any:
 def _payload_bytes(value: Any) -> int | None:
     try:
         return len(json.dumps(value, default=str))
-    except (TypeError, ValueError):  # pragma: no cover - defensive
+    except TypeError, ValueError:  # pragma: no cover - defensive
         return None

@@ -176,7 +176,7 @@ def _get_scan_interval(entry: ConfigEntry | None) -> timedelta:
         return DEFAULT_SCAN_INTERVAL
     try:
         seconds = int(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return DEFAULT_SCAN_INTERVAL
     seconds = max(MIN_SCAN_INTERVAL_SECONDS, min(MAX_SCAN_INTERVAL_SECONDS, seconds))
     return timedelta(seconds=seconds)
@@ -349,7 +349,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         if timezone_name:
             try:
                 return dt_util.utcnow().astimezone(ZoneInfo(str(timezone_name))).date()
-            except (ZoneInfoNotFoundError, ValueError, TypeError):
+            except ZoneInfoNotFoundError, ValueError, TypeError:
                 self._log_failure(
                     "portfolio_timezone",
                     "Sharesight portfolio %s returned unknown timezone %r; using Home Assistant time",
@@ -1316,7 +1316,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 continue
             try:
                 account_id = int(raw_account_id)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 continue
             active_account_ids.add(account_id)
             if self._cash_tx_on_cooldown(account_id):

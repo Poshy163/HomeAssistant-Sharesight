@@ -23,7 +23,7 @@ def _f(value: Any) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -695,7 +695,7 @@ def _parse_date(value: Any) -> date | None:
         return None
     try:
         return date.fromisoformat(str(value)[:10])
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 

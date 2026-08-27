@@ -226,7 +226,7 @@ class SharesightApiError(Exception):
                 continue
             try:
                 return int(value) <= 0
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return False
         return False
 
@@ -261,7 +261,7 @@ def error_from_payload(endpoint: Endpoint, payload: Any) -> SharesightApiError:
         raw_status = payload.get("status_code") or payload.get("status")
         try:
             status = int(raw_status) if raw_status is not None else None
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             status = None
     return SharesightApiError(endpoint, status=status, code=code, reason=reason, transaction_id=txn)
 

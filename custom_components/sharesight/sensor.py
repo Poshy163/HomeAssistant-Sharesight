@@ -141,7 +141,7 @@ def _get_holding_value(h):
         if val is not None:
             try:
                 return float(val)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 continue
     return 0.0
 
@@ -153,7 +153,7 @@ def _get_holding_gain(h):
         if val is not None:
             try:
                 return float(val)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 continue
     return 0.0
 
@@ -165,7 +165,7 @@ def _get_holding_gain_percent(h):
         if val is not None:
             try:
                 return float(val)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 continue
     return None
 
@@ -257,7 +257,7 @@ def _get_smallest_holding(holdings_data):
             "symbol": _get_holding_symbol(smallest),
             "value": smallest_value,
         }
-    except (ValueError, TypeError, KeyError):
+    except ValueError, TypeError, KeyError:
         return None
 
 
@@ -287,7 +287,7 @@ def _get_income_summary(income_data, report_data=None):
             if total_income is None and payouts:
                 try:
                     total_income = sum(float(p.get("amount", 0)) for p in payouts)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass
 
             # If we still don't have total_income, try from report_data
@@ -305,7 +305,7 @@ def _get_income_summary(income_data, report_data=None):
         try:
             payout_gain = report_data.get("payout_gain")
             return {"total_income": payout_gain, "dividend_count": 0}
-        except (TypeError, KeyError):
+        except TypeError, KeyError:
             pass
 
     return {"total_income": None, "dividend_count": 0}
@@ -357,7 +357,7 @@ def _calculate_annualised_percent(
 
     try:
         total_gain_percent = float(total_gain_percent)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
     if percentages_annualised:
@@ -379,7 +379,7 @@ def _calculate_annualised_percent(
 
         annualised = (growth_ratio ** (365 / days) - 1) * 100
         return round(annualised, 2)
-    except (ValueError, TypeError, OverflowError):
+    except ValueError, TypeError, OverflowError:
         return round(total_gain_percent, 2)
 
 
@@ -421,7 +421,7 @@ def _get_contributions_summary(cash_transactions_data):
         amount = tx.get("amount")
         try:
             amount = float(amount)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             continue
 
         if amount > 0:
@@ -465,7 +465,7 @@ def _get_cash_accounts_summary(report_data):
             continue
         try:
             total_value += float(account.get("value", 0) or 0)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             continue
 
     return {
@@ -486,7 +486,7 @@ def _watchlist_metric(items, key):
         diff = price.get("diff_percent")
         try:
             diff = float(diff) if diff is not None else None
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             diff = None
         parsed.append({"code": code, "diff": diff})
 
@@ -1494,7 +1494,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     if value is not None and total_gain is not None:
                         try:
                             return round(float(value) - float(total_gain), 2)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             pass
                     return None
                 if self._key == "end_value":
@@ -1502,7 +1502,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     if value is not None:
                         try:
                             return round(float(value), 2)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             pass
                     return None
                 return data.get(self._key)
@@ -1543,7 +1543,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                                     if cv is not None:
                                         try:
                                             total_cost += float(cv)
-                                        except (ValueError, TypeError):
+                                        except ValueError, TypeError:
                                             pass
                                         break
                             if total_cost:
@@ -1693,7 +1693,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     if val is not None and cg is not None:
                         try:
                             return round(float(val) - float(cg), 2)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             return None
                     return None
                 if self._sub_key == "annualised_return_percent":
@@ -1722,7 +1722,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         if val:
                             try:
                                 total += int(val)
-                            except (ValueError, TypeError):
+                            except ValueError, TypeError:
                                 pass
                     return total
                 elif self._key == "largest_holding_symbol":
@@ -1847,7 +1847,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                                     or sorted_payouts[0].get("date")
                                     or sorted_payouts[0].get("ex_date")
                                 )
-                        except (TypeError, ValueError):
+                        except TypeError, ValueError:
                             pass
                     return None
                 elif self._key == "average_dividend_amount":
@@ -1857,7 +1857,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     if total is not None and count and count > 0:
                         try:
                             return round(float(total) / count, 2)
-                        except (ValueError, TypeError, ZeroDivisionError):
+                        except ValueError, TypeError, ZeroDivisionError:
                             pass
                     return None
                 elif self._key == "largest_dividend_symbol":
@@ -1873,7 +1873,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                                 .get("code", "")
                                 or largest.get("company_name", "")
                             )
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             pass
                     return None
                 elif self._key == "largest_dividend_amount":
@@ -1882,7 +1882,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         try:
                             largest = max(payouts, key=lambda p: float(p.get("amount", 0) or 0))
                             return round(float(largest.get("amount", 0) or 0), 2)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             pass
                     return None
                 # Payout tax detail aggregate sensors
@@ -1972,7 +1972,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return None
                     try:
                         return round(float(total) / float(portfolio_value) * 100, 2)
-                    except (ValueError, TypeError, ZeroDivisionError):
+                    except ValueError, TypeError, ZeroDivisionError:
                         return None
                 elif self._key in (
                     "dividends_30d",
@@ -2009,7 +2009,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             continue
                         try:
                             total += float(p.get("amount", 0) or 0)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             continue
                     return round(total, 2)
                 elif self._key == "dividend_yield_ttm_percent":
@@ -2027,11 +2027,11 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             continue
                         try:
                             total += float(p.get("amount", 0) or 0)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             continue
                     try:
                         return round(total / float(portfolio_value) * 100, 2)
-                    except (ValueError, TypeError, ZeroDivisionError):
+                    except ValueError, TypeError, ZeroDivisionError:
                         return None
                 elif self._key == "upcoming_dividends_count":
                     # Historic payouts (inception→today) plus the dedicated
@@ -2087,7 +2087,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             continue
                         try:
                             total += float(tx.get("amount") or 0)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             continue
                     return round(total, 2)
                 elif self._key in (
@@ -2117,7 +2117,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     if self._key == "next_dividend_amount":
                         try:
                             return round(float(next_payout.get("amount", 0) or 0), 2)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             return None
                     return (
                         next_payout.get("symbol")
@@ -2148,7 +2148,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     parts = self._key.split("_", 2)
                     try:
                         idx = int(parts[1]) - 1
-                    except (ValueError, IndexError):
+                    except ValueError, IndexError:
                         idx = -1
                     field = parts[2] if len(parts) >= 3 else ""
                     if 0 <= idx < len(top_markets):
@@ -2169,7 +2169,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return None
                     try:
                         return round(sum(float(m.get("percentage", 0) or 0) for m in breakdown), 2)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         return None
             # Trades sensors
             elif self._sub_key == "trades":
@@ -2192,14 +2192,14 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         if v is not None:
                             try:
                                 return abs(float(v))
-                            except (ValueError, TypeError):
+                            except ValueError, TypeError:
                                 pass
                     price = t.get("price", 0)
                     quantity = t.get("quantity", 0)
                     if price and quantity:
                         try:
                             return abs(float(price) * float(quantity))
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             pass
                     return 0.0
 
@@ -2285,7 +2285,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         return None
                     try:
                         largest = max(trades_list, key=_trade_value)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         return None
                     if self._key == "largest_trade_value":
                         return round(_trade_value(largest), 2)
@@ -2361,7 +2361,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                                     total += float(v)
                                     has_any = True
                                     break
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     pass
                     return round(total, 2) if has_any else None
                 elif self._key == "most_traded_symbol":
@@ -2386,7 +2386,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     if inception:
                         try:
                             start_date = datetime.strptime(str(inception)[:10], "%Y-%m-%d").date()
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             start_date = None
                     if start_date is None:
                         earliest = None
@@ -2403,7 +2403,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         if earliest:
                             try:
                                 start_date = datetime.strptime(earliest, "%Y-%m-%d").date()
-                            except (ValueError, TypeError):
+                            except ValueError, TypeError:
                                 start_date = None
                     if start_date is None:
                         return None
@@ -2441,7 +2441,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             reverse=True,
                         )
                         last = sorted_rel[0]
-                    except (TypeError, ValueError, IndexError):
+                    except TypeError, ValueError, IndexError:
                         return None
                     if self._key.endswith("_date"):
                         return (
@@ -2495,7 +2495,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             if val is not None:
                                 try:
                                     return round(float(val), 2)
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     pass
                             # Compute from price * quantity
                             price = last.get("price", 0)
@@ -2503,10 +2503,10 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                             if price and quantity:
                                 try:
                                     return round(float(price) * float(quantity), 2)
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     pass
                             return None
-                    except (TypeError, ValueError, IndexError):
+                    except TypeError, ValueError, IndexError:
                         return None
             # Contributions sensors
             elif self._sub_key == "contributions":
@@ -2520,7 +2520,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     if portfolio_value is not None:
                         try:
                             return round(float(portfolio_value) - float(net_contrib), 2)
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             pass
                     return None
                 elif self._key == "net_investment_gain_percent":
@@ -2530,7 +2530,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         try:
                             gain = float(portfolio_value) - float(net_contrib)
                             return round(gain / float(net_contrib) * 100, 2)
-                        except (ValueError, TypeError, ZeroDivisionError):
+                        except ValueError, TypeError, ZeroDivisionError:
                             pass
                     return None
                 return summary.get(self._key)
@@ -2546,7 +2546,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     try:
                         start = datetime.strptime(str(inception)[:10], "%Y-%m-%d").date()
                         return (self._coordinator.current_date - start).days
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         return None
                 return detail.get(self._key)
             # Cash account transaction analytics
@@ -2566,7 +2566,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         reverse=True,
                     )
                     last = sorted_tx[0] if sorted_tx else None
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     last = None
                 if not last:
                     return None
@@ -2577,7 +2577,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     amt = last.get("amount")
                     try:
                         return round(float(amt), 2) if amt is not None else None
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         return None
                 return None
             # Per-holding fundamentals (joined from user_instruments)
@@ -2760,7 +2760,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     try:
                         portfolio_pct = float(report_data.get("total_gain_percent"))
                         benchmark_pct = float(bench.get("total_gain_percent"))
-                    except (TypeError, ValueError):
+                    except TypeError, ValueError:
                         return None
                     return round(portfolio_pct - benchmark_pct, 2)
                 return None
@@ -2903,7 +2903,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 if capital_gain is not None:
                     try:
                         cost_base = round(portfolio_value - float(capital_gain), 2)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         cost_base = None
                 one_day = data.get("one-day", {}) if isinstance(data.get("one-day"), dict) else {}
                 return {

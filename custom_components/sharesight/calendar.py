@@ -32,7 +32,7 @@ def _payout_date(payout: dict) -> date | None:
         return None
     try:
         return datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -48,7 +48,7 @@ def _ex_dividend_date(payout: dict) -> date | None:
         return None
     try:
         return datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -119,7 +119,7 @@ class SharesightDividendCalendar(SharesightBaseEntity, CalendarEntity):
                 )
                 amount = amount_details["amount"] or 0.0
                 dedupe_amount = amount_details["native_amount"]
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 amount = 0.0
                 dedupe_amount = payout.get("amount")
 

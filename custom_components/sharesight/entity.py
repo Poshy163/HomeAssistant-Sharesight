@@ -106,7 +106,7 @@ class SharesightBaseEntity(CoordinatorEntity[SharesightCoordinator]):
         # platform adds entities (guaranteeing this reference always resolves).
         if identifier != hub_identifier:
             # 2026.8 deprecates the tuple form and removes it in 2027.8. Keep a
-            # feature-gated fallback for the declared 2025.3 minimum.
+            # feature-gated fallback for the declared 2026.7.4 minimum.
             if "via_device_id" in DeviceInfo.__annotations__:
                 hub = dr.async_get(self.coordinator.hass).async_get_device(
                     identifiers={(DOMAIN, hub_identifier)}

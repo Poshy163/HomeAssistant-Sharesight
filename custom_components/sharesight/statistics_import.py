@@ -96,7 +96,7 @@ def _extract_points(response: Any) -> list[tuple[datetime, float]]:
 
         try:
             fval = float(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if not math.isfinite(fval):
             continue
