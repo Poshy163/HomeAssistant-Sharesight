@@ -1,12 +1,13 @@
 """Response services for the Sharesight integration.
 
-Six SupportsResponse.ONLY services that mine the data the coordinator already
+Seven SupportsResponse.ONLY services that mine the data the coordinator already
 holds (or, for the last three, make a single on-demand call) and return it as a
 structured response for scripts/templates:
 
 - get_portfolio_summary   — headline value / period gains / movers / income.
 - get_holdings            — sortable, limitable holdings list.
 - get_income              — trailing / YTD / forward dividend income.
+- export_raw_snapshot     — every cached Sharesight source response body.
 - generate_performance_report — arbitrary date-range performance report.
 - get_instrument_fundamentals — per-instrument sharechecker + official cost
   figures for one held symbol (one-shot mobile/V3 calls).
@@ -58,6 +59,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 SERVICE_GET_PORTFOLIO_SUMMARY = "get_portfolio_summary"
 SERVICE_GET_HOLDINGS = "get_holdings"
 SERVICE_GET_INCOME = "get_income"
+SERVICE_EXPORT_RAW_SNAPSHOT = "export_raw_snapshot"
 SERVICE_GENERATE_PERFORMANCE_REPORT = "generate_performance_report"
 SERVICE_GET_INSTRUMENT_FUNDAMENTALS = "get_instrument_fundamentals"
 SERVICE_GET_LOGIN_LINK = "get_login_link"
@@ -66,6 +68,7 @@ _SERVICES = (
     SERVICE_GET_PORTFOLIO_SUMMARY,
     SERVICE_GET_HOLDINGS,
     SERVICE_GET_INCOME,
+    SERVICE_EXPORT_RAW_SNAPSHOT,
     SERVICE_GENERATE_PERFORMANCE_REPORT,
     SERVICE_GET_INSTRUMENT_FUNDAMENTALS,
     SERVICE_GET_LOGIN_LINK,
@@ -99,6 +102,40 @@ GET_HOLDINGS_SCHEMA = vol.Schema(
     }
 )
 GET_INCOME_SCHEMA = vol.Schema({**_TARGET_FIELDS})
+EXPORT_RAW_SNAPSHOT_SCHEMA = vol.Schema({**_TARGET_FIELDS})
+
+# Keys holding direct Sharesight responses. Entity-ready calculated values
+# (income_report, value_trend, holding_income, and so on) are intentionally
+# excluded: this action is for comparing the source contracts themselves.
+RAW_SNAPSHOT_SOURCE_KEYS = (
+    "portfolio_detail",
+    "portfolios",
+    "report",
+    "one-day",
+    "one-week",
+    "one-month",
+    "ytd",
+    "financial-year",
+    "three-month",
+    "six-month",
+    "one-year",
+    "three-year",
+    "five-year",
+    "all_time",
+    "value_series",
+    "payouts",
+    "upcoming_payouts",
+    "trades",
+    "cash_accounts_v2",
+    "cash_account_transactions",
+    "user_setting",
+    "user_instruments",
+    "benchmark",
+    "my_user",
+    "watchlist",
+    "capital_gains",
+    "unrealised_cgt",
+)
 GENERATE_PERFORMANCE_REPORT_SCHEMA = vol.Schema(
     {
         **_TARGET_FIELDS,
@@ -509,6 +546,34 @@ async def _get_income(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse
     }
 
 
+async def _export_raw_snapshot(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    """Return every cached Sharesight response used by the integration.
+
+    This is deliberately a cache export, not an API proxy: it never makes a
+    request and never accesses OAuth credentials. It contains personal
+    financial data, so only share it through a private support channel.
+    ``value_series`` may be wrapped as ``{"data": [...]}`` when Sharesight
+    returned a top-level array; that is the coordinator's stable representation
+    of the raw body.
+    """
+    coordinator = _resolve_coordinator(hass, call)
+    data: dict[str, Any] = coordinator.data or {}
+    # A hot reload can temporarily retain an older coordinator without the
+    # dedicated pre-derived cache. The fallback still returns every direct
+    # source currently present, rather than failing the troubleshooting action.
+    raw_responses = getattr(coordinator, "_raw_responses", None)
+    if not isinstance(raw_responses, dict):
+        raw_responses = {}
+    snapshot = {
+        key: raw_responses.get(key, data.get(key))
+        for key in RAW_SNAPSHOT_SOURCE_KEYS
+        if key in raw_responses or key in data
+    }
+    unavailable = [key for key in RAW_SNAPSHOT_SOURCE_KEYS if key not in snapshot]
+
+    return {**snapshot, "unavailable": unavailable}
+
+
 async def _generate_performance_report(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     coordinator = _resolve_coordinator(hass, call)
     _reject_while_on_cooldown(coordinator)
@@ -590,6 +655,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
         (SERVICE_GET_PORTFOLIO_SUMMARY, _get_portfolio_summary, GET_PORTFOLIO_SUMMARY_SCHEMA),
         (SERVICE_GET_HOLDINGS, _get_holdings, GET_HOLDINGS_SCHEMA),
         (SERVICE_GET_INCOME, _get_income, GET_INCOME_SCHEMA),
+        (
+            SERVICE_EXPORT_RAW_SNAPSHOT,
+            _export_raw_snapshot,
+            EXPORT_RAW_SNAPSHOT_SCHEMA,
+        ),
         (
             SERVICE_GENERATE_PERFORMANCE_REPORT,
             _generate_performance_report,

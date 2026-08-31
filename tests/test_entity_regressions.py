@@ -194,6 +194,18 @@ def test_portfolio_currency_unit_follows_coordinator_changes() -> None:
     assert portfolio_value.native_unit_of_measurement == "NZD"
 
 
+def test_previously_niche_sensors_are_enabled_by_default() -> None:
+    """Default-disabled descriptions must not hide a supported entity."""
+    sensor = _sensor(
+        _description(TAX_SENSOR_DESCRIPTIONS, "short_term_losses"),
+        _entry(),
+        _coordinator(),
+        display_name="CGT Short Term Losses",
+    )
+
+    assert sensor.entity_registry_enabled_default is True
+
+
 def test_instrument_currency_unit_does_not_follow_portfolio_currency() -> None:
     """A watched instrument's own price remains in its declared currency."""
     coordinator = _coordinator(currency="AUD")

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 import itertools
 import logging
@@ -221,6 +222,11 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         self.sharesight = client
         self.oauth_session = oauth_session
         self.data: dict[str, Any] = {}
+        # Preserve successful source payloads independently of ``data``.
+        # ``_post_process`` deliberately filters/derives values for entities;
+        # the response service needs the pre-derived shapes when diagnosing an
+        # upstream contract without issuing another request.
+        self._raw_responses: dict[str, Any] = {}
         self.portfolio_id = portfolio_id
         self.current_date: date = dt_util.now().date()
 
@@ -1462,6 +1468,14 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         self._logged_failures.pop("degraded", None)
         return self.data
 
+    def _remember_raw_response(self, key: str, payload: Any) -> None:
+        """Keep an immutable diagnostic copy of a successful source response."""
+        raw_responses = getattr(self, "_raw_responses", None)
+        if not isinstance(raw_responses, dict):
+            raw_responses = {}
+            self._raw_responses = raw_responses
+        raw_responses[key] = deepcopy(payload)
+
     def _merge(self, combined: dict[str, Any], endpoint: Endpoint, response: Any) -> None:
         """File a successful response under its key and remember it."""
         payload = response
@@ -1489,6 +1503,19 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         if endpoint.key == "value_series" and isinstance(payload, list):
             # The value-data series can answer with a bare top-level array.
             payload = {"data": payload}
+        raw_key = endpoint.key
+        if raw_key is None:
+            path = endpoint.path.removesuffix(".json")
+            if path == "portfolios":
+                raw_key = "portfolios"
+            elif path.endswith("/performance"):
+                raw_key = "report"
+            elif path.endswith("/benchmark"):
+                raw_key = "benchmark"
+        if raw_key is not None:
+            # A deep copy prevents later entity-only transformations (such as
+            # filtering sold holdings) changing the diagnostic source body.
+            self._remember_raw_response(raw_key, payload)
         if endpoint.key:
             merge_dicts(combined, {endpoint.key: payload})
             self._remember(endpoint.key, payload)
@@ -1564,6 +1591,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 ]
                 payload = {"cash_account_transactions": transactions}
                 combined["cash_account_transactions"] = payload
+                self._remember_raw_response("cash_account_transactions", payload)
                 self._remember("cash_account_transactions", payload)
             elif "cash_account_transactions" not in combined:
                 cached = self.data.get("cash_account_transactions")
@@ -1607,6 +1635,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             ]
             payload = {"cash_account_transactions": transactions}
             combined["cash_account_transactions"] = payload
+            self._remember_raw_response("cash_account_transactions", payload)
             self._remember("cash_account_transactions", payload)
         elif "cash_account_transactions" not in combined:
             cached = self.data.get("cash_account_transactions")

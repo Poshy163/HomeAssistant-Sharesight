@@ -136,7 +136,7 @@ Assistant release whose `aiohttp` 3.14.3 requirement matches SharesightAPI
 - **Names now derive from device + entity.** Entities use Home Assistant's modern naming: the displayed name is the **device name plus the entity name** (e.g. the *Sharesight Portfolio 123* device's value sensor now reads as "Sharesight Portfolio 123 Portfolio value"). This makes names consistent and translatable, and is why friendly names look different after upgrading even though the entity IDs did not move.
 - **Nested device tree.** The per-category devices (Daily Performance, Holdings, Income, each market, each holding, Watchlist, Analytics, …) now nest **under the portfolio hub device** using Home Assistant's device-parent link. Open the portfolio device and you'll see the whole fleet as a tree instead of ~25 flat, separately-listed devices.
 - **Diagnostics categorisation.** Low-signal metadata sensors (portfolio ID, update interval, access level, price-updated timestamps, "return is annualised", …) are now tagged as **Diagnostic**. They move into the *Diagnostic* section of their device and out of the main sensor list — they remain fully available and recordable.
-- **A few niche entities ship disabled by default.** To cut first-run clutter, a handful of rarely-needed entities are now **disabled by default**. Nothing you already rely on is switched off — this only affects new/niche entities. To enable one: **Settings → Devices & Services → Sharesight → the device → the entity → the gear (Settings) icon → toggle _Enabled_ → Update** (or use the device page's "_+N entities not shown_" link). The entity keeps its stable ID once enabled.
+- **Everything is enabled and visible by default.** New entries expose every supported entity and performance family. You can still disable an individual entity or switch off an optional family in the integration's Options if you prefer a smaller setup.
 
 No reconfiguration is required: update, restart Home Assistant, and the devices re-parent and rename themselves on the next load. Because this changes displayed names and device organisation, it ships as a **major** version bump (2.0.0).
 
@@ -144,9 +144,11 @@ No reconfiguration is required: update, restart Home Assistant, and the devices 
 
 When you sell out of a holding, exit a market, or close a cash account, its per-item device is no longer refreshed. 2.0 lets you **delete such a device from the UI** (its three-dot menu → **Delete**) once it no longer appears in your current portfolio data. The portfolio hub and the fixed report/container devices can't be deleted this way, and a device that is still live (or that can't be confirmed stale because the integration is mid-refresh) is kept — so you can't accidentally remove an active device.
 
+Retired **Market Hours** and **Exchange Rates** devices are the only fixed-device exception: explicitly deleting either in the UI is allowed because their upstream routes are no longer used and the integration will never recreate them. They are never automatically deleted.
+
 Entities of a per-item device go **unavailable** as soon as their item leaves your portfolio — a holding sold, a market exited, a cash account closed, an instrument dropped from your watchlist, a label removed from the last holding carrying it. That is the cue that the device is ready to delete; previously they sat on *Unknown* indefinitely.
 
-Prefer not to do it by hand? Turn on **Automatically delete devices for sold holdings** in the integration's **Options**. Each holding / market / cash-account device is then deleted on its own once its item has been missing from **three consecutive successful updates** — long enough to ride out a short Sharesight payload, and it never acts on an empty list, so a bad response can't wipe out live devices. The load that follows saving the option counts as the first, so expect the device to disappear about **two poll cycles (≈10 minutes)** after you enable it, not instantly. Restarting Home Assistant in the meantime restarts the count. It is off by default because deleting a device also deletes its entities and their recorded history; the portfolio hub and the fixed report/container devices are never touched. Buy back in later and the holding's device and entities come back on the next poll.
+Prefer not to do it by hand? Turn on **Automatically delete devices for sold holdings** in the integration's **Options**. Each holding / market / cash-account device is then deleted on its own once its item has been missing from **three consecutive successful updates** — long enough to ride out a short Sharesight payload, and it never acts on an empty list, so a bad response can't wipe out live devices. The load that follows saving the option counts as the first, so expect the device to disappear about **two poll cycles (≈10 minutes)** after you enable it, not instantly. Restarting Home Assistant in the meantime restarts the count. It is off by default because deleting a device also deletes its entities and their recorded history; the portfolio hub and fixed report/container devices are never touched automatically. Buy back in later and the holding's device and entities come back on the next poll.
 
 Sharesight sometimes leaves a sold holding in its performance report when the sale doesn't net to exactly zero (a residue such as `-0.00004` shares, worth nothing, flagged as an invalid position). The integration treats that as sold rather than as a live $0 holding, so the device is deletable and the ghost can't skew the holding count, smallest-holding or label sensors.
 
@@ -382,7 +384,7 @@ the separate market-metadata endpoint.
 | Current Drawdown | How far below the peak the portfolio sits right now (0% at a new high) |
 | High Water Mark | The peak value in the window |
 | Days Since High | Days since that peak was set |
-| Volatility (annualised) | Standard deviation of the period returns, annualised from the series' own spacing. Disabled by default |
+| Volatility (annualised) | Standard deviation of the period returns, annualised from the series' own spacing |
 
 > The window is whatever the value series covers — about 45 days by default.
 > The **Benchmark** device carries Sharesight's own *Benchmark Maximum
@@ -501,8 +503,8 @@ installations; nothing here needs to be understood to use the integration.
 | **Poll interval (seconds)** | 300 | How often the portfolio is refreshed. Clamped to 60–3600; the shared request gate coordinates loaded portfolios against Sharesight's documented rate and concurrency limits |
 | **Backfill portfolio value history** | On | On startup, imports your whole inception-to-today daily value series into the Portfolio Value sensor's long-term statistics, so charts show years rather than days-since-install. Needs the value-data endpoint to be reachable for your API access |
 | **Automatically delete devices for sold holdings** | Off | See [Deleting stale devices](#deleting-stale-devices) |
-| **Create per-holding entities** | Off for new entries; existing setting preserved | Adds about 31 entities per live holding. Existing entities are hidden rather than deleted when the option is off, so turning it back on restores them with their history |
-| **Add 3/6 month and 1/3/5 year windows** | Off | Adds locally named performance sensors for five additional windows on the slow tier |
+| **Create per-holding entities** | On | Adds about 31 entities per live holding. Turning it off stops creating that family without deleting existing entities or their history |
+| **Add 3/6 month and 1/3/5 year windows** | On | Adds locally named performance sensors for five additional windows on the slow tier |
 
 ### Extended performance windows
 
@@ -561,7 +563,7 @@ one of the 49 V2 and 105 V3 method/path combinations.
 
 ## Services
 
-The integration registers six **response services** — they return data rather than change state. Call them with `response_variable` in a script/automation, or tick **Return response** in **Developer Tools → Actions**. Each targets a portfolio via `config_entry_id` or `device_id`; both are optional when only one portfolio is configured.
+The integration registers seven **response services** — they return data rather than change state. Call them with `response_variable` in a script/automation, or tick **Return response** in **Developer Tools → Actions**. Each targets a portfolio via `config_entry_id` or `device_id`; both are optional when only one portfolio is configured.
 
 ### `sharesight.get_portfolio_summary`
 
@@ -652,6 +654,26 @@ portfolio `currency`. Upcoming rows also retain the API's `native_amount`,
 `native_currency` and `exchange_rate`. If a foreign payout has no usable
 exchange rate, `amount` is `null` rather than being silently relabelled as the
 portfolio currency.
+
+### `sharesight.export_raw_snapshot`
+
+Returns every cached Sharesight source response used by the integration:
+portfolio metadata and reports, all enabled performance windows, portfolio-value
+series, payouts, trades, cash data, settings, instruments, benchmark, watchlist,
+and (where applicable) Australian CGT reports. This is a troubleshooting action:
+it makes no API requests and never includes OAuth credentials. A missing or
+scope-gated source is reported in `unavailable`; disabled extended-performance
+windows are expected to appear there. The value-series response can be wrapped
+as `data` when the API returned a top-level array.
+
+The output contains private financial and account information. Do not paste it
+into public issues; remove personal details before sharing it outside a private
+support conversation.
+
+```yaml
+action: sharesight.export_raw_snapshot
+response_variable: snapshot
+```
 
 ### `sharesight.generate_performance_report`
 

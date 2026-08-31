@@ -111,6 +111,27 @@ def _migrate_developer_registry_identity(
             device_registry.async_update_device(device.id, new_identifiers=identifiers)
 
 
+def _enable_integration_disabled_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Restore entities that this integration previously hid by default.
+
+    User-disabled and device-disabled entities are intentionally untouched.
+    The global "disable new entities" preference is also respected.
+    """
+    if entry.pref_disable_new_entities:
+        return
+
+    entity_registry = er.async_get(hass)
+    restored = 0
+    for registry_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+        if registry_entry.disabled_by is not er.RegistryEntryDisabler.INTEGRATION:
+            continue
+        entity_registry.async_update_entity(registry_entry.entity_id, disabled_by=None)
+        restored += 1
+
+    if restored:
+        _LOGGER.info("Enabled %s previously default-disabled Sharesight entities", restored)
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the Sharesight response services for the process lifetime.
 
@@ -186,9 +207,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
     options = dict(entry.options)
-    # Before 3.2, holding entities were implicitly enabled. Persist that old
-    # default for upgraded entries before changing the new-entry default to
-    # opt-in, otherwise a restart would hide hundreds of existing entities.
+    # Before 3.2, holding entities were implicitly enabled. Preserve that
+    # setting for upgraded entries that never stored an explicit preference.
     options.setdefault(CONF_ENABLE_HOLDING_ENTITIES, True)
 
     hass.config_entries.async_update_entry(
@@ -363,6 +383,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -
     # attributes.icon from its very first state write (see icons.py).
     local_coordinator.entity_icons = await async_load_entity_icons(hass)
 
+    _enable_integration_disabled_entities(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Update recorder metadata for statistics contracts that changed without
@@ -445,10 +466,10 @@ async def update_listener(hass: HomeAssistant, entry: SharesightConfigEntry) -> 
 
 # Fixed device groups: the portfolio hub, portfolio-wide report devices, and
 # single container devices that hold dynamic per-item families. The retired
-# ``fx`` and ``market_hours`` suffixes remain here solely to protect legacy
-# registry devices from stale-item pruning; ``market_hours`` would otherwise be
-# parsed as the per-market device ``market_hours``. Only per-item
-# market/cash/holding devices are ever prunable.
+# ``fx`` and ``market_hours`` suffixes remain here to protect legacy registry
+# devices from unattended stale-item pruning; ``market_hours`` would otherwise
+# be parsed as the per-market device ``market_hours``. A user may still remove
+# either retired device explicitly through Home Assistant.
 _STATIC_DEVICE_GROUPS = frozenset(
     {
         "portfolio",
@@ -475,6 +496,11 @@ _STATIC_DEVICE_GROUPS = frozenset(
         "labels",
     }
 )
+
+# These families were removed because their upstream routes are unsupported
+# for ordinary API consumers. They can never be created again, so an explicit
+# user request to remove one is safe even without fresh coordinator data.
+_RETIRED_LEGACY_DEVICE_GROUPS = frozenset({"fx", "market_hours"})
 
 
 def _live_item_names(data: Any) -> dict[str, set[str]] | None:
@@ -559,6 +585,25 @@ def _stale_item(
     return stale_item
 
 
+def _is_retired_legacy_device(device_entry: dr.DeviceEntry, prefix: str) -> bool:
+    """Whether this is only a removable retired Sharesight device.
+
+    This deliberately refuses devices with foreign, malformed, or active
+    Sharesight identifiers. The Home Assistant UI reaches this only after an
+    explicit user deletion request, and the two supported suffixes are no
+    longer created by the integration.
+    """
+    identifiers = device_entry.identifiers
+    if not identifiers:
+        return False
+    for domain, identifier in identifiers:
+        if domain != DOMAIN or not identifier.startswith(prefix):
+            return False
+        if identifier[len(prefix) :] not in _RETIRED_LEGACY_DEVICE_GROUPS:
+            return False
+    return True
+
+
 @callback
 def _async_prune_stale_devices(hass: HomeAssistant, entry: SharesightConfigEntry) -> None:
     """Delete per-item devices whose item has left the portfolio (opt-in).
@@ -638,12 +683,12 @@ async def async_remove_config_entry_device(
 
     Returning True lets Home Assistant remove the device; False refuses it.
 
-    Only the per-item market / cash / holding devices are ever prunable, and
+    Retired Exchange Rates and Market Hours devices are also removable after a
+    deliberate user request: their endpoints are no longer supported and they
+    will never be recreated. Otherwise, only per-item market / cash / holding devices are prunable, and
     only when the item they represent is absent from the CURRENT coordinator
     data (a holding sold, a market exited, a cash account closed). The portfolio
-    hub and every fixed report/container device are always refused. This also
-    protects legacy Exchange Rates and Market Hours registry devices, even
-    though those unsupported entity families are no longer created.
+    hub and every fixed report/container device are refused.
 
     Conservative by design. Deletion here is *user-initiated*, so an item
     missing from a single poll is enough — the user is asserting the device is
@@ -659,13 +704,20 @@ async def async_remove_config_entry_device(
     coordinator = runtime_data.coordinator if runtime_data is not None else None
     live = _live_item_names(coordinator.data if coordinator is not None else None)
 
-    if portfolio_id is None or live is None:
+    if portfolio_id is None:
+        return False
+
+    prefix = f"{portfolio_resource_id(portfolio_id, config_entry.data.get(CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE))}_"
+    if _is_retired_legacy_device(device_entry, prefix):
+        return True
+
+    if live is None:
         return False
 
     return (
         _stale_item(
             device_entry,
-            f"{portfolio_resource_id(portfolio_id, config_entry.data.get(CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE))}_",
+            prefix,
             live,
             require_evidence=False,
         )

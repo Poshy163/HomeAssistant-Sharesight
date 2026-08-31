@@ -54,6 +54,19 @@ get_income:
         device:
           integration: sharesight
 
+export_raw_snapshot:
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: sharesight
+    device_id:
+      required: false
+      selector:
+        device:
+          integration: sharesight
+
 generate_performance_report:
   fields:
     config_entry_id:

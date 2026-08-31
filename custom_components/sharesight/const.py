@@ -41,22 +41,18 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_ENABLE_LTS_BACKFILL = "enable_lts_backfill"
 DEFAULT_ENABLE_LTS_BACKFILL = True
 
-# Longer-horizon performance windows (3m / 6m / 1y / 3y / 5y).  Each is one
-# calculation-heavy V3 report (with a semantically equivalent V2 fallback), so
-# they are opt-in and only ever fetched on the
-# slow tier; enabling them adds five requests per hour at the default interval,
-# which is negligible against the 360/minute budget but does add ~30 entities.
+# Longer-horizon performance windows (3m / 6m / 1y / 3y / 5y). Each is one
+# calculation-heavy V3 report (with a semantically equivalent V2 fallback) on
+# the slow tier. They add five requests per hour at the default interval and
+# expose about 30 entities.
 CONF_ENABLE_EXTENDED_PERFORMANCE = "enable_extended_performance"
-DEFAULT_ENABLE_EXTENDED_PERFORMANCE = False
+DEFAULT_ENABLE_EXTENDED_PERFORMANCE = True
 
-# Per-holding entities are by far the biggest contributor to the entity count
-# (roughly 31 per holding). Keep the family opt-in for new entries so adding a
-# 25-holding portfolio does not silently create ~775 recorder-backed entities.
-# Entry minor-version migration 3.2 stores True for every pre-3.2 entry that
-# had no explicit option, preserving the behaviour and history of existing
-# installations.
+# Per-holding entities are the biggest contributor to entity count (roughly 31
+# per holding), but remain enabled by default so a new integration exposes the
+# complete portfolio without hidden families.
 CONF_ENABLE_HOLDING_ENTITIES = "enable_holding_entities"
-DEFAULT_ENABLE_HOLDING_ENTITIES = False
+DEFAULT_ENABLE_HOLDING_ENTITIES = True
 
 # How long the coordinator may keep serving the previous payload before it
 # admits defeat.  Below this, a blip is smoothed over and sensors hold their

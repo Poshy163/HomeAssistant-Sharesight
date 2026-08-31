@@ -186,14 +186,14 @@ def test_slow_tier_has_an_all_time_window_on_the_public_api() -> None:
     assert all_time.params["include_sales"] == "true"
 
 
-def test_extended_windows_are_opt_in() -> None:
-    plain = make_coordinator()
-    keys = {e.key for e in plain._slow_endpoints(TODAY)}
-    assert "one-year" not in keys
-
-    opted_in = make_coordinator(options={"enable_extended_performance": True})
-    keys = {e.key for e in opted_in._slow_endpoints(TODAY)}
+def test_extended_windows_are_enabled_by_default() -> None:
+    coordinator = make_coordinator()
+    keys = {e.key for e in coordinator._slow_endpoints(TODAY)}
     assert {"three-month", "six-month", "one-year", "three-year", "five-year"} <= keys
+
+    opted_out = make_coordinator(options={"enable_extended_performance": False})
+    keys = {e.key for e in opted_out._slow_endpoints(TODAY)}
+    assert "one-year" not in keys
 
 
 def test_extended_windows_are_clamped_to_inception() -> None:

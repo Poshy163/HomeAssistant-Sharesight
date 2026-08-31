@@ -310,7 +310,8 @@ async def test_options_flow(hass: HomeAssistant, mock_config_entry: MockConfigEn
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "init"
-    assert result["data_schema"]({})["enable_holding_entities"] is False
+    assert result["data_schema"]({})["enable_holding_entities"] is True
+    assert result["data_schema"]({})["enable_extended_performance"] is True
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],

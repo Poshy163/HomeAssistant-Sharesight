@@ -3116,7 +3116,7 @@ TAX_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="tax",
     ),
     SharesightSensorDescription(
@@ -3130,7 +3130,7 @@ TAX_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.TOTAL,
         entity_category=None,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="tax",
     ),
     SharesightSensorDescription(
@@ -3170,7 +3170,7 @@ TAX_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="tax",
     ),
     # Realised CGT for the current financial year (V2 capital_gains)
@@ -3523,7 +3523,7 @@ ANALYTICS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="analytics",
     ),
     SharesightSensorDescription(
@@ -3537,7 +3537,7 @@ ANALYTICS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="analytics",
     ),
     SharesightSensorDescription(
@@ -3551,7 +3551,7 @@ ANALYTICS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="analytics",
     ),
     SharesightSensorDescription(
@@ -3604,7 +3604,7 @@ ANALYTICS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="analytics",
     ),
     SharesightSensorDescription(
@@ -3644,7 +3644,7 @@ ANALYTICS_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=0,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="analytics",
     ),
 ]
@@ -3722,7 +3722,7 @@ HOLDING_FUNDAMENTAL_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=None,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="holding",
     ),
     SharesightSensorDescription(
@@ -4636,7 +4636,7 @@ WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=4,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="watchlist",
     ),
     SharesightSensorDescription(
@@ -4650,7 +4650,7 @@ WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=4,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="watchlist",
     ),
     SharesightSensorDescription(
@@ -4664,7 +4664,7 @@ WATCHLIST_INSTRUMENT_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="watchlist",
     ),
 ]
@@ -4718,7 +4718,7 @@ LABEL_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=0,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="labels",
     ),
     SharesightSensorDescription(
@@ -4732,7 +4732,7 @@ LABEL_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="labels",
     ),
     SharesightSensorDescription(
@@ -4746,7 +4746,7 @@ LABEL_SENSOR_DESCRIPTIONS: list[SharesightSensorDescription] = [
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=None,
         suggested_display_precision=2,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         device_group="labels",
     ),
 ]

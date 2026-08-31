@@ -1152,14 +1152,9 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 }.get(self._sub_key, str(self._sub_key))
             }
 
-        # Propagate entity_registry_enabled_default from description
-        if (
-            hasattr(sensor, "entity_registry_enabled_default")
-            and not sensor.entity_registry_enabled_default
-        ):
-            self._attr_entity_registry_enabled_default = False
-        else:
-            self._attr_entity_registry_enabled_default = True
+        # All entity descriptions are enabled and visible by default. Existing
+        # user choices in Home Assistant's entity registry are still respected.
+        self._attr_entity_registry_enabled_default = True
 
         if sensor.native_unit_of_measurement == CURRENCY_DOLLAR:
             self._native_unit_of_measurement = currency
