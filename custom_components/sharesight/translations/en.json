@@ -73,7 +73,7 @@
                     "enable_lts_backfill": "On startup, import the full inception-to-today daily portfolio value series into the Portfolio value sensor's statistics. Requires the value-data endpoint to be available for your API access.",
                     "auto_remove_stale_devices": "When a holding is sold, a market exited or a cash account closed, delete its device and entities automatically once it has been gone from your portfolio for three consecutive updates. This also deletes those entities' recorded history. Leave this off to delete them yourself from the device page's three-dot menu.",
                     "enable_extended_performance": "Fetch five extra performance windows on the slow poll tier and expose thirty entities on one Extended Performance device. Adds five requests per hour.",
-                    "enable_holding_entities": "Turn off to keep only portfolio-level figures. Existing per-holding entities are hidden rather than deleted, so turning it back on restores them with their history."
+                    "enable_holding_entities": "Turn on to create the full per-holding entity family (about 31 entities per holding). New entries keep this off to avoid excessive recorder growth. Existing installations retain their previous setting, and entities are hidden rather than deleted when the option is off."
                 }
             }
         }
@@ -1328,6 +1328,16 @@
                     "description": "A Sharesight portfolio device to query instead of a config entry."
                 }
             }
+        }
+    },
+    "issues": {
+        "holding_limit": {
+            "title": "Sharesight is limiting holding calculations",
+            "description": "This portfolio has {total} holdings, but Sharesight returned complete calculations for at most {limit}. Some per-holding values may be unavailable or limited. Reduce the portfolio holding count or contact Sharesight about the account's report limit."
+        },
+        "missing_application_credential": {
+            "title": "Sharesight application credential is missing",
+            "description": "The application credential used by this {account_type} Sharesight entry is no longer available. Add a matching credential under Settings > Devices & services > Application credentials; the integration will retry setup automatically."
         }
     },
     "device_automation": {

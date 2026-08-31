@@ -68,11 +68,16 @@ class StubClient:
     @staticmethod
     def _respond(version, path, params):
         data = F.coordinator_data()
-        if path == "portfolios":
+        canonical_path = path.removesuffix(".json")
+        if canonical_path == "portfolios":
             return {"portfolios": F.PORTFOLIOS}
-        if path == f"portfolios/{PID}":
+        if canonical_path == f"portfolios/{PID}":
+            if version == "v2":
+                detail = dict(F.PORTFOLIO_DETAIL)
+                detail["inception_date"] = "18 Jul 2023"
+                return detail
             return {"portfolio": F.PORTFOLIO_DETAIL}
-        if path.endswith("/performance"):
+        if canonical_path.endswith("/performance"):
             if version == "v3":
                 return {"report": F.performance_report()}
             return F.period_report(
@@ -80,29 +85,29 @@ class StubClient:
                 end_date=params.get("end_date", F.TODAY),
                 capital_gain=100.0,
             )
-        if path.endswith("/payouts"):
+        if canonical_path.endswith("/payouts"):
             if params and params.get("start_date") == F.TODAY:
                 return {"payouts": F.UPCOMING_PAYOUTS}
             return {"payouts": F.PAYOUTS}
-        if path.endswith("/trades"):
+        if canonical_path.endswith("/trades"):
             return {"trades": F.TRADES}
-        if path == "cash_accounts":
+        if canonical_path == "cash_accounts":
             return {"cash_accounts": F.CASH_ACCOUNTS_V2}
         if "cash_account_transactions" in path:
             return {"cash_account_transactions": F.CASH_TRANSACTIONS}
         if path.endswith("/user_setting"):
             return F.USER_SETTING
-        if path == "user_instruments":
+        if canonical_path == "user_instruments":
             return F.USER_INSTRUMENTS
-        if path.endswith("/benchmark"):
+        if canonical_path.endswith("/benchmark"):
             return {"benchmark": F.BENCHMARK}
         if path == "my_user.json":
             return F.MY_USER
         if path == "watchlist.json":
             return F.WATCHLIST
-        if path.endswith("/capital_gains"):
+        if canonical_path.endswith("/capital_gains"):
             return F.CAPITAL_GAINS
-        if path.endswith("/unrealised_cgt"):
+        if canonical_path.endswith("/unrealised_cgt"):
             return F.UNREALISED_CGT
         if "portfolio_value_data" in path:
             return F.VALUE_SERIES
@@ -461,7 +466,7 @@ def test_missing_unkeyed_benchmark_source_retries_next_poll() -> None:
     benchmark = next(
         endpoint
         for endpoint in coordinator._optional_endpoints(coordinator.current_date)
-        if endpoint.path.endswith("/benchmark")
+        if endpoint.path.removesuffix(".json").endswith("/benchmark")
     )
     _fail_endpoint_once(coordinator, benchmark, status=503, reason="temporary outage")
 
@@ -546,7 +551,7 @@ def test_first_complete_cash_snapshot_after_cold_start_is_seeded_silently() -> N
     account_id = F.CASH_ACCOUNTS_V2[0]["id"]
     cash_transactions = Endpoint(
         "v2",
-        f"cash_accounts/{account_id}/cash_account_transactions",
+        f"cash_accounts/{account_id}/cash_account_transactions.json",
         None,
         None,
     )
@@ -869,11 +874,11 @@ def test_no_cash_accounts_means_no_transaction_requests() -> None:
 def test_exact_v3_version_mismatch_falls_back_once_and_caches_the_route() -> None:
     class VersionedClient:
         def __init__(self) -> None:
-            self.requests: list[str] = []
+            self.requests: list[tuple[str, str, dict | None]] = []
 
         async def get_api_request(self, endpoint, access_token=None):
-            version, _, _, _ = endpoint
-            self.requests.append(version)
+            version, path, params, _ = endpoint
+            self.requests.append((version, path, params))
             if version == "v3":
                 raise _api_error(406, "Version not supported")
             return {"served_by": version}
@@ -881,12 +886,103 @@ def test_exact_v3_version_mismatch_falls_back_once_and_caches_the_route() -> Non
     coordinator = make_coordinator()
     client = VersionedClient()
     coordinator.sharesight = client
-    endpoint = Endpoint("v3", "portfolios/1/performance", key="one-day", fallback_version="v2")
+    v3_params = {
+        "start_date": "2026-08-31",
+        "end_date": "2026-08-31",
+        "grouping": "market",
+        "include_sales": "true",
+        "include_limited": "true",
+        "report_combined": "true",
+        "labels": ["growth"],
+        "benchmark_code": "XJO",
+    }
+    endpoint = Endpoint(
+        "v3",
+        "portfolios/1/performance",
+        v3_params,
+        key="one-day",
+        fallback_version="v2",
+    )
 
     assert run(coordinator._call(endpoint, "token")) == {"served_by": "v2"}
     assert run(coordinator._call(endpoint, "token")) == {"served_by": "v2"}
-    assert client.requests == ["v3", "v2", "v2"]
+    v2_params = {
+        "start_date": "2026-08-31",
+        "end_date": "2026-08-31",
+        "grouping": "market",
+        "include_sales": "true",
+    }
+    assert client.requests == [
+        ("v3", "portfolios/1/performance", v3_params),
+        ("v2", "portfolios/1/performance.json", v2_params),
+        ("v2", "portfolios/1/performance.json", v2_params),
+    ]
     assert coordinator._fallback_route_key(endpoint) in coordinator._fallback_routes
+
+
+def test_setup_accepts_and_normalises_the_documented_bare_v2_portfolio() -> None:
+    """The V2 detail fallback is bare and uses a display-formatted date."""
+
+    class VersionedPortfolioClient:
+        def __init__(self) -> None:
+            self.requests: list[tuple[str, str, dict | None]] = []
+
+        async def get_api_request(self, endpoint, access_token=None):
+            version, path, params, _ = endpoint
+            self.requests.append((version, path, params))
+            if version == "v3":
+                raise _api_error(406, "Version not supported")
+            detail = dict(F.PORTFOLIO_DETAIL)
+            detail["inception_date"] = "18 Jul 2023"
+            return detail
+
+    coordinator = build()
+    client = VersionedPortfolioClient()
+    coordinator.sharesight = client
+
+    run(coordinator._async_setup())
+
+    assert client.requests == [
+        ("v3", f"portfolios/{PID}", None),
+        ("v2", f"portfolios/{PID}.json", None),
+    ]
+    assert coordinator._portfolio_detail["id"] == PID
+    assert coordinator._portfolio_detail["inception_date"] == "2023-07-18"
+
+
+def test_v2_portfolio_list_fallback_is_canonical_and_normalised() -> None:
+    class VersionedPortfolioListClient:
+        def __init__(self) -> None:
+            self.requests: list[tuple[str, str, dict | None]] = []
+
+        async def get_api_request(self, endpoint, access_token=None):
+            version, path, params, _ = endpoint
+            self.requests.append((version, path, params))
+            if version == "v3":
+                raise _api_error(406, "Version not supported")
+            portfolio = dict(F.PORTFOLIO_DETAIL)
+            portfolio["inception_date"] = "18 Jul 2023"
+            return {"portfolios": [portfolio]}
+
+    coordinator = make_coordinator()
+    client = VersionedPortfolioListClient()
+    coordinator.sharesight = client
+    endpoint = Endpoint(
+        "v3",
+        "portfolios",
+        {"consolidated": "false"},
+        fallback_version="v2",
+    )
+
+    response = run(coordinator._call(endpoint, "token"))
+    combined: dict = {}
+    coordinator._merge(combined, endpoint, response)
+
+    assert client.requests == [
+        ("v3", "portfolios", {"consolidated": "false"}),
+        ("v2", "portfolios.json", None),
+    ]
+    assert combined["portfolios"][0]["inception_date"] == "2023-07-18"
 
 
 def test_v3_404_does_not_probe_the_fallback_version() -> None:
@@ -910,9 +1006,120 @@ def test_v3_404_does_not_probe_the_fallback_version() -> None:
     assert coordinator._fallback_route_key(endpoint) not in coordinator._fallback_routes
 
 
+def test_failed_fallback_is_not_cached() -> None:
+    class FailingVersionedClient:
+        def __init__(self) -> None:
+            self.requests: list[tuple[str, str]] = []
+
+        async def get_api_request(self, endpoint, access_token=None):
+            version, path, _, _ = endpoint
+            self.requests.append((version, path))
+            if version == "v3":
+                raise _api_error(406, "Version not supported")
+            raise _api_error(503, "fallback unavailable")
+
+    coordinator = make_coordinator()
+    client = FailingVersionedClient()
+    coordinator.sharesight = client
+    endpoint = Endpoint(
+        "v3",
+        "portfolios/1/performance",
+        key="one-day",
+        fallback_version="v2",
+    )
+
+    with pytest.raises(SharesightApiError, match="fallback unavailable"):
+        run(coordinator._call(endpoint, "token"))
+    assert client.requests == [
+        ("v3", "portfolios/1/performance"),
+        ("v2", "portfolios/1/performance.json"),
+    ]
+    assert coordinator._fallback_route_key(endpoint) not in coordinator._fallback_routes
+
+
 # --------------------------------------------------------------------------
 # On-demand calls
 # --------------------------------------------------------------------------
+
+
+def test_on_demand_performance_report_normalises_the_v3_wrapper() -> None:
+    coordinator = build()
+    report = F.period_report(
+        start_date="2025-07-01",
+        end_date="2026-06-30",
+        capital_gain=321.0,
+    )
+    coordinator.sharesight._respond = staticmethod(lambda version, path, params: {"report": report})
+
+    result = run(
+        coordinator.async_generate_performance_report(
+            "2025-07-01",
+            "2026-06-30",
+            grouping="industry_classification",
+            consolidated=False,
+            include_sales=True,
+        )
+    )
+
+    assert result == report
+    assert coordinator.sharesight.requests == [
+        (
+            "v3",
+            f"portfolios/{PID}/performance",
+            {
+                "start_date": "2025-07-01",
+                "end_date": "2026-06-30",
+                "grouping": "industry_classification",
+                "consolidated": "false",
+                "include_sales": "true",
+            },
+        )
+    ]
+
+
+def test_on_demand_performance_report_uses_canonical_v2_fallback() -> None:
+    class VersionedReportClient:
+        def __init__(self) -> None:
+            self.requests: list[tuple[str, str, dict | None]] = []
+
+        async def get_api_request(self, endpoint, access_token=None):
+            version, path, params, _ = endpoint
+            self.requests.append((version, path, params))
+            if version == "v3":
+                raise _api_error(406, "Version not supported")
+            return F.period_report(
+                start_date=params["start_date"],
+                end_date=params["end_date"],
+                capital_gain=654.0,
+            )
+
+    coordinator = build()
+    client = VersionedReportClient()
+    coordinator.sharesight = client
+
+    result = run(
+        coordinator.async_generate_performance_report(
+            "2025-07-01",
+            "2026-06-30",
+            grouping="market",
+            consolidated=True,
+            include_sales=False,
+        )
+    )
+
+    expected_params = {
+        "start_date": "2025-07-01",
+        "end_date": "2026-06-30",
+        "grouping": "market",
+        "consolidated": "true",
+        "include_sales": "false",
+    }
+    assert client.requests == [
+        ("v3", f"portfolios/{PID}/performance", expected_params),
+        ("v2", f"portfolios/{PID}/performance.json", expected_params),
+    ]
+    assert result["capital_gain"] == 654.0
+    assert "report" not in result
 
 
 def test_one_shot_calls_return_an_error_block_rather_than_raising() -> None:

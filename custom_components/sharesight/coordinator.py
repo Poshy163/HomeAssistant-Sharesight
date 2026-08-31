@@ -44,6 +44,7 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import (
     TimestampDataUpdateCoordinator,
     UpdateFailed,
@@ -282,6 +283,9 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         # logs once at INFO.  Without this a sustained outage wrote ~20
         # identical WARNING lines per poll, forever.
         self._logged_failures: dict[str, str] = {}
+        # Latest plan holding-limit metadata observed on a report response.
+        # None means Sharesight has not supplied the header pair this run.
+        self.holding_limit: dict[str, int] | None = None
 
         # Activity diff.  "Seen" keys per record type so only genuinely new
         # records fire events; seeded silently on the first successful poll.
@@ -359,6 +363,29 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             if isinstance(portfolio, dict) and str(portfolio.get("id")) == str(self.portfolio_id):
                 return portfolio
         return None
+
+    @staticmethod
+    def _normalise_portfolio_detail(detail: dict[str, Any]) -> dict[str, Any]:
+        """Canonicalise the legacy V2 inception date used in later calls.
+
+        V3 uses ISO ``YYYY-MM-DD``. V2's documented response instead uses
+        ``DD Mon YYYY`` (for example ``01 Jan 2009``). The inception date later
+        becomes a performance/value-series query parameter, so preserve all
+        other fields but convert this one when its format is recognised.
+        """
+        normalised = dict(detail)
+        raw_inception = normalised.get("inception_date")
+        if not isinstance(raw_inception, str) or not raw_inception:
+            return normalised
+
+        parsed = dt_util.parse_date(raw_inception)
+        if parsed is None:
+            try:
+                parsed = datetime.strptime(raw_inception, "%d %b %Y").date()
+            except ValueError:
+                return normalised
+        normalised["inception_date"] = parsed.isoformat()
+        return normalised
 
     def _portfolio_today(self) -> date:
         """Current calendar day in the portfolio's reporting timezone."""
@@ -620,10 +647,40 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
     @staticmethod
     def _fallback_endpoint(endpoint: Endpoint) -> Endpoint:
         """Equivalent endpoint using the configured fallback API version."""
+        fallback_version = str(endpoint.fallback_version)
+        path = endpoint.path
+        params = dict(endpoint.params) if endpoint.params is not None else None
+        # Every public V2 read route used by this integration is documented
+        # with the Rails ``.json`` suffix. Sharesight currently accepts the
+        # extensionless aliases, but using the canonical spelling prevents a
+        # proxy/version deployment from rejecting an otherwise valid fallback.
+        if fallback_version == "v2":
+            canonical_path = path.removesuffix(".json")
+            if canonical_path == "portfolios" or (
+                canonical_path.startswith("portfolios/") and canonical_path.count("/") == 1
+            ):
+                # The public V2 list/show routes document no query controls.
+                params = None
+            elif canonical_path.endswith("/performance") and params is not None:
+                # V3-only report controls are rejected or ignored by V2. Keep
+                # only parameters explicitly documented for both generations.
+                v2_performance_params = {
+                    "start_date",
+                    "end_date",
+                    "consolidated",
+                    "include_sales",
+                    "grouping",
+                    "custom_group_id",
+                }
+                params = {
+                    name: value for name, value in params.items() if name in v2_performance_params
+                }
+            if not path.endswith(".json"):
+                path = f"{path}.json"
         return Endpoint(
-            str(endpoint.fallback_version),
-            endpoint.path,
-            endpoint.params,
+            fallback_version,
+            path,
+            params,
             endpoint.key,
             heavy=endpoint.heavy,
             refresh_every=endpoint.refresh_every,
@@ -639,7 +696,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 self.sharesight, endpoint, access_token, self._ENDPOINT_TIMEOUT
             )
         except SharesightApiError as err:
-            self._request_gate.observe_headers(err.headers)
+            self._observe_response_headers(err.headers)
             if (
                 endpoint.fallback_version
                 and self._is_version_mismatch(err)
@@ -657,16 +714,51 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                         self._ENDPOINT_TIMEOUT,
                     )
                 except SharesightApiError as fallback_err:
-                    self._request_gate.observe_headers(fallback_err.headers)
+                    self._observe_response_headers(fallback_err.headers)
                     self._note_api_error(fallback_err)
                     raise
-                self._request_gate.observe_headers(fallback_result.headers)
+                self._observe_response_headers(fallback_result.headers)
                 self._fallback_routes.add(fallback_key)
                 return fallback_result.data
             self._note_api_error(err)
             raise
-        self._request_gate.observe_headers(result.headers)
+        self._observe_response_headers(result.headers)
         return result.data
+
+    def _observe_response_headers(self, headers: dict[str, str]) -> None:
+        """Apply request-budget and plan-limit response metadata."""
+        self._request_gate.observe_headers(headers)
+        normalised = {str(key).lower(): str(value) for key, value in headers.items()}
+        limit_raw = normalised.get("x-holdinglimit-limit")
+        total_raw = normalised.get("x-holdinglimit-total")
+        if limit_raw is None or total_raw is None:
+            return
+        try:
+            limit = int(limit_raw)
+            total = int(total_raw)
+        except ValueError:
+            return
+        if limit < 0 or total < 0:
+            return
+
+        self.holding_limit = {"limit": limit, "total": total}
+        issue_id = f"holding_limit_{self.entry.entry_id}"
+        if total > limit:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                is_persistent=False,
+                learn_more_url=(
+                    "https://github.com/Poshy163/HomeAssistant-Sharesight#known-limitations"
+                ),
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="holding_limit",
+                translation_placeholders={"limit": str(limit), "total": str(total)},
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     async def _gather(
         self, endpoints: Iterable[Endpoint], access_token: str
@@ -845,7 +937,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 heavy=True,
                 fallback_version="v2",
             ),
-            Endpoint("v3", "portfolios", None, None),
+            Endpoint("v3", "portfolios", None, None, fallback_version="v2"),
             Endpoint(
                 "v3",
                 f"portfolios/{pid}/performance",
@@ -967,14 +1059,14 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         pid = self.portfolio_id
         inception = self._portfolio_detail.get("inception_date")
         endpoints = [
-            Endpoint("v2", f"portfolios/{pid}/payouts", None, "payouts", refresh_every=12),
+            Endpoint("v2", f"portfolios/{pid}/payouts.json", None, "payouts", refresh_every=12),
             # Announced-but-not-yet-paid dividends.  The default payouts call
             # only covers inception -> today, so future payouts never appear
             # in it; this forward window feeds the next-dividend sensors and
             # the dividend calendar.
             Endpoint(
                 "v2",
-                f"portfolios/{pid}/payouts",
+                f"portfolios/{pid}/payouts.json",
                 {
                     "start_date": today.isoformat(),
                     "end_date": (today + timedelta(days=365)).isoformat(),
@@ -983,12 +1075,12 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 "upcoming_payouts",
                 refresh_every=12,
             ),
-            Endpoint("v2", f"portfolios/{pid}/trades", None, "trades"),
-            Endpoint("v2", "cash_accounts", None, "cash_accounts_v2", refresh_every=12),
+            Endpoint("v2", f"portfolios/{pid}/trades.json", None, "trades"),
+            Endpoint("v2", "cash_accounts.json", None, "cash_accounts_v2", refresh_every=12),
             Endpoint(
                 "v3", f"portfolios/{pid}/user_setting", None, "user_setting", refresh_every=12
             ),
-            Endpoint("v2", "user_instruments", None, "user_instruments", refresh_every=12),
+            Endpoint("v2", "user_instruments.json", None, "user_instruments", refresh_every=12),
             # Benchmark performance.  Only returns data when the user has set a
             # benchmark on the portfolio, and only this endpoint carries the
             # maximum-drawdown figures.  interest_method is matched to the
@@ -996,7 +1088,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             # computed on the same basis as the portfolio's.
             Endpoint(
                 "v3",
-                f"portfolios/{pid}/benchmark",
+                f"portfolios/{pid}/benchmark.json",
                 {
                     "start_date": inception or year_to_date_bounds(today)[0],
                     "end_date": today.isoformat(),
@@ -1021,7 +1113,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 [
                     Endpoint(
                         "v2",
-                        f"portfolios/{pid}/capital_gains",
+                        f"portfolios/{pid}/capital_gains.json",
                         {
                             "start_date": self.start_financial_year,
                             "end_date": min(self.end_financial_year, today.isoformat()),
@@ -1031,7 +1123,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     ),
                     Endpoint(
                         "v2",
-                        f"portfolios/{pid}/unrealised_cgt",
+                        f"portfolios/{pid}/unrealised_cgt.json",
                         {"balance_date": today.isoformat()},
                         "unrealised_cgt",
                         refresh_every=12,
@@ -1051,11 +1143,17 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         ``async_config_entry_first_refresh`` and before the first
         ``_async_update_data``.  A transient failure raises ``UpdateFailed`` so
         the base surfaces a retriable ``ConfigEntryNotReady``; a 404 (portfolio
-        deleted or access lost) raises ``ConfigEntryAuthFailed`` to trigger a
-        reconfigure.
+        deleted or access lost) raises ``ConfigEntryError`` with replacement
+        guidance rather than treating a missing portfolio as bad OAuth.
         """
         access_token = await self._refresh_token_with_retries()
-        endpoint = Endpoint("v3", f"portfolios/{self.portfolio_id}", None, None)
+        endpoint = Endpoint(
+            "v3",
+            f"portfolios/{self.portfolio_id}",
+            None,
+            None,
+            fallback_version="v2",
+        )
         try:
             local_data = await self._call(endpoint, access_token)
         except SharesightApiError as err:
@@ -1075,8 +1173,18 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 f"Sharesight startup fetch returned {type(local_data).__name__}, expected an object"
             )
 
+        # V3 wraps the result in {"portfolio": {...}}; the documented V2
+        # fallback returns the portfolio object bare.
         detail = local_data.get("portfolio")
-        self._portfolio_detail = detail if isinstance(detail, dict) else {}
+        if not isinstance(detail, dict):
+            detail = local_data
+        detail = self._normalise_portfolio_detail(detail)
+        if str(detail.get("id")) != str(self.portfolio_id):
+            raise UpdateFailed(
+                "Sharesight startup fetch did not identify the configured "
+                f"portfolio {self.portfolio_id}"
+            )
+        self._portfolio_detail = detail
         self.current_date = self._portfolio_today()
         self.start_financial_year, self.end_financial_year = get_financial_year_dates(
             self._portfolio_detail.get("financial_year_end"), self.current_date
@@ -1267,11 +1375,11 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 or endpoint.cooldown_key in self._optional_retry_keys
             )
         ]
-        parked = len(optional) - len(active)
+        deferred = len(optional) - len(active)
         _LOGGER.debug(
-            "Requesting %s optional Sharesight endpoints (%s parked)",
+            "Requesting %s optional Sharesight endpoints (%s deferred by cadence, cooldown, or capability)",
             len(active),
-            parked,
+            deferred,
         )
         attempted_optional_keys: set[str] = set()
         retryable_optional_failures: dict[str, str] = {}
@@ -1289,7 +1397,9 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     result if isinstance(result, SharesightApiError) else None,
                 )
                 source_key = endpoint.key or (
-                    "benchmark" if endpoint.path.endswith("/benchmark") else None
+                    "benchmark"
+                    if endpoint.path.removesuffix(".json").endswith("/benchmark")
+                    else None
                 )
                 if (
                     endpoint.refresh_every > 1
@@ -1356,6 +1466,18 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         """File a successful response under its key and remember it."""
         payload = response
         if (
+            endpoint.path.removesuffix(".json") == "portfolios"
+            and isinstance(payload, dict)
+            and isinstance(payload.get("portfolios"), list)
+        ):
+            payload = dict(payload)
+            payload["portfolios"] = [
+                self._normalise_portfolio_detail(portfolio)
+                if isinstance(portfolio, dict)
+                else portfolio
+                for portfolio in payload["portfolios"]
+            ]
+        if (
             endpoint.key
             and endpoint.path.endswith("/performance")
             and isinstance(payload, dict)
@@ -1420,7 +1542,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     account_id,
                     Endpoint(
                         "v2",
-                        f"cash_accounts/{account_id}/cash_account_transactions",
+                        f"cash_accounts/{account_id}/cash_account_transactions.json",
                         None,
                         None,
                     ),
@@ -2142,15 +2264,22 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             params["consolidated"] = "true" if consolidated else "false"
         if include_sales is not None:
             params["include_sales"] = "true" if include_sales else "false"
-        return await self._one_shot(
+        response = await self._one_shot(
             Endpoint(
                 "v3",
                 f"portfolios/{self.portfolio_id}/performance",
                 params,
                 None,
                 heavy=True,
+                fallback_version="v2",
             )
         )
+        # Public V3 wraps the report while the documented V2 equivalent is
+        # flat. Keep the service response stable regardless of which version
+        # served it; error blocks deliberately pass through unchanged.
+        if isinstance(response, dict) and isinstance(response.get("report"), dict):
+            return response["report"]
+        return response
 
     async def async_get_sharechecker(self, instrument_id: Any) -> Any:
         """One-shot V3 sharechecker fetch for an instrument."""
@@ -2162,11 +2291,11 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         """A holding's official average purchase price and cost base.
 
         Uses the public-tier ``GET /v3/holdings/{id}`` with both expansion
-        flags, which returns everything the two separate mobile-scoped
+        flags, which returns everything the two separate mobile-tagged
         ``average_purchase_price.json`` / ``cost_base.json`` calls did (and
         more) in one request that a standard token can actually reach.  Those
-        two remain the fallback for accounts where the combined call is
-        rejected.
+        two remain the fallback when the combined route is version-unavailable
+        or omits the requested cost fields.
         """
         combined = await self._one_shot(
             Endpoint(

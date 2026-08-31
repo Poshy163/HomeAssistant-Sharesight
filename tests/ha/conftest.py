@@ -84,12 +84,17 @@ def mock_config_entry_fixture(token: dict[str, Any]) -> MockConfigEntry:
 def api_response(endpoint: list[Any]) -> Any:
     """The fixture payload for one endpoint of the plan."""
     _version, path, params, _ = endpoint
+    canonical_path = path.removesuffix(".json")
     pid = PORTFOLIO_ID
-    if path == "portfolios":
+    if canonical_path == "portfolios":
         return {"portfolios": F.PORTFOLIOS}
-    if path == f"portfolios/{pid}":
+    if canonical_path == f"portfolios/{pid}":
+        if _version == "v2":
+            detail = dict(F.PORTFOLIO_DETAIL)
+            detail["inception_date"] = "18 Jul 2023"
+            return detail
         return {"portfolio": F.PORTFOLIO_DETAIL}
-    if path.endswith("/performance"):
+    if canonical_path.endswith("/performance"):
         if endpoint[0] == "v3":
             return {"report": F.performance_report()}
         return F.period_report(
@@ -97,31 +102,31 @@ def api_response(endpoint: list[Any]) -> Any:
             end_date=(params or {}).get("end_date", F.TODAY),
             capital_gain=100.0,
         )
-    if path.endswith("/payouts"):
+    if canonical_path.endswith("/payouts"):
         if params and params.get("start_date") == F.TODAY:
             return {"payouts": F.UPCOMING_PAYOUTS}
         return {"payouts": F.PAYOUTS}
-    if path.endswith("/trades"):
+    if canonical_path.endswith("/trades"):
         return {"trades": F.TRADES}
-    if path.endswith("/diversity"):
+    if canonical_path.endswith("/diversity"):
         return F.DIVERSITY_V2
-    if path == "cash_accounts":
+    if canonical_path == "cash_accounts":
         return {"cash_accounts": F.CASH_ACCOUNTS_V2}
     if "cash_account_transactions" in path:
         return {"cash_account_transactions": F.CASH_TRANSACTIONS}
     if path.endswith("/user_setting"):
         return F.USER_SETTING
-    if path == "user_instruments":
+    if canonical_path == "user_instruments":
         return F.USER_INSTRUMENTS
-    if path.endswith("/benchmark"):
+    if canonical_path.endswith("/benchmark"):
         return {"benchmark": F.BENCHMARK}
     if path == "my_user.json":
         return F.MY_USER
     if path == "watchlist.json":
         return F.WATCHLIST
-    if path.endswith("/capital_gains"):
+    if canonical_path.endswith("/capital_gains"):
         return F.CAPITAL_GAINS
-    if path.endswith("/unrealised_cgt"):
+    if canonical_path.endswith("/unrealised_cgt"):
         return F.UNREALISED_CGT
     if "portfolio_value_data" in path:
         return F.VALUE_SERIES

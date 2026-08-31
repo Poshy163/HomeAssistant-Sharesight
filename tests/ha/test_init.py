@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -13,6 +15,7 @@ from custom_components.sharesight import _LAST_OPTIONS
 from custom_components.sharesight.const import (
     ACCOUNT_STANDARD,
     CONF_ACCOUNT_TYPE,
+    CONF_ENABLE_HOLDING_ENTITIES,
     CONF_PORTFOLIO_ID,
     CONF_USE_EDGE,
     DOMAIN,
@@ -44,6 +47,22 @@ async def test_entry_sets_up_and_creates_entities(
     assert value is not None
     assert float(value.state) == 22000.0
     assert value.attributes["unit_of_measurement"] == "AUD"
+    # Pre-3.2 entries retain the historical per-holding default explicitly.
+    assert mock_config_entry.minor_version == 2
+    assert mock_config_entry.options[CONF_ENABLE_HOLDING_ENTITIES] is True
+
+
+async def test_setup_uses_config_entry_scoped_device_lookup(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, monkeypatch
+) -> None:
+    """Device nesting must not use HA's deprecated ambiguous registry lookup."""
+
+    def fail_deprecated_lookup(*_args, **_kwargs):
+        raise AssertionError("async_get_device must not be used")
+
+    monkeypatch.setattr(dr.DeviceRegistry, "async_get_device", fail_deprecated_lookup)
+
+    assert await setup_entry(hass, mock_config_entry)
 
 
 async def test_per_holding_entities_can_be_switched_off(
@@ -93,6 +112,50 @@ async def test_migration_from_version_two(hass: HomeAssistant, token) -> None:
     assert entry.data[CONF_ACCOUNT_TYPE] == ACCOUNT_STANDARD
     assert CONF_USE_EDGE not in entry.data
     assert entry.data["token"] == token
+    assert entry.minor_version == 2
+    assert entry.options[CONF_ENABLE_HOLDING_ENTITIES] is True
+
+
+async def test_missing_application_credential_creates_repair(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A deleted credential is actionable in Repairs, not only a retry log."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={**mock_config_entry.data, "auth_implementation": "deleted-credential"},
+    )
+
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    issue = ir.async_get(hass).async_get_issue(
+        DOMAIN, f"missing_application_credential_{mock_config_entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.ERROR
+
+
+async def test_holding_limit_header_creates_and_clears_repair(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    assert await setup_entry(hass, mock_config_entry)
+    coordinator = mock_config_entry.runtime_data.coordinator
+    issue_id = f"holding_limit_{mock_config_entry.entry_id}"
+
+    coordinator._observe_response_headers(
+        {"X-HoldingLimit-Limit": "20", "X-HoldingLimit-Total": "25"}
+    )
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_placeholders == {"limit": "20", "total": "25"}
+    assert coordinator.holding_limit == {"limit": 20, "total": 25}
+
+    coordinator._observe_response_headers(
+        {"X-HoldingLimit-Limit": "30", "X-HoldingLimit-Total": "25"}
+    )
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
 
 
 async def test_migration_from_version_one_asks_for_reauth(

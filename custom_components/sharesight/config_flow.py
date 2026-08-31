@@ -45,6 +45,7 @@ class SharesightConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, d
     """Handle the Sharesight config flow."""
 
     VERSION = 3
+    MINOR_VERSION = 2
     DOMAIN = DOMAIN
 
     def __init__(self) -> None:
@@ -97,12 +98,26 @@ class SharesightConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, d
         )
 
         try:
-            result = await async_request(
-                client,
-                Endpoint("v3", "portfolios"),
-                access_token,
-                30,
-            )
+            try:
+                result = await async_request(
+                    client,
+                    Endpoint("v3", "portfolios"),
+                    access_token,
+                    30,
+                )
+            except SharesightApiError as err:
+                # Sharesight asks consumers to try V3 first and V2 second.
+                # Only an explicit version rejection proves the token is
+                # otherwise valid and makes the public V2 list a safe retry.
+                reason = (err.reason or "").lower()
+                if err.status != 406 or "version" not in reason or "not supported" not in reason:
+                    raise
+                result = await async_request(
+                    client,
+                    Endpoint("v2", "portfolios.json"),
+                    access_token,
+                    30,
+                )
             response = result.data
             if not isinstance(response, dict):
                 return None

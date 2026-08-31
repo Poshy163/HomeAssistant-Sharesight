@@ -1,13 +1,13 @@
 # Sharesight API Reference (V2 + V3)
 
 > Working notes for the HomeAssistant-Sharesight integration.
-> Source of truth: the apiDoc-generated references at
-> <https://api.sharesight.com/api/2/doc/index.html> and
-> <https://api.sharesight.com/api/3/doc/index.html>
-> (also mirrored at `portfolio.sharesight.com`).
+> Source of truth: Sharesight's API landing page at
+> <https://portfolio.sharesight.com/api/> and the apiDoc-generated references at
+> <https://portfolio.sharesight.com/api/2/doc/index.html> and
+> <https://portfolio.sharesight.com/api/3/doc/index.html>.
 > Endpoint lists below were extracted from the live apiDoc data files
 > (`/api/2/doc/api_data.json`, `/api/3/doc/api_data.json`) and last
-> re-verified against a fresh scrape on 2026-08-27.
+> re-verified against a fresh scrape on 2026-08-31.
 >
 > **Counts, deduped by `(method, url)`:** 49 unique V2 endpoints (52 named
 > operations — the tables fold Create/Confirm/Reject onto one row) and 105
@@ -15,6 +15,8 @@
 > which is *not* unique — `Connection_ConsumerList` and
 > `Connection_ConsumerShow` each cover two different URLs — and so undercounted
 > V3 by two. See §8.
+> The one-row-per-method coverage decision for every route is in
+> [endpoint-usage.md](endpoint-usage.md).
 >
 > Docs are rendered client-side, so the human-readable `index.html` pages
 > only render in a browser; they are built entirely from the JSON data files.
@@ -42,28 +44,29 @@
 - **Token lifetime:** ~30 min (integration refreshes with a 300 s margin).
 - **Transport:** HTTPS only, JSON request/response.
 - **V2** holds the bulk of endpoints. **V3** is the newer surface; Sharesight
-  recommends checking V3 first and falling back to V2. Some V3 endpoints are
-  flagged closed beta / "methods may change without notice" — treat V3
-  response shapes as less stable than V2.
-- **Access tiers matter more than the version number.** Every apiDoc entry
-  carries a `version` string, and the suffix is the best predictor of whether
-  an ordinary API token can reach it:
+  recommends checking V3 first and falling back to V2. The complete V3 User
+  API is a closed beta whose methods may change without notice, so pin its
+  behaviour with tests and treat its response shapes as less stable than V2.
+- **Official apiDoc surface tags matter more than the version number.** Every
+  entry carries a `version` tag; suffixes predict whether an ordinary API token
+  is likely to reach it, but they are not OAuth scopes or alternate prefixes:
   - `3.0.0` / `2.0.0` — public User API surface. Still subject to account API
     enablement, holding limits and ordinary transient failures.
   - `3.0.0-internal` — Sharesight's own web app (`/totals`, `/overview`,
     `/reports`, `/labels`, `/currencies`, `/markets`, `/exchange_rates`).
-    Commonly unavailable to a standard token (`403`, or `406` when the public
-    version prefix is not supported by that route).
+    Commonly unavailable to a standard token (`403`, or `406` when the
+    route/version is unsupported or the account lacks capability).
   - `3.0.0-mobile` / `2.0.0-mobile` — the mobile app (`/watchlist.json`,
     `/value`, `portfolio_value_data.json`, `instrument_news.json`,
     `average_purchase_price.json`, `cost_base.json`). These can return `403`,
-    `404` or `406` when called with the wrong scope or version prefix.
+    `404` or `406` when the route/version is unsupported or the account lacks
+    capability.
   Prefer a public-tier endpoint wherever one can answer the same question; the
   integration now does (see §3).
-- **Mobile base paths.** The apiDoc gives mobile entries a base of
-  `/api/v2.0-mobile/` or `/api/v3.0-mobile/` rather than `/api/v2/` /
-  `/api/v3/`. Endpoints reached under the plain prefix may therefore return
-  `404` or `406` even for an otherwise valid token.
+- **Canonical V3 prefix.** Public, internal-tagged and mobile-tagged routes all
+  use `/api/v3/`. The `-internal` / `-mobile` suffixes annotate apiDoc entries;
+  they are not URL version components. Availability remains token- and
+  account-dependent.
 - A per-account **transaction log** (full XML/JSON request+response) is
   available in Sharesight account settings for debugging.
 
@@ -108,7 +111,7 @@ returned based on the user's plan. When capped, these response headers are set:
 - 3-concurrent heavy cap → a shared `SHARESIGHT_HEAVY_CONCURRENCY = 3` gate
   around the documented `/performance`, `/diversity` and `/valuation` routes
   across every loaded portfolio entry using the consumer app. The integration
-  conservatively puts `/benchmark` reports through the same gate as well.
+  conservatively puts `/benchmark.json` reports through the same gate as well.
 - General burst cap → a separate shared gate for ordinary requests.
 - 401 lockout → detected, then a 10-min consumer-app cooldown
   (`SHARESIGHT_LOCKOUT_COOLDOWN`) + `ConfigEntryAuthFailed`.
@@ -122,18 +125,23 @@ returned based on the user's plan. When capped, these response headers are set:
 
 ## 3. Endpoints currently used by this integration
 
-From [coordinator.py](../custom_components/sharesight/coordinator.py). The poll
-is organised in three tiers; see §2 for why.
+From [coordinator.py](../custom_components/sharesight/coordinator.py). Setup is
+separate from the three polling tiers; see §2 for the cadence rationale.
+
+### Setup — once before the first poll
+
+| Ver | Endpoint | Purpose |
+|-----|----------|---------|
+| V3 → V2 | `GET portfolios/{id}` → `GET portfolios/{id}.json` | Currency, country, inception date, time zone and `financial_year_end`; V2 is tried only after an explicit 406 version rejection, and its bare response/date format is normalised |
 
 ### Required tier — every poll, failure degrades the poll
 
 | Ver | Endpoint | Params the integration passes | Purpose |
 |-----|----------|-------------------------------|---------|
-| V3 | `GET portfolios/{id}` | — | Once at setup: currency, country, inception date, `financial_year_end` |
-| V3 | `GET portfolios` | — | Financial-year rollover, matched on **this** portfolio's id |
+| V3 → V2 | `GET portfolios` → `GET portfolios.json` | — | Financial-year rollover, matched on **this** portfolio's id; V2 only after an explicit 406 version rejection |
 | V3 | `GET portfolios/{id}/performance` | `grouping=market`, `include_limited=true`, `report_combined=true` | The combined report: value, the gain family, holdings, market sub-totals, cash accounts |
-| V3 → V2 | `GET portfolios/{id}/performance` | `start_date=end_date=today`, `grouping=market`, `include_sales=true` | Today's change; V2 is used only for a route/version mismatch |
-| V3 → V2 | `GET portfolios/{id}/performance` | Monday→today, same extras | Week to date; same fallback boundary |
+| V3 → V2 | `GET portfolios/{id}/performance` → `GET portfolios/{id}/performance.json` | `start_date=end_date=today`, `grouping=market`, `include_sales=true` | Today's change; V2 is used only for a route/version mismatch |
+| V3 → V2 | Same performance routes | Monday→today, same extras | Week to date; same fallback boundary |
 
 ### Slow tier — every 12th poll (≈ hourly), carried forward in between
 
@@ -143,25 +151,25 @@ is organised in three tiers; see §2 for why.
 | V3 → V2 | `GET portfolios/{id}/performance` | trailing 30 days | Monthly device |
 | V3 → V2 | `GET portfolios/{id}/performance` | 1 Jan → today | YTD device |
 | V3 → V2 | `GET portfolios/{id}/performance` | inception → today, `include_sales=true` | **All-time including sold positions**, using public performance routes rather than internal totals |
-| V3 | `GET portfolios/{id}/portfolio_value_data.json` | `start_date` = 45 days ago | Daily value series → trend, drawdown, volatility sensors |
+| V3 mobile-tagged | `GET portfolios/{id}/portfolio_value_data.json` | `start_date` = 45 days ago | Capability-gated daily value series → trend, drawdown, volatility sensors |
 | V3 → V2 | `GET portfolios/{id}/performance` | 3 m / 6 m / 1 y / 3 y / 5 y windows | **Opt-in** (`enable_extended_performance`) |
 
 ### Optional tier — each backs off independently, last payload carried forward
 
 | Ver | Endpoint | Params | Purpose / notes |
 |-----|----------|--------|-----------------|
-| V2 | `GET portfolios/{id}/payouts` | — | Income history (inception→today) |
-| V2 | `GET portfolios/{id}/payouts` | today→+1 y, `use_date=ex_date` | Announced dividends → next-dividend sensors, calendar, `dividend_announced` events; rejected rows are ignored |
-| V2 | `GET portfolios/{id}/trades` | — | Trade analytics, per-holding VWAP/brokerage |
-| V2 | `GET cash_accounts` | — | Cash accounts; also supplies the ids for the per-account transaction calls |
-| V2 | `GET cash_accounts/{id}/cash_account_transactions` | — | Contributions / withdrawals |
+| V2 | `GET portfolios/{id}/payouts.json` | — | Income history (inception→today) |
+| V2 | `GET portfolios/{id}/payouts.json` | today→+1 y, `use_date=ex_date` | Announced dividends → next-dividend sensors, calendar, `dividend_announced` events; rejected rows are ignored |
+| V2 | `GET portfolios/{id}/trades.json` | — | Trade analytics, per-holding VWAP/brokerage |
+| V2 | `GET cash_accounts.json` | — | Cash accounts; also supplies the ids for the per-account transaction calls |
+| V2 | `GET cash_accounts/{id}/cash_account_transactions.json` | — | Contributions / withdrawals |
 | V3 | `GET portfolios/{id}/user_setting` | — | Report-settings diagnostics |
-| V2 | `GET user_instruments` | — | P/E, EPS, NTA, price freshness |
-| V3 | `GET portfolios/{id}/benchmark` | inception→today, `interest_method` matched to the portfolio | Benchmark comparison, **plus the undocumented `maximum_drawdown` / `return_over_drawdown`** |
+| V2 | `GET user_instruments.json` | — | P/E, EPS, NTA, price freshness |
+| V3 internal-tagged | `GET portfolios/{id}/benchmark.json` | inception→today, `interest_method` matched to the portfolio | Capability-gated benchmark comparison, **plus the undocumented `maximum_drawdown` / `return_over_drawdown`** |
 | V2 | `GET my_user.json` | — | Plan tier, subscription health |
-| V3 | `GET watchlist.json` | — | Watchlist device (mobile-scoped) |
-| V2 | `GET portfolios/{id}/capital_gains` | financial-year bounds | AU only |
-| V2 | `GET portfolios/{id}/unrealised_cgt` | `balance_date=today` | AU only |
+| V3 mobile-tagged | `GET watchlist.json` | — | Watchlist device; capability-gated |
+| V2 | `GET portfolios/{id}/capital_gains.json` | financial-year bounds | AU only |
+| V2 | `GET portfolios/{id}/unrealised_cgt.json` | `balance_date=today` | AU only |
 
 > **Local derivations from fetched payloads.** Market devices/allocation come
 > from the combined performance report's market-grouped `sub_totals`; sector,
@@ -178,15 +186,17 @@ is organised in three tiers; see §2 for why.
 > returning an `{"error": …}` block:
 > - V3 `GET holdings/{id}?average_purchase_price=true&cost_base=true` — the
 >   `get_instrument_fundamentals` service. Public tier, and it returns strictly
->   more than the two mobile-scoped `average_purchase_price.json` /
+>   more than the two mobile-tagged `average_purchase_price.json` /
 >   `cost_base.json` calls it replaced (which remain as a fallback).
-> - V3 `GET instruments/{id}/sharechecker` — same service.
+> - V3 mobile-tagged `GET instruments/{id}/sharechecker` — same service.
 > - V2 `GET single_sign_on.json` — the `get_login_link` service. Rate-limit
 >   exempt; the URL it returns is a live session and is **never logged**.
-> - V3 `GET portfolios/{id}/performance` — the `generate_performance_report`
->   service.
-> - V3 `GET portfolios/{id}/portfolio_value_data.json` (inception→today) — the
->   long-term statistics backfill.
+> - V3 → V2 `GET portfolios/{id}/performance` →
+>   `GET portfolios/{id}/performance.json` — the
+>   `generate_performance_report` service; V2 is tried only after an explicit
+>   406 version rejection, and both response envelopes are normalised flat.
+> - V3 mobile-tagged `GET portfolios/{id}/portfolio_value_data.json`
+>   (inception→today) — the long-term statistics backfill.
 
 ### Deliberately not called
 
@@ -194,10 +204,11 @@ is organised in three tiers; see §2 for why.
 |----------|---------|
 | V3 `GET portfolios/{id}/holdings` | The performance report's `holdings` array is a strict superset — the standalone endpoint returns no quantity, value or gains at all. It was a wasted request on every poll |
 | V2 `GET portfolios/{id}/diversity` | Investigated, but redundant: market-grouped performance `sub_totals` already drive Top Market, while industry/sector allocation is derived from holding metadata. Removing it saves a calculation-heavy request and avoids mislabelling its default industry buckets as markets |
-| V3 `GET portfolios/{id}/totals` | Internal-scoped and unavailable to ordinary tokens. The integration uses the public `include_sales=true` performance window and does not call or consume this route |
+| V3 `GET portfolios/{id}/totals` | Internal-tagged and not reliable for ordinary OAuth applications. The integration uses the public `include_sales=true` performance window and does not call or consume this route |
 | V3 internal `GET markets`, `GET exchange_rates` | The supplied standard token returned a permanent version rejection. Market devices/allocation already come from performance `sub_totals`, and foreign-currency exposure comes from holding currencies; no live FX-rate or market-hours entities are created |
 | V2 mobile `GET portfolios/{id}/instrument_news.json` | The advertised mobile route was rejected by the supplied token, so it is not polled and the integration does not advertise a news sensor or event |
-| V3 `GET portfolios/{id}/overview`, `/reports`, `/labels` | Internal-scoped; nothing they return is unavailable elsewhere |
+| V3 `GET portfolios/{id}/overview` | Internal-tagged. It uniquely exposes `sold_at_end`, but an ordinary OAuth application cannot rely on it |
+| V3 `GET portfolios/{id}/reports`, `/labels` | Internal saved-report/label metadata; the integration consumes embedded holding labels and probes only optional routes whose data it uses |
 | V3 `GET portfolios/{id}/performance_index_chart` | Public tier and genuinely useful (growth-of-10 000 vs a benchmark) — see §9 |
 | V2 `GET instruments/{id}/prices.json`, `GET groups.json` | See §9 |
 
@@ -537,35 +548,39 @@ Superset of V2. Extra params the integration relies on:
 
 The read endpoints used by the coordinator do not expose page or cursor
 parameters in Sharesight's current API definitions, so the integration does
-not silently truncate a paginated portfolio feed. The documented list routes
-that do accept `page` / `per_page` are currently outside the polling plan:
+not silently truncate a paginated portfolio feed. The API client has dedicated
+typed helpers for the public custom-investment child routes below. They accept
+the opaque `pagination.page` cursor returned by Sharesight (it is not a numeric
+page) and remain outside Home Assistant's polling plan:
 
 - V3 `GET custom_investments/{instrument_id}/adjustments`
 - V3 `GET custom_investments/{instrument_id}/coupon_rates`
 - V3 `GET custom_investment/{id}/prices.json`
 - V3 internal `GET file_imports/{id}/items`
 
-If one of these surfaces is added later, its consumer must iterate the API's
-pagination metadata rather than assuming the first response is complete.
+The internal file-import route is not exposed as a typed client helper. Any
+future consumer must likewise iterate its pagination metadata rather than
+assuming the first response is complete.
 
 ---
 
 ## 7. Notable behavioural gotchas
 
 - **Sharesight documents `performance`/`diversity`/`valuation` as the routes
-  under the 3-concurrent cap.** The integration also gates `/benchmark`
+  under the 3-concurrent cap.** The integration also gates `/benchmark.json`
   conservatively; ordinary routes only count against the 360/min budget.
 - **Combined performance `sub_totals` can be empty or partial** (e.g. when a
   poll races a token refresh); a missing or malformed result carries the
   previous derived market breakdown forward to avoid sensor flap, while a
   valid empty list is treated as authoritative.
-- **404 on a portfolio** = deleted or access lost → treat as reauth, not a
-  transient error.
+- **404 on the configured portfolio** = deleted or access lost. OAuth can still
+  be valid, so setup raises a configuration error directing the user to add a
+  replacement portfolio rather than incorrectly starting reauthentication.
 - **AU-only reports**: `capital_gains` and `unrealised_cgt` only work for
   Australian portfolios.
-- **V3 is less stable**: some V3 endpoints are beta and "may change without
-  notice" — pin behaviour with tests and prefer V2 where a stable equivalent
-  exists (the integration mixes both deliberately).
+- **V3 is less stable**: the V3 User API is a closed beta whose methods may
+  change without notice — pin behaviour with tests and prefer V2 where a
+  stable equivalent exists (the integration mixes both deliberately).
 - Grouping vocabulary differs slightly between V2 (`markets`,
   `industry_classification`, ...) and V3 (adds `country`, `currency`,
   `custom_group`).
@@ -607,9 +622,10 @@ sensors.
 ## 8. Re-scraping the docs
 
 ```bash
-curl -s -o v2.json https://api.sharesight.com/api/2/doc/api_data.json
-curl -s -o v3.json https://api.sharesight.com/api/3/doc/api_data.json
-# same data is mirrored at https://portfolio.sharesight.com/api/{2,3}/doc/api_data.json
+curl -s -o v2.json https://portfolio.sharesight.com/api/2/doc/api_data.json
+curl -s -o v3.json https://portfolio.sharesight.com/api/3/doc/api_data.json
+# Authenticated calls still use the execution base declared by api_project.json:
+# https://api.sharesight.com/api/v2 and https://api.sharesight.com/api/v3
 ```
 
 Each entry has `type` (method), `url`, `title`, `name`, `group`, `version`,
@@ -628,13 +644,13 @@ fields, among others).
 
 ## 9. Unused endpoints worth revisiting
 
-Ordered by value, annotated with the access tier that decides whether an
-ordinary token can reach them.
+Ordered by value, annotated with the official surface tag that predicts whether
+an ordinary token can reach them.
 
 | Ver | Endpoint | Tier | What it would unlock |
 |-----|----------|------|----------------------|
 | V3 | `GET portfolios/{id}/performance_index_chart` | **public** | `dates` + `lines[]` where each line is `PORTFOLIO`, `BENCHMARK` or a group — a growth-of-10 000 series for an ApexCharts card, with per-market index lines included when `grouping=market`. Response caveat: the apiDoc field list wraps it in `performance_index_chart` while the example does not, and names the discriminator `type` rather than `line_type`. Parse defensively |
-| V2 | `GET instruments/{id}/prices.json` | public | `high`, `low`, `volume`, `last_traded_on`, `last_traded_value` — the only source of 52-week high/low and distance-from-high. Its cost scales with holding count, so it needs per-instrument backoff |
+| V2 | `GET instruments/{id}/prices.json` | mobile | `high`, `low`, `volume`, `last_traded_on`, `last_traded_value` — the only source of 52-week high/low and distance-from-high. Its mobile tag and one-request-per-holding cost require capability detection and per-instrument backoff |
 | V2 | `GET groups.json` | public | `groups[].id` + `.custom` — the ids that make `grouping=custom_group` usable on both performance endpoints, i.e. per-custom-group performance sensors |
 | V3 | `GET holdings/{id}?values_over_time=<date>` | public | Per-holding value history, for a per-holding long-term-statistics backfill |
 | V3 | `GET portfolios/{id}/performance?benchmark_code=X.Y` | public | Returns `report.benchmark` inline, which could fold per-period excess return (1 d / 1 w / 1 m / YTD / FY vs the benchmark) into the existing period reports |
@@ -643,4 +659,5 @@ ordinary token can reach them.
 | V3 | `GET portfolios/{id}/reports` | internal | `report_tiles[].show_full_report` — an authoritative entitlement probe, instead of learning by 403 |
 | V2 | `GET currencies.json`, V3 `GET countries`, `/cryptocurrencies` | mixed | Metadata only; nothing the payloads do not already carry |
 | V3 | `GET portfolios/{id}/value` | mobile | A single point-in-time balance. **Not** a series — `portfolio_value_data.json` is the series |
-| V3 | connections / file imports / custom investments / labels write APIs | internal | Write operations; out of scope for a read-only integration |
+| V3 | custom-investment/price/adjustment/coupon-rate writes | public | Financial-record mutations; available generically but deliberately excluded from Home Assistant |
+| V3 | connections, file imports, bulk custom prices and label writes | internal | Internal workflow/mutation surfaces; deliberately excluded |

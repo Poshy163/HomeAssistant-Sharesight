@@ -257,7 +257,7 @@ def test_endpoint_cooldown_key_separates_windows_of_one_path() -> None:
     """Past and upcoming payouts share a path and must back off separately."""
     coordinator = make_coordinator()
     optional = coordinator._optional_endpoints(TODAY)
-    payouts = [e for e in optional if e.path.endswith("/payouts")]
+    payouts = [e for e in optional if e.path.removesuffix(".json").endswith("/payouts")]
     assert len(payouts) == 2
     assert payouts[0].cooldown_key != payouts[1].cooldown_key
 
@@ -690,14 +690,14 @@ def test_api_error_classifies_header_only_403_budget_exhaustion() -> None:
 
 def test_api_error_detail_is_log_shaped() -> None:
     err = SharesightApiError(
-        Endpoint("v2", "portfolios/1/performance", None, "one-day"),
+        Endpoint("v2", "portfolios/1/performance.json", None, "one-day"),
         status=429,
         code=2004,
         reason="slow down",
         transaction_id=42,
     )
     assert err.detail == (
-        "endpoint=v2/portfolios/1/performance [one-day], status=429, "
+        "endpoint=v2/portfolios/1/performance.json [one-day], status=429, "
         "code=2004, reason=slow down, txn=42"
     )
 

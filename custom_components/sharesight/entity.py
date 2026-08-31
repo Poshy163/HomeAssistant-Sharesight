@@ -108,8 +108,8 @@ class SharesightBaseEntity(CoordinatorEntity[SharesightCoordinator]):
             # 2026.8 deprecates the tuple form and removes it in 2027.8. Keep a
             # feature-gated fallback for the declared 2026.7.4 minimum.
             if "via_device_id" in DeviceInfo.__annotations__:
-                hub = dr.async_get(self.coordinator.hass).async_get_device(
-                    identifiers={(DOMAIN, hub_identifier)}
+                hub = dr.async_get(self.coordinator.hass).async_get_device_by_identifier(
+                    (DOMAIN, hub_identifier), self.coordinator.entry.entry_id
                 )
                 if hub is not None:
                     device_info["via_device_id"] = hub.id

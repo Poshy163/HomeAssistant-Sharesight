@@ -14,6 +14,7 @@ from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from SharesightAPI.SharesightAPI import SharesightAPI
@@ -26,6 +27,7 @@ from .const import (
     API_URL_BASE,
     CONF_ACCOUNT_TYPE,
     CONF_AUTO_REMOVE_STALE_DEVICES,
+    CONF_ENABLE_HOLDING_ENTITIES,
     CONF_ENABLE_LTS_BACKFILL,
     CONF_PORTFOLIO_ID,
     CONF_USE_EDGE,
@@ -61,6 +63,11 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 # runtime_data during unload, and the update listener has to be able to
 # compare against the previous options even mid-reload.
 _LAST_OPTIONS: dict[str, dict[str, Any]] = {}
+
+
+def _credential_issue_id(entry: ConfigEntry) -> str:
+    """Return the entry-scoped Repairs issue identity."""
+    return f"missing_application_credential_{entry.entry_id}"
 
 
 def _migrate_developer_registry_identity(
@@ -148,36 +155,49 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     what they were really using, and the user can add a fresh developer entry
     with a developer credential.
     """
-    if entry.version >= 3:
+    if entry.version > 3 or (entry.version == 3 and getattr(entry, "minor_version", 1) >= 2):
         # HA never calls this for a newer entry than the handler supports, but
         # be explicit rather than silently rewriting a future schema.
         return True
 
     data = dict(entry.data)
-    was_edge = data.pop(CONF_USE_EDGE, False)
-    data[CONF_ACCOUNT_TYPE] = ACCOUNT_STANDARD
+    if entry.version < 3:
+        was_edge = data.pop(CONF_USE_EDGE, False)
+        data[CONF_ACCOUNT_TYPE] = ACCOUNT_STANDARD
 
-    if "auth_implementation" not in data or "token" not in data:
-        for key in _LEGACY_CREDENTIAL_KEYS:
-            data.pop(key, None)
-        _LOGGER.warning(
-            "Sharesight entry '%s' predates OAuth support. Its stored "
-            "credentials have been discarded; Home Assistant will ask you to "
-            "re-authenticate, which keeps all existing entities and history",
-            entry.title,
-        )
-    elif was_edge:
-        _LOGGER.warning(
-            "Sharesight entry '%s' had the old edge flag set. That flag never "
-            "switched the OAuth endpoints, so the entry was authenticating as a "
-            "standard account and could not have worked against the developer "
-            "sandbox. It has been migrated to a standard account. For sandbox "
-            "access, add a developer application credential and set up a new "
-            "entry",
-            entry.title,
-        )
+        if "auth_implementation" not in data or "token" not in data:
+            for key in _LEGACY_CREDENTIAL_KEYS:
+                data.pop(key, None)
+            _LOGGER.warning(
+                "Sharesight entry '%s' predates OAuth support. Its stored "
+                "credentials have been discarded; Home Assistant will ask you to "
+                "re-authenticate, which keeps all existing entities and history",
+                entry.title,
+            )
+        elif was_edge:
+            _LOGGER.warning(
+                "Sharesight entry '%s' had the old edge flag set. That flag never "
+                "switched the OAuth endpoints, so the entry was authenticating as a "
+                "standard account and could not have worked against the developer "
+                "sandbox. It has been migrated to a standard account. For sandbox "
+                "access, add a developer application credential and set up a new "
+                "entry",
+                entry.title,
+            )
 
-    hass.config_entries.async_update_entry(entry, data=data, version=3)
+    options = dict(entry.options)
+    # Before 3.2, holding entities were implicitly enabled. Persist that old
+    # default for upgraded entries before changing the new-entry default to
+    # opt-in, otherwise a restart would hide hundreds of existing entities.
+    options.setdefault(CONF_ENABLE_HOLDING_ENTITIES, True)
+
+    hass.config_entries.async_update_entry(
+        entry,
+        data=data,
+        options=options,
+        version=3,
+        minor_version=2,
+    )
     return True
 
 
@@ -208,10 +228,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -
             )
         except (ValueError, KeyError) as err:
             # The credential the entry was created against has been deleted.
-            # Retriable rather than fatal: the user may be re-adding it.
+            # Retriable rather than fatal: the user may be re-adding it. Also
+            # surface an actionable Repairs item; SETUP_RETRY alone is easy to
+            # miss and cannot explain which deployment needs a credential.
+            ir.async_create_issue(
+                hass,
+                DOMAIN,
+                _credential_issue_id(entry),
+                is_fixable=False,
+                is_persistent=False,
+                learn_more_url=(
+                    "https://github.com/Poshy163/HomeAssistant-Sharesight#prerequisites"
+                ),
+                severity=ir.IssueSeverity.ERROR,
+                translation_key="missing_application_credential",
+                translation_placeholders={"account_type": account_type},
+            )
             raise ConfigEntryNotReady(
                 f"Sharesight {account_type} account credential is unavailable"
             ) from err
+
+    ir.async_delete_issue(hass, DOMAIN, _credential_issue_id(entry))
 
     oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
     try:
@@ -374,6 +411,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: SharesightConfigEntry) 
     if unload_ok:
         _LAST_OPTIONS.pop(entry.entry_id, None)
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -> None:
+    """Remove entry-scoped Repairs issues when the portfolio is deleted."""
+    ir.async_delete_issue(hass, DOMAIN, _credential_issue_id(entry))
+    ir.async_delete_issue(hass, DOMAIN, f"holding_limit_{entry.entry_id}")
 
 
 async def update_listener(hass: HomeAssistant, entry: SharesightConfigEntry) -> None:

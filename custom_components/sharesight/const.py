@@ -50,10 +50,13 @@ CONF_ENABLE_EXTENDED_PERFORMANCE = "enable_extended_performance"
 DEFAULT_ENABLE_EXTENDED_PERFORMANCE = False
 
 # Per-holding entities are by far the biggest contributor to the entity count
-# (roughly 31 per holding).  Users who only want portfolio-level figures can
-# turn the whole family off rather than disabling them one by one.
+# (roughly 31 per holding). Keep the family opt-in for new entries so adding a
+# 25-holding portfolio does not silently create ~775 recorder-backed entities.
+# Entry minor-version migration 3.2 stores True for every pre-3.2 entry that
+# had no explicit option, preserving the behaviour and history of existing
+# installations.
 CONF_ENABLE_HOLDING_ENTITIES = "enable_holding_entities"
-DEFAULT_ENABLE_HOLDING_ENTITIES = True
+DEFAULT_ENABLE_HOLDING_ENTITIES = False
 
 # How long the coordinator may keep serving the previous payload before it
 # admits defeat.  Below this, a blip is smoothed over and sensors hold their

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 from homeassistant import config_entries
 from homeassistant.components.application_credentials import (
@@ -17,8 +18,10 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
+from SharesightAPI import SharesightResponse
 import voluptuous as vol
 
+from custom_components.sharesight.api import Endpoint, SharesightApiError
 from custom_components.sharesight.const import (
     ACCOUNT_DEVELOPER,
     ACCOUNT_STANDARD,
@@ -106,6 +109,82 @@ async def test_full_user_flow(
     assert result["data"][CONF_PORTFOLIO_ID] == PORTFOLIO_ID
     assert result["data"][CONF_ACCOUNT_TYPE] == ACCOUNT_STANDARD
     assert result["data"]["token"]["access_token"] == "mock-access-token"
+
+
+@pytest.mark.usefixtures("current_request_with_host", "setup_credentials")
+async def test_portfolio_picker_uses_canonical_v2_fallback_on_version_rejection(
+    hass: HomeAssistant,
+    hass_client_no_auth: ClientSessionGenerator,
+    aioclient_mock: AiohttpClientMocker,
+    mock_api: AsyncMock,
+) -> None:
+    """V2 is retried only for Sharesight's explicit 406 version response."""
+
+    async def versioned_response(endpoint: list[Any], _token: Any = None) -> SharesightResponse:
+        version, path, params, _ = endpoint
+        if version == "v3":
+            raise SharesightApiError(
+                Endpoint(version, path, params),
+                status=406,
+                reason="Version not supported",
+            )
+        return SharesightResponse(
+            data={"portfolios": [{"id": PORTFOLIO_ID, "name": "Fallback Portfolio"}]},
+            status=200,
+            headers={},
+            url="https://api.sharesight.com/api/v2/portfolios.json",
+        )
+
+    mock_api.side_effect = versioned_response
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ACCOUNT_TYPE: ACCOUNT_STANDARD}
+    )
+    result = await _complete_oauth(hass, hass_client_no_auth, aioclient_mock, result)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "portfolio"
+    assert [(call.args[0][0], call.args[0][1]) for call in mock_api.await_args_list] == [
+        ("v3", "portfolios"),
+        ("v2", "portfolios.json"),
+    ]
+
+
+@pytest.mark.usefixtures("current_request_with_host", "setup_credentials")
+async def test_portfolio_picker_does_not_fallback_for_non_version_errors(
+    hass: HomeAssistant,
+    hass_client_no_auth: ClientSessionGenerator,
+    aioclient_mock: AiohttpClientMocker,
+    mock_api: AsyncMock,
+) -> None:
+    """A missing portfolio surface must not be hidden by a V2 probe."""
+
+    async def missing_response(endpoint: list[Any], _token: Any = None) -> SharesightResponse:
+        version, path, params, _ = endpoint
+        if version != "v3":
+            pytest.fail(f"unexpected fallback request: {version}/{path}")
+        raise SharesightApiError(
+            Endpoint(version, path, params),
+            status=404,
+            reason="not found",
+        )
+
+    mock_api.side_effect = missing_response
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ACCOUNT_TYPE: ACCOUNT_STANDARD}
+    )
+    result = await _complete_oauth(hass, hass_client_no_auth, aioclient_mock, result)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
+    assert [(call.args[0][0], call.args[0][1]) for call in mock_api.await_args_list] == [
+        ("v3", "portfolios")
+    ]
 
 
 @pytest.mark.usefixtures("current_request_with_host", "setup_credentials")
@@ -231,6 +310,7 @@ async def test_options_flow(hass: HomeAssistant, mock_config_entry: MockConfigEn
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "init"
+    assert result["data_schema"]({})["enable_holding_entities"] is False
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],

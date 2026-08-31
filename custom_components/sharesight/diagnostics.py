@@ -143,6 +143,7 @@ async def async_get_config_entry_diagnostics(
             coordinator._request_gate, "minute_limit", None
         ),
         "observed_requests_remaining": getattr(coordinator._request_gate, "minute_remaining", None),
+        "holding_limit": coordinator.holding_limit,
     }
     diagnostics["endpoints"] = {
         "parked_count": len(_active_cooldowns(coordinator._optional_endpoint_cooldowns)),

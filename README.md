@@ -35,6 +35,17 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 
 ---
 
+## Upgrading to 2.2
+
+- **New portfolio entries no longer create per-holding entities by default.**
+  The family adds about 31 entities per live holding (roughly 775 entities for
+  a 25-holding portfolio), so it is now an explicit option under **Configure**.
+- **Existing entries are unchanged.** Config-entry minor-version migration
+  records the historical enabled setting before the default changes, keeping
+  every existing entity, entity ID, automation and recorder history intact.
+- Portfolio, market, cash, income, tax, benchmark, allocation and analytics
+  entities remain enabled independently of this option.
+
 ## Upgrading to 2.1
 
 **2.1 is a correctness and resilience release. No entity IDs change and no
@@ -84,8 +95,8 @@ reconfiguration is needed — but several sensors will start reporting different
   route. The four sensors use a public performance report with
   `include_sales=true`, preferring V3 and falling back to the equivalent V2
   route only for a route/version mismatch.
-- **Options:** *Create per-holding entities* (on by default — turn it off to
-  keep only portfolio-level figures) and *Add 3/6 month and 1/3/5 year windows*
+- **Options:** *Create per-holding entities* (off for new entries — existing
+  entries retain their prior enabled behaviour) and *Add 3/6 month and 1/3/5 year windows*
   (off by default).
 - **Portfolio identity is protected:** switching an existing entry to another
   portfolio would mint different device/entity identities and risk duplicate
@@ -202,6 +213,9 @@ After installation and restart:
 ---
 
 ## Sensors
+
+For a compact source-to-platform view including default enablement and refresh
+cadence, see the [entity coverage matrix](docs/entity-matrix.md).
 
 All sensors are organized into separate HA devices by category. Data refreshes every **5 minutes** by default; you can change the poll interval (60–3600 seconds) in the integration's **Options**, along with the long-term-statistics backfill and the automatic removal of [devices for sold holdings](#deleting-stale-devices).
 
@@ -424,7 +438,7 @@ Derived from already-fetched data, these flags give you something concrete to au
 | Watchlist Top Gainer / Top Loser (+ percent) | Biggest daily movers on your watchlist |
 | Watchlist `<CODE>` price / day change percent | Live price and today's percent change for each instrument on your watchlist (up to 50, all on the single Watchlist device; auto-discovered on each poll) |
 
-> The watchlist uses a mobile-scoped Sharesight route. If the loaded account
+> The watchlist uses a mobile-tagged Sharesight route. If the loaded account
 > cannot reach it, the endpoint is parked without affecting the portfolio's
 > public performance data.
 
@@ -487,7 +501,7 @@ installations; nothing here needs to be understood to use the integration.
 | **Poll interval (seconds)** | 300 | How often the portfolio is refreshed. Clamped to 60–3600; the shared request gate coordinates loaded portfolios against Sharesight's documented rate and concurrency limits |
 | **Backfill portfolio value history** | On | On startup, imports your whole inception-to-today daily value series into the Portfolio Value sensor's long-term statistics, so charts show years rather than days-since-install. Needs the value-data endpoint to be reachable for your API access |
 | **Automatically delete devices for sold holdings** | Off | See [Deleting stale devices](#deleting-stale-devices) |
-| **Create per-holding entities** | On | Per-holding entities dominate the entity count. Turning this off keeps only portfolio-level figures; existing entities are hidden rather than deleted, so turning it back on restores them with their history |
+| **Create per-holding entities** | Off for new entries; existing setting preserved | Adds about 31 entities per live holding. Existing entities are hidden rather than deleted when the option is off, so turning it back on restores them with their history |
 | **Add 3/6 month and 1/3/5 year windows** | Off | Adds locally named performance sensors for five additional windows on the slow tier |
 
 ### Extended performance windows
@@ -505,28 +519,29 @@ percent, capital gain and percent, and dividend gain and percent.
 ## Which API version is used, and why
 
 The integration deliberately mixes V2 and V3 rather than preferring the newer
-one. What decides it is not the version number but the **access tier**: many
-V3 endpoints are scoped to Sharesight's own web or mobile apps and may return
-`403`, `404` or `406` for an ordinary API token or an unsupported version
-prefix.
+one. The apiDoc **surface tag** is a better availability predictor than the
+version number: many V3 endpoints are tagged for Sharesight's own web or mobile
+apps and may return `403`, `404` or `406` when the route/version is unsupported
+or the account lacks capability. The tags are not OAuth scopes or URL prefixes.
 
 | Data | Source | Why |
 |------|--------|-----|
 | The combined report (value, gains, holdings, market sub-totals, cash) | **V3** `portfolios/{id}/performance` | Public tier; its response combines holdings with quantity, value and the full gain family |
 | Period windows (day, week, month, YTD, FY) | **V3** `portfolios/{id}/performance`, with V2 fallback for a route/version mismatch | Keeps one response shape where V3 is available while retaining a public V2 equivalent |
 | All-time including sold positions | **V3** `performance` with `include_sales=true`, with V2 fallback for a route/version mismatch | Public User API routes that include realised gains from exited positions |
-| Payouts, trades, cash accounts, instruments, user | **V2** | No V3 equivalent at the portfolio level |
-| Benchmark | **V3** | V2 has none — and this is the only source of the drawdown figures |
-| Value series and watchlist | **V3** | The watchlist route is mobile-scoped and parks quietly when unavailable |
+| Payouts, trades, cash accounts, instruments, user | **V2** | No equivalent public V3 aggregate; similarly named V3 routes are often internal-tagged |
+| Benchmark | **V3 internal-tagged** | V2 has none; capability-gated, and this is the only source of the drawdown figures |
+| Value series and watchlist | **V3 mobile-tagged** | Each parks quietly when unavailable to the account/token |
 | Per-market allocation | Combined performance `sub_totals` | No separate markets or exchange-rates route is polled |
 
 **Fallbacks.** Only where the two sources are genuinely equivalent:
 
 - All-time figures use the public inception-to-today performance window. The
   internal totals route is deliberately not called.
-- Per-instrument cost figures prefer the public `holdings/{id}` route and fall back
-  to the two mobile-scoped `average_purchase_price.json` / `cost_base.json`
-  calls only when the combined route is missing or version-incompatible.
+- Per-instrument cost figures prefer the public `holdings/{id}` route and fall
+  back to the two mobile-tagged `average_purchase_price.json` /
+  `cost_base.json` calls when the combined route is version-unavailable or
+  omits the requested cost fields.
 - Every optional endpoint falls back to **its own last good payload** while it
   is parked, for up to 12 hours, after which its sensors go unavailable rather
   than reporting something stale as current. A permanent `406` version mismatch
@@ -538,7 +553,9 @@ setup and asks you to add its replacement as a new entry.
 
 Full detail, including the exact parameters and the documented-vs-actual field
 discrepancies, is in
-[docs/sharesight-api-reference.md](docs/sharesight-api-reference.md).
+[docs/sharesight-api-reference.md](docs/sharesight-api-reference.md). The
+[complete endpoint usage inventory](docs/endpoint-usage.md) accounts for every
+one of the 49 V2 and 105 V3 method/path combinations.
 
 ---
 
@@ -639,7 +656,9 @@ portfolio currency.
 ### `sharesight.generate_performance_report`
 
 Fetches an on-demand performance report for an arbitrary date range and
-grouping.
+grouping. It prefers the public V3 route, retries the canonical V2 equivalent
+only after an explicit API-version rejection, and returns the same flat report
+shape whichever version answers.
 
 ```yaml
 action: sharesight.generate_performance_report
@@ -652,7 +671,7 @@ data:
 response_variable: report
 ```
 
-Response: the raw Sharesight performance report — `value`, `capital_gain(_percent)`, `payout_gain(_percent)`, `currency_gain(_percent)`, `total_gain(_percent)`, `start_date` / `end_date`, plus grouped `holdings` / `sub_totals`. On an API failure the response is `{ error: "..." }` rather than raising.
+Response: the Sharesight performance report — `value`, `capital_gain(_percent)`, `payout_gain(_percent)`, `currency_gain(_percent)`, `total_gain(_percent)`, `start_date` / `end_date`, plus grouped `holdings` / `sub_totals`. The V3 `report` envelope and flat V2 response are normalised to this flat contract. On an API failure the response is `{ error: "..." }` rather than raising.
 
 ### `sharesight.get_instrument_fundamentals`
 
@@ -812,6 +831,20 @@ Entity IDs: `button.sharesight_refresh_<portfolio_id>` and `button.sharesight_re
 
 ## Troubleshooting
 
+### Repairs
+
+Home Assistant creates an actionable Repairs item when the application
+credential used by an entry has been removed. Add a matching Standard or
+Developer credential under **Settings → Devices & services → Application
+credentials**; setup retries automatically and clears the issue after the
+credential is restored.
+
+Sharesight performance responses can also carry plan holding-limit headers. If
+the portfolio has more holdings than Sharesight will calculate, the integration
+creates a warning showing the reported total and limit. The issue clears when a
+later response confirms the portfolio is within the limit. No token, holding
+name, value or transaction data is included in either Repairs item.
+
 **Start with diagnostics.** *Settings → Devices & Services → Sharesight → the
 three-dot menu → **Download diagnostics***. The file is deliberately small and
 answers most questions directly: how old the data is, whether the API is in a
@@ -825,7 +858,7 @@ structural summaries, never raw rows.
   `degraded_reason` in diagnostics says why. It recovers on its own once
   Sharesight responds.
 - **Watchlist sensors show "Unknown"** — the watchlist comes from a
-  mobile-scoped route that an ordinary API token may not be entitled to. A
+  mobile-tagged route that an ordinary API token may not be entitled to. A
   temporary entitlement failure parks with exponential backoff; a permanent
   version mismatch is not retried every hour. Diagnostics reports the parked
   and unsupported counts without reproducing the endpoint payload.
@@ -913,7 +946,7 @@ structural summaries, never raw rows.
 | `entry` | Version, source, state, and the entry data with the token redacted |
 | `auth` | Account type, whether an OAuth implementation and access/refresh tokens are present, and token timing metadata — never the credential or tokens themselves |
 | `coordinator` | Whether it is loaded, when the data was really fetched and how old it is, whether it is degraded and why, the poll interval, the resolved portfolio currency and the financial-year bounds |
-| `api` | Base URL, versions in use, whether a cooldown is active and why, and the documented rate limits |
+| `api` | Base URL, versions in use, cooldown state, documented rate limits and any observed holding calculation limit |
 | `endpoints` | Parked/unsupported counts, carried-forward cache ages and a logged-failure count |
 | `options_effective` | Every option with its effective value, defaults filled in |
 | `entities` | Entity counts per platform and how many you have disabled |
@@ -976,4 +1009,5 @@ financial year.
 ## Links
 
 - [Sharesight API Documentation](https://portfolio.sharesight.com/api/)
+- [Complete V2/V3 endpoint usage inventory](docs/endpoint-usage.md)
 - [Report Issues](https://github.com/Poshy163/HomeAssistant-Sharesight/issues)
