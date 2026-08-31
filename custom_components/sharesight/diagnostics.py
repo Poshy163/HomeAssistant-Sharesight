@@ -135,7 +135,7 @@ async def async_get_config_entry_diagnostics(
         "lockout_active": coordinator.lockout_seconds_remaining > 0,
         "lockout_seconds_remaining": coordinator.lockout_seconds_remaining,
         "lockout_reason_present": coordinator._lockout_reason is not None,
-        # SharesightAPI 1.4 returns response-local metadata, so concurrent
+        # SharesightAPI returns response-local metadata, so concurrent
         # requests can safely feed the shared application-level gate.
         "documented_requests_per_minute": 360,
         "documented_concurrent_report_limit": 3,

@@ -23,7 +23,7 @@ connection errors, and the 200-with-an-error-body case - into a single
 line a consistent ``endpoint=v3/portfolios/1 [report], status=429, code=...``
 suffix.
 
-SharesightAPI 1.4 exposes response metadata without mutable client-wide state.
+SharesightAPI exposes response metadata without mutable client-wide state.
 That lets every coordinator feed the same app-scoped request gate with live
 minute-budget headers even while requests are concurrent.
 """

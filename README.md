@@ -124,7 +124,7 @@ reconfiguration is needed — but several sensors will start reporting different
 
 **Minimum Home Assistant version is now 2026.7.4.** This is the first Home
 Assistant release whose `aiohttp` 3.14.3 requirement matches SharesightAPI
-1.4.0.
+1.5.0.
 
 ---
 

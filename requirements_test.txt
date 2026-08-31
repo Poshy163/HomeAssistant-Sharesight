@@ -9,4 +9,4 @@ pytest-cov==7.1.0
 
 # The integration's own runtime requirement (mirrors manifest.json), so the
 # import of custom_components.sharesight resolves during tests.
-SharesightAPI==1.4.0
+SharesightAPI==1.5.0

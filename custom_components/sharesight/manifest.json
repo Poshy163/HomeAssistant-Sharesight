@@ -20,7 +20,7 @@
     "custom_components.sharesight"
   ],
   "requirements": [
-    "SharesightAPI==1.4.0"
+    "SharesightAPI==1.5.0"
   ],
   "version": "2.2.0"
 }
