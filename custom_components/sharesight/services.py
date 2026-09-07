@@ -1,7 +1,7 @@
 """Response services for the Sharesight integration.
 
-Seven SupportsResponse.ONLY services that mine the data the coordinator already
-holds (or, for the last three, make a single on-demand call) and return it as a
+SupportsResponse.ONLY services that mine the data the coordinator already
+holds or make on-demand calls and return it as a
 structured response for scripts/templates:
 
 - get_portfolio_summary   — headline value / period gains / movers / income.
@@ -12,6 +12,9 @@ structured response for scripts/templates:
 - get_instrument_fundamentals — per-instrument sharechecker + official cost
   figures for one held symbol (one-shot mobile/V3 calls).
 - get_login_link          — a one-minute single-sign-on URL for the portfolio.
+- get_holding_value_history — dated value observations for one held symbol.
+- get_instrument_price_history — one page of a held instrument's price history.
+- get_portfolio_value     — a lightweight fresh portfolio balance.
 
 Each service selects the portfolio via an optional config_entry_id or
 device_id, falling back to the sole configured portfolio and raising a clear
@@ -27,7 +30,7 @@ from __future__ import annotations
 from datetime import datetime
 import functools
 import logging
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_DEVICE_ID
@@ -40,6 +43,12 @@ from homeassistant.core import (
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from SharesightAPI import (
+    InstrumentPrice,
+    InstrumentPricesResponse,
+    PerformanceReport,
+    SharecheckerResponse,
+)
 import voluptuous as vol
 
 from . import analytics
@@ -56,6 +65,13 @@ from .sensor import (
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
+
+class InstrumentPriceHistoryResponse(InstrumentPricesResponse, total=False):
+    """Accept the official apiDoc envelope missing from the 1.6.0 model."""
+
+    instrument_prices: list[InstrumentPrice]
+
+
 SERVICE_GET_PORTFOLIO_SUMMARY = "get_portfolio_summary"
 SERVICE_GET_HOLDINGS = "get_holdings"
 SERVICE_GET_INCOME = "get_income"
@@ -63,6 +79,9 @@ SERVICE_EXPORT_RAW_SNAPSHOT = "export_raw_snapshot"
 SERVICE_GENERATE_PERFORMANCE_REPORT = "generate_performance_report"
 SERVICE_GET_INSTRUMENT_FUNDAMENTALS = "get_instrument_fundamentals"
 SERVICE_GET_LOGIN_LINK = "get_login_link"
+SERVICE_GET_HOLDING_VALUE_HISTORY = "get_holding_value_history"
+SERVICE_GET_INSTRUMENT_PRICE_HISTORY = "get_instrument_price_history"
+SERVICE_GET_PORTFOLIO_VALUE = "get_portfolio_value"
 
 _SERVICES = (
     SERVICE_GET_PORTFOLIO_SUMMARY,
@@ -72,6 +91,9 @@ _SERVICES = (
     SERVICE_GENERATE_PERFORMANCE_REPORT,
     SERVICE_GET_INSTRUMENT_FUNDAMENTALS,
     SERVICE_GET_LOGIN_LINK,
+    SERVICE_GET_HOLDING_VALUE_HISTORY,
+    SERVICE_GET_INSTRUMENT_PRICE_HISTORY,
+    SERVICE_GET_PORTFOLIO_VALUE,
 )
 
 CONF_CONFIG_ENTRY_ID = "config_entry_id"
@@ -153,6 +175,15 @@ GET_INSTRUMENT_FUNDAMENTALS_SCHEMA = vol.Schema(
     }
 )
 GET_LOGIN_LINK_SCHEMA = vol.Schema({**_TARGET_FIELDS})
+GET_PORTFOLIO_VALUE_SCHEMA = vol.Schema({**_TARGET_FIELDS})
+GET_HISTORY_SCHEMA = vol.Schema(
+    {
+        **_TARGET_FIELDS,
+        vol.Required(CONF_SYMBOL): cv.string,
+        vol.Required(CONF_START_DATE): cv.string,
+        vol.Required(CONF_END_DATE): cv.string,
+    }
+)
 
 
 def _loaded_entries(hass: HomeAssistant) -> list[SharesightConfigEntry]:
@@ -277,7 +308,7 @@ def _period_gain(data: dict[str, Any], key: str) -> dict[str, Any]:
     }
 
 
-def _total_cash(report: dict[str, Any]) -> float:
+def _total_cash(report: PerformanceReport) -> float:
     """Sum the report's cash-account balances."""
     total = 0.0
     cash_accounts = report.get("cash_accounts", []) if isinstance(report, dict) else []
@@ -305,16 +336,24 @@ def _resolve_instrument(coordinator: Any, symbol: str) -> tuple[Any, Any, str | 
     target = (symbol or "").strip().upper()
     if not target:
         return None, None, None
+    matches = []
     for holding in holdings_data.get("holdings", []) or []:
         if not isinstance(holding, dict):
             continue
         hsym = (_get_holding_symbol(holding) or "").upper()
-        if hsym and hsym == target:
+        market = analytics.holding_market(holding)
+        if hsym and target in {hsym, f"{hsym}.{market}".upper()}:
             instrument = holding.get("instrument") or {}
             instrument_id = instrument.get("id") or holding.get("instrument_id")
             holding_id = holding.get("id") or holding.get("holding_id")
-            return instrument_id, holding_id, _get_holding_symbol(holding)
-    return None, None, None
+            matches.append((instrument_id, holding_id, _get_holding_symbol(holding)))
+    if len(matches) > 1:
+        raise ServiceValidationError(
+            "Symbol is ambiguous; use CODE.MARKET to select the exchange",
+            translation_domain=DOMAIN,
+            translation_key="ambiguous_symbol",
+        )
+    return matches[0] if matches else (None, None, None)
 
 
 def _currency_code(obj: Any) -> Any:
@@ -324,7 +363,7 @@ def _currency_code(obj: Any) -> Any:
     return obj
 
 
-def _extract_sharechecker(resp: Any) -> dict[str, Any]:
+def _extract_sharechecker(resp: SharecheckerResponse | dict[str, Any]) -> dict[str, Any]:
     """Curate the V3 sharechecker payload down to the useful scalar figures.
 
     Passes an ``{"error": ...}`` envelope straight through, and deliberately
@@ -649,6 +688,114 @@ async def _get_login_link(hass: HomeAssistant, call: ServiceCall) -> ServiceResp
     return {"login_url": None, "error": "Single sign-on link unavailable"}
 
 
+def _history_target(hass: HomeAssistant, call: ServiceCall) -> tuple[Any, Any, Any, str, str, str]:
+    """Resolve a held symbol and validate a bounded historical window before I/O."""
+    coordinator = _resolve_coordinator(hass, call)
+    _reject_while_on_cooldown(coordinator)
+    start = _validate_date(call.data[CONF_START_DATE], CONF_START_DATE)
+    end = _validate_date(call.data[CONF_END_DATE], CONF_END_DATE)
+    first = datetime.strptime(start, "%Y-%m-%d").date()
+    last = datetime.strptime(end, "%Y-%m-%d").date()
+    if first > last or (last - first).days >= 366 or last > coordinator.current_date:
+        raise ServiceValidationError(
+            "History requires start_date <= end_date, at most 366 days, and no future dates",
+            translation_domain=DOMAIN,
+            translation_key="invalid_history_range",
+        )
+    symbol = call.data[CONF_SYMBOL]
+    instrument_id, holding_id, resolved = _resolve_instrument(coordinator, symbol)
+    if resolved is None:
+        raise ServiceValidationError(
+            f"No holding found for symbol {symbol!r}",
+            translation_domain=DOMAIN,
+            translation_key="symbol_not_held",
+            translation_placeholders={"symbol": symbol},
+        )
+    return coordinator, instrument_id, holding_id, resolved, first.isoformat(), last.isoformat()
+
+
+async def _get_holding_value_history(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    coordinator, _, holding_id, symbol, start, end = _history_target(hass, call)
+    if holding_id is None:
+        return {"symbol": symbol, "error": "Holding identifier unavailable"}
+    response = await coordinator.async_get_holding_value_history(holding_id, start)
+    if isinstance(response, dict) and "error" in response:
+        return response
+    raw = analytics.value_series_data(response)
+    all_points = analytics._value_series_points(response)
+    if (
+        not isinstance(raw, (list, dict))
+        or (isinstance(raw, dict) and not raw)
+        or (raw and not all_points)
+    ):
+        return {"symbol": symbol, "error": "Value history unavailable"}
+    # This endpoint only accepts a start date. Apply the requested end locally.
+    points = [{"date": day, "value": value} for day, value in all_points if start <= day <= end]
+    currency = _currency_code(response.get("currency")) if isinstance(response, dict) else None
+    return {
+        "symbol": symbol,
+        "start_date": start,
+        "end_date": end,
+        "currency": currency if isinstance(currency, str) else None,
+        "points": points,
+        "count": len(points),
+    }
+
+
+async def _get_instrument_price_history(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    coordinator, instrument_id, _, symbol, start, end = _history_target(hass, call)
+    if instrument_id is None:
+        return {"symbol": symbol, "error": "Instrument identifier unavailable"}
+    response = await coordinator.async_get_instrument_price_history(instrument_id, start, end)
+    if isinstance(response, dict) and "error" in response:
+        return response
+    if not isinstance(response, dict):
+        return {"symbol": symbol, "error": "Price history unavailable"}
+    payload = cast(InstrumentPriceHistoryResponse, response)
+    # 1.6.0 models "prices"; the official V2 apiDoc documents "instrument_prices".
+    # Both retain exactly the source rows, including OHLC/volume/value fields.
+    source_prices = payload.get("prices", payload.get("instrument_prices"))
+    if not isinstance(source_prices, list):
+        return {"symbol": symbol, "error": "Price history unavailable"}
+    prices = []
+    for row in source_prices:
+        if not isinstance(row, dict):
+            continue
+        day = analytics._parse_date(row.get("date") or row.get("last_traded_on"))
+        if day is not None and start <= day.isoformat() <= end:
+            # Preserve OHLC, volume and other source fields, including zeroes.
+            prices.append({**row, "date": day.isoformat()})
+    prices.sort(key=lambda row: row["date"])
+    holdings = (coordinator.data or {}).get("holdings", {}).get("holdings", [])
+    currency = next(
+        (
+            analytics.holding_currency(h)
+            for h in holdings
+            if isinstance(h, dict)
+            and str((h.get("instrument") or {}).get("id") or h.get("instrument_id"))
+            == str(instrument_id)
+        ),
+        None,
+    )
+    links = payload.get("links")
+    # A single page keeps each action bounded. Do not claim pagination is complete.
+    return {
+        "symbol": symbol,
+        "start_date": start,
+        "end_date": end,
+        "currency": currency,
+        "prices": prices,
+        "count": len(prices),
+        "has_more": bool(links.get("next")) if isinstance(links, dict) else False,
+    }
+
+
+async def _get_portfolio_value(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
+    coordinator = _resolve_coordinator(hass, call)
+    _reject_while_on_cooldown(coordinator)
+    return await coordinator.async_get_portfolio_value()
+
+
 def async_setup_services(hass: HomeAssistant) -> None:
     """Register the Sharesight response services (idempotent, domain-global)."""
     definitions = (
@@ -671,6 +818,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
             GET_INSTRUMENT_FUNDAMENTALS_SCHEMA,
         ),
         (SERVICE_GET_LOGIN_LINK, _get_login_link, GET_LOGIN_LINK_SCHEMA),
+        (SERVICE_GET_HOLDING_VALUE_HISTORY, _get_holding_value_history, GET_HISTORY_SCHEMA),
+        (SERVICE_GET_INSTRUMENT_PRICE_HISTORY, _get_instrument_price_history, GET_HISTORY_SCHEMA),
+        (SERVICE_GET_PORTFOLIO_VALUE, _get_portfolio_value, GET_PORTFOLIO_VALUE_SCHEMA),
     )
     for name, handler, schema in definitions:
         if hass.services.has_service(DOMAIN, name):

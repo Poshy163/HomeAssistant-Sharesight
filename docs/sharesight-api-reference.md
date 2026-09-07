@@ -210,7 +210,7 @@ separate from the three polling tiers; see §2 for the cadence rationale.
 | V3 `GET portfolios/{id}/overview` | Internal-tagged. It uniquely exposes `sold_at_end`, but an ordinary OAuth application cannot rely on it |
 | V3 `GET portfolios/{id}/reports`, `/labels` | Internal saved-report/label metadata; the integration consumes embedded holding labels and probes only optional routes whose data it uses |
 | V3 `GET portfolios/{id}/performance_index_chart` | Public tier and genuinely useful (growth-of-10 000 vs a benchmark) — see §9 |
-| V2 `GET instruments/{id}/prices.json`, `GET groups.json` | See §9 |
+| V2 `GET groups.json` | See §9; instrument prices are now available on demand through `get_instrument_price_history` |
 | `grouping=custom_group` performance reports | One heavy report per custom group on every poll, and the supplied standard token could not verify the route. Market grouping is polled; custom groups and custom periods are available on demand through the `generate_performance_report` service |
 
 ---
@@ -325,7 +325,7 @@ Full path = `https://api.sharesight.com/api/v3` + path shown.
 | GET | `/portfolios/{id}/performance` | Performance report (heavy) |
 | GET | `/portfolios/{portfolio_id}/overview` | Overview: holdings + cash, "performance minus calculations" |
 | GET | `/portfolios/{portfolio_id}/totals` | Inception-to-date total performance |
-| GET | `/portfolios/{portfolio_id}/value` | Portfolio value **as at now** — a single balance, not a series (its only params are `consolidated`/`currency_code`). Unused by the integration; use `portfolio_value_data.json` for a series |
+| GET | `/portfolios/{portfolio_id}/value` | Portfolio value **as at now** — a single balance, not a series (its only params are `consolidated`/`currency_code`). Used by the on-demand `get_portfolio_value` action; use `portfolio_value_data.json` for a series |
 | GET | `/portfolios/{portfolio_id}/benchmark.json` | Benchmark performance report |
 | GET | `/portfolios/{portfolio_id}/performance_index_chart` | Index chart data |
 | GET | `/portfolios/{portfolio_id}/reports` | List reports |

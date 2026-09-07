@@ -17,6 +17,20 @@ import itertools
 import math
 from typing import Any
 
+from SharesightAPI import (
+    CapitalGainsReport,
+    Holding,
+    Payout,
+    Trade,
+    UnrealisedCgtReport,
+    UserInstrumentsResponse,
+    ValuePoint,
+    ValueSeriesResponse,
+)
+
+# Legacy wrappers remain accepted at runtime alongside the documented 1.6.0 shapes.
+type ValueSeriesPayload = ValueSeriesResponse | list[ValuePoint] | dict[str, Any] | None
+
 
 def _f(value: Any) -> float | None:
     """Best-effort finite float coercion (None on failure)."""
@@ -120,7 +134,7 @@ def monetary_amount_details(
 
 
 def brokerage_to_portfolio_currency(
-    trade: dict[str, Any],
+    trade: Trade,
     amount: Any,
     portfolio_currency: str | None,
     instrument_currency: str | None = None,
@@ -155,7 +169,7 @@ def brokerage_to_portfolio_currency(
     return to_portfolio_currency(trade, raw)
 
 
-def holding_currency(holding: dict[str, Any]) -> str | None:
+def holding_currency(holding: Holding) -> str | None:
     """The instrument's own currency code for a holding.
 
     The V3 report/holdings rows carry it as ``instrument_currency.code``; the
@@ -175,7 +189,7 @@ def holding_currency(holding: dict[str, Any]) -> str | None:
     return None
 
 
-def holding_symbol(holding: dict[str, Any]) -> str | None:
+def holding_symbol(holding: Holding) -> str | None:
     """Instrument symbol/code for a holding, tolerating shape differences."""
     if not isinstance(holding, dict):
         return None
@@ -188,7 +202,7 @@ def holding_symbol(holding: dict[str, Any]) -> str | None:
     )
 
 
-def holding_market(holding: dict[str, Any]) -> str | None:
+def holding_market(holding: Holding) -> str | None:
     """Market code for a holding, tolerating shape differences."""
     if not isinstance(holding, dict):
         return None
@@ -210,7 +224,7 @@ _CLOSED_QUANTITY_EPSILON = 1e-4
 _CLOSED_VALUE_EPSILON = 0.005
 
 
-def _first_number(holding: dict[str, Any], fields: tuple[str, ...]) -> float | None:
+def _first_number(holding: Holding, fields: tuple[str, ...]) -> float | None:
     """First field of ``fields`` present on ``holding`` as a float."""
     for field in fields:
         number = _f(holding.get(field))
@@ -219,7 +233,7 @@ def _first_number(holding: dict[str, Any], fields: tuple[str, ...]) -> float | N
     return None
 
 
-def is_open_position(holding: dict[str, Any]) -> bool:
+def is_open_position(holding: Holding) -> bool:
     """Whether a holding row still represents a position the user holds.
 
     The performance report is requested with ``include_sales=false``, so a
@@ -248,7 +262,7 @@ def is_open_position(holding: dict[str, Any]) -> bool:
     return value is not None and abs(value) >= _CLOSED_VALUE_EPSILON
 
 
-def _holding_cost_base(holding: dict[str, Any]) -> float | None:
+def _holding_cost_base(holding: Holding) -> float | None:
     """Cost base for a holding: use the field if present, else value - gain."""
     cost_base = _f(holding.get("cost_base"))
     if cost_base is not None:
@@ -260,7 +274,9 @@ def _holding_cost_base(holding: dict[str, Any]) -> float | None:
     return None
 
 
-def build_instrument_lookup(user_instruments_data: Any) -> dict[str, dict[str, Any]]:
+def build_instrument_lookup(
+    user_instruments_data: UserInstrumentsResponse | None,
+) -> dict[str, dict[str, Any]]:
     """Index the user_instruments feed by "CODE.MARKET", "CODE" and "id:<n>".
 
     Returns a flat dict of string keys -> a compact instrument-detail dict so
@@ -299,9 +315,7 @@ def build_instrument_lookup(user_instruments_data: Any) -> dict[str, dict[str, A
     return lookup
 
 
-def lookup_instrument(
-    lookup: dict[str, dict[str, Any]], holding: dict[str, Any]
-) -> dict[str, Any] | None:
+def lookup_instrument(lookup: dict[str, dict[str, Any]], holding: Holding) -> dict[str, Any] | None:
     """Resolve a holding to its instrument-detail subset via code/market/id."""
     if not lookup:
         return None
@@ -325,7 +339,7 @@ def lookup_instrument(
 _MAX_PLAUSIBLE_YIELD_PERCENT = 200.0
 
 
-def payout_pay_date(payout: dict[str, Any]) -> str | None:
+def payout_pay_date(payout: Payout) -> str | None:
     """The date a payout was (or will be) paid, tolerating shape differences."""
     for field in ("paid_on", "pay_date", "date"):
         value = payout.get(field)
@@ -334,7 +348,7 @@ def payout_pay_date(payout: dict[str, Any]) -> str | None:
     return None
 
 
-def payout_ex_date(payout: dict[str, Any]) -> str | None:
+def payout_ex_date(payout: Payout) -> str | None:
     """The date a payout goes ex-dividend.
 
     Sharesight's V2 payout calls this ``goes_ex_on``; only the integration's
@@ -351,7 +365,7 @@ def payout_ex_date(payout: dict[str, Any]) -> str | None:
     return None
 
 
-def holding_symbol_aliases(holding: dict[str, Any]) -> set[str]:
+def holding_symbol_aliases(holding: Holding) -> set[str]:
     """Every spelling of a holding's symbol that appears in the codebase.
 
     ``holding_symbol`` resolves ``instrument_code -> instrument.code -> code ->
@@ -376,7 +390,7 @@ def holding_symbol_aliases(holding: dict[str, Any]) -> set[str]:
     return {str(value) for value in candidates if value}
 
 
-def _alias_entries(result: dict[str, dict[str, Any]], holdings: list[dict[str, Any]]) -> None:
+def _alias_entries(result: dict[str, dict[str, Any]], holdings: list[Holding]) -> None:
     """Point every alias of a held symbol at the same entry object."""
     for holding in holdings or []:
         primary = holding_symbol(holding)
@@ -387,7 +401,7 @@ def _alias_entries(result: dict[str, dict[str, Any]], holdings: list[dict[str, A
             result.setdefault(alias, entry)
 
 
-def _holding_id_to_symbol(holdings: list[dict[str, Any]]) -> dict[str, str]:
+def _holding_id_to_symbol(holdings: list[Holding]) -> dict[str, str]:
     """Map str(holding_id) -> symbol for joining payouts/trades to holdings."""
     mapping: dict[str, str] = {}
     for holding in holdings or []:
@@ -401,8 +415,8 @@ def _holding_id_to_symbol(holdings: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def build_holding_income(
-    payouts: list[dict[str, Any]],
-    holdings: list[dict[str, Any]],
+    payouts: list[Payout],
+    holdings: list[Holding],
     today: date,
 ) -> dict[str, dict[str, Any]]:
     """Per-holding dividend income keyed by symbol.
@@ -496,7 +510,7 @@ _SELL_TYPES = frozenset({"SELL", "CANCEL", "MERGE_CANCEL"})
 _CAPITAL_RETURN_TYPES = frozenset({"CAPITAL_RETURN"})
 
 
-def _trade_order_key(trade: dict[str, Any]) -> tuple[str, float]:
+def _trade_order_key(trade: Trade) -> tuple[str, float]:
     """Chronological sort key (date, then id) for replaying a holding's trades."""
     trade_date = str(trade.get("transaction_date") or trade.get("date") or "")[:10]
     return (trade_date, _f(trade.get("id")) or 0.0)
@@ -516,8 +530,8 @@ def _rescale_buy_quantity(entry: dict[str, Any], old_quantity: float, new_quanti
 
 
 def build_holding_trades(
-    trades: list[dict[str, Any]],
-    holdings: list[dict[str, Any]],
+    trades: list[Trade],
+    holdings: list[Holding],
     portfolio_currency: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Per-holding trade activity keyed by symbol.
@@ -625,7 +639,7 @@ _AXIS_HOLDING_FIELDS = {
 }
 
 
-def _axis_value(holding: dict[str, Any], instrument: dict[str, Any], axis: str) -> str:
+def _axis_value(holding: Holding, instrument: dict[str, Any], axis: str) -> str:
     """The allocation bucket a holding belongs to on ``axis``."""
     embedded = holding.get("instrument")
     if isinstance(embedded, dict):
@@ -638,7 +652,7 @@ def _axis_value(holding: dict[str, Any], instrument: dict[str, Any], axis: str) 
 
 
 def holding_classification(
-    holding: dict[str, Any], instrument: dict[str, Any] | None, axis: str
+    holding: Holding, instrument: dict[str, Any] | None, axis: str
 ) -> str | None:
     """Sector, industry or instrument type for one holding, or None if unknown.
 
@@ -663,7 +677,7 @@ def _breakdown(buckets: dict[str, float], total: float) -> dict[str, Any]:
 
 
 def build_sector_allocation(
-    holdings: list[dict[str, Any]],
+    holdings: list[Holding],
     instrument_lookup: dict[str, dict[str, Any]],
     axis: str = "sector",
 ) -> dict[str, Any]:
@@ -688,7 +702,7 @@ def build_sector_allocation(
 
 
 def build_currency_allocation(
-    holdings: list[dict[str, Any]], base_currency: str | None = None
+    holdings: list[Holding], base_currency: str | None = None
 ) -> dict[str, Any]:
     """Value-weighted allocation across the currencies holdings are priced in.
 
@@ -721,7 +735,7 @@ def _parse_date(value: Any) -> date | None:
         return None
 
 
-def _holding_yield(holding: dict[str, Any], instrument: dict[str, Any]) -> float | None:
+def _holding_yield(holding: Holding, instrument: dict[str, Any]) -> float | None:
     """Best-effort dividend yield (%) for a holding.
 
     Sharesight does not carry a yield on every payload, so try the fields
@@ -740,7 +754,7 @@ def _holding_yield(holding: dict[str, Any], instrument: dict[str, Any]) -> float
 
 
 def _trailing_yield(
-    holding: dict[str, Any],
+    holding: Holding,
     value: float,
     holding_income: dict[str, Any] | None,
 ) -> float | None:
@@ -952,7 +966,7 @@ def build_portfolio_analytics(
 
 
 def build_income_forecast(
-    upcoming_payouts: list[dict[str, Any]],
+    upcoming_payouts: list[Payout],
     holding_income: dict[str, dict[str, Any]],
     portfolio_value: Any,
     today: date,
@@ -1075,21 +1089,8 @@ def build_income_forecast(
     return result
 
 
-def _value_series_points(payload: Any) -> list[tuple[str, float]]:
-    """Normalise a portfolio value-series payload into sorted (date, value) points.
-
-    Sharesight's mobile value endpoints are documented loosely (the apiDoc
-    example is boilerplate), so tolerate every plausible shape: a
-    ``portfolio_value_data`` wrapper, a ``chart.data`` list, a
-    ``values``/``data`` list, a nested ``values.values`` wrapper, or a
-    ``{date: value}`` mapping.  Anything that cannot be parsed into a dated
-    numeric point is skipped rather than raising, and duplicate dates keep the
-    last value seen.
-
-    Note the V3 ``/value`` endpoint is NOT a source here: its only parameters
-    are ``consolidated``/``currency_code`` and it answers with a single
-    point-in-time balance, which yields no points at all.
-    """
+def value_series_data(payload: ValueSeriesPayload) -> Any:
+    """Extract the source observations without treating an unknown object as empty."""
     raw: Any = payload
     # Peel known container keys until we reach the actual list/mapping of
     # points.  Bounded so a self-referential shape can never loop forever.
@@ -1106,14 +1107,34 @@ def _value_series_points(payload: Any) -> list[tuple[str, float]]:
         # portfolio_value_data.json wraps the daily series one level deeper
         # ({portfolio_value_data: {chart: {data: [...]}}}); peel it and let the
         # next pass find the chart/data list.
-        value_data = raw.get("portfolio_value_data")
-        if isinstance(value_data, dict):
+        value_data = raw.get("portfolio_value_data", raw.get("holding_value_data"))
+        if isinstance(value_data, (dict, list)):
             raw = value_data
             continue
         if "values" in raw:
             raw = raw["values"]
             continue
         break
+
+    return raw
+
+
+def _value_series_points(payload: ValueSeriesPayload) -> list[tuple[str, float]]:
+    """Normalise a portfolio value-series payload into sorted (date, value) points.
+
+    Sharesight's mobile value endpoints are documented loosely (the apiDoc
+    example is boilerplate), so tolerate every plausible shape: a
+    ``portfolio_value_data`` wrapper, a ``chart.data`` list, a
+    ``values``/``data`` list, a nested ``values.values`` wrapper, or a
+    ``{date: value}`` mapping.  Anything that cannot be parsed into a dated
+    numeric point is skipped rather than raising, and duplicate dates keep the
+    last value seen.
+
+    Note the V3 ``/value`` endpoint is NOT a source here: its only parameters
+    are ``consolidated``/``currency_code`` and it answers with a single
+    point-in-time balance, which yields no points at all.
+    """
+    raw = value_series_data(payload)
 
     points: list[tuple[str, float]] = []
     if isinstance(raw, list):
@@ -1123,7 +1144,9 @@ def _value_series_points(payload: Any) -> list[tuple[str, float]]:
             parsed = _parse_date(item.get("date") or item.get("timestamp") or item.get("as_at"))
             value = _f(item.get("value"))
             if value is None:
-                value = _f((item.get("in_portfolio_currency") or {}).get("value"))
+                converted = item.get("in_portfolio_currency")
+                if isinstance(converted, dict):
+                    value = _f(converted.get("value"))
             if parsed is not None and value is not None:
                 points.append((parsed.isoformat(), value))
     elif isinstance(raw, dict):
@@ -1141,8 +1164,8 @@ def _value_series_points(payload: Any) -> list[tuple[str, float]]:
     return sorted(dedup.items(), key=lambda point: point[0])
 
 
-def build_value_trend(series: Any) -> dict[str, Any]:
-    """30-day portfolio value trend from the optional V3 ``/value`` payload.
+def build_value_trend(series: ValueSeriesPayload) -> dict[str, Any]:
+    """30-day portfolio value trend from the optional portfolio-value series.
 
     Returns ``{change_7d_percent, change_30d_percent, series}`` where ``series``
     is a chronologically sorted list of ``{date, value}`` capped at the most
@@ -1196,7 +1219,7 @@ def build_value_trend(series: Any) -> dict[str, Any]:
     return result
 
 
-def build_value_analytics(series: Any) -> dict[str, Any]:
+def build_value_analytics(series: ValueSeriesPayload) -> dict[str, Any]:
     """Risk metrics derived from the daily portfolio value series.
 
     Every figure here comes from a payload the integration already fetches for
@@ -1291,7 +1314,9 @@ def _parcel_gain(parcel: dict[str, Any]) -> float | None:
     return None
 
 
-def build_cgt_analytics(capital_gains: Any, unrealised_cgt: Any) -> dict[str, Any]:
+def build_cgt_analytics(
+    capital_gains: CapitalGainsReport | None, unrealised_cgt: UnrealisedCgtReport | None
+) -> dict[str, Any]:
     """Tax figures the CGT reports return but the integration never surfaced.
 
     Both reports are already fetched every poll for Australian portfolios and

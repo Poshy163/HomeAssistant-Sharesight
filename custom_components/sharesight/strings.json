@@ -1344,13 +1344,79 @@
                 },
                 "symbol": {
                     "name": "Symbol",
-                    "description": "The instrument symbol/code of a holding in the portfolio (e.g. AAPL)."
+                    "description": "The held instrument code (e.g. AAPL), or CODE.MARKET when the code occurs on multiple exchanges."
                 }
             }
         },
         "get_login_link": {
             "name": "Get login link",
             "description": "Return a single-sign-on URL that logs the user straight into their Sharesight account. The link is valid for about one minute. Treat the returned URL like a password - it is not logged by the integration.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Config entry",
+                    "description": "The Sharesight config entry to query. Optional when only one portfolio is configured."
+                },
+                "device_id": {
+                    "name": "Device",
+                    "description": "A Sharesight portfolio device to query instead of a config entry."
+                }
+            }
+        },
+        "get_holding_value_history": {
+            "name": "Get holding value history",
+            "description": "Fetch available value observations for one held symbol over up to 366 days. Applies the end date locally. Missing days are not filled; currency is unknown when the source does not identify it.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Config entry",
+                    "description": "The Sharesight config entry to query. Optional when only one portfolio is configured."
+                },
+                "device_id": {
+                    "name": "Device",
+                    "description": "A Sharesight portfolio device to query instead of a config entry."
+                },
+                "symbol": {
+                    "name": "Symbol",
+                    "description": "The held instrument code (e.g. AAPL), or CODE.MARKET when the code occurs on multiple exchanges."
+                },
+                "start_date": {
+                    "name": "Start date",
+                    "description": "First day to include, in YYYY-MM-DD format."
+                },
+                "end_date": {
+                    "name": "End date",
+                    "description": "Last day to include, no later than today. The inclusive window must be at most 366 days."
+                }
+            }
+        },
+        "get_instrument_price_history": {
+            "name": "Get instrument price history",
+            "description": "Fetch one page of historical instrument prices for a held symbol over up to 366 days. Returns has_more when Sharesight indicates another page. Availability depends on the token entitlement.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Config entry",
+                    "description": "The Sharesight config entry to query. Optional when only one portfolio is configured."
+                },
+                "device_id": {
+                    "name": "Device",
+                    "description": "A Sharesight portfolio device to query instead of a config entry."
+                },
+                "symbol": {
+                    "name": "Symbol",
+                    "description": "The held instrument code (e.g. AAPL), or CODE.MARKET when the code occurs on multiple exchanges."
+                },
+                "start_date": {
+                    "name": "Start date",
+                    "description": "First day to include, in YYYY-MM-DD format."
+                },
+                "end_date": {
+                    "name": "End date",
+                    "description": "Last day to include, no later than today. The inclusive window must be at most 366 days."
+                }
+            }
+        },
+        "get_portfolio_value": {
+            "name": "Get current portfolio value",
+            "description": "Fetch the current portfolio balance using one lightweight request. Availability depends on the token entitlement.",
             "fields": {
                 "config_entry_id": {
                     "name": "Config entry",
@@ -1428,6 +1494,12 @@
         },
         "credential_unavailable": {
             "message": "No Sharesight {account_type} application credential is available."
+        },
+        "invalid_history_range": {
+            "message": "History requires start_date <= end_date, at most 366 days, and no future dates."
+        },
+        "ambiguous_symbol": {
+            "message": "Symbol is ambiguous; use CODE.MARKET to select the exchange."
         }
     }
 }

@@ -20,6 +20,7 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 - Account device — plan tier, member-since, and a subscription-lapse alert (binary sensor)
 - Watchlist overview plus per-instrument live price and day-change, where your Sharesight API access exposes it
 - Long-term statistics backfill — imports available portfolio value history and recent 7/30-day value changes where the API supplies the required baseline (opt-out in options)
+- On-demand holding value history and instrument price history, with bounded date ranges
 - Response services — pull a portfolio summary, holdings or income into scripts/templates, generate an on-demand performance report, fetch per-instrument fundamentals, or mint a one-minute single-sign-on login link
 - Activity events & device triggers — automate on new trades, dividends, holdings opened/closed, cash transactions and the daily-close rollover
 - Portfolio analytics — concentration (HHI), effective number of holdings, weighted yield/PE, foreign-currency exposure, cash drag and stale-price count
@@ -613,7 +614,49 @@ one of the 49 V2 and 105 V3 method/path combinations.
 
 ## Services
 
-The integration registers seven **response services** — they return data rather than change state. Call them with `response_variable` in a script/automation, or tick **Return response** in **Developer Tools → Actions**. Each targets a portfolio via `config_entry_id` or `device_id`; both are optional when only one portfolio is configured.
+The integration registers ten **response services** — they return data rather than change state. Call them with `response_variable` in a script/automation, or tick **Return response** in **Developer Tools → Actions**. Each targets a portfolio via `config_entry_id` or `device_id`; both are optional when only one portfolio is configured.
+
+### Holding value and instrument price history
+
+`sharesight.get_holding_value_history` and `sharesight.get_instrument_price_history`
+fetch history for a currently held symbol (use `CODE.MARKET` for ambiguous codes). Both require `symbol`, `start_date` and
+`end_date`, plus the usual optional portfolio target. The inclusive range must
+be at most 366 days and cannot extend beyond today.
+
+```yaml
+action: sharesight.get_holding_value_history
+data:
+  symbol: AAPL
+  start_date: "2026-08-01"
+  end_date: "2026-08-31"
+response_variable: holding_history
+```
+
+The value action returns `symbol`, `start_date`, `end_date`, `currency`, `count`
+and `points` containing `{date, value}` observations. Sharesight accepts only a
+start date for this endpoint, so the integration filters the end date locally.
+Missing days are not filled and source history may be thinned. `currency` is
+null unless the response identifies it; instrument prices and holding values
+must not be assumed to use the same currency. This action does not import
+holding history into HA statistics.
+
+Use the same fields with `sharesight.get_instrument_price_history` to receive
+`prices`, `count`, `currency` and `has_more`. Price rows retain the source OHLC,
+volume and last-traded fields. Only one page is requested. `has_more: true`
+means the result is incomplete; narrow the requested dates. The integration
+does not follow arbitrary pagination URLs.
+
+Both actions make an on-demand request through the shared request budget and
+cooldown controls. An entitlement or endpoint failure returns an `error` and
+`status`, rather than an empty successful history. They add no polling requests.
+
+### Current portfolio value
+
+`sharesight.get_portfolio_value` fetches the current balance using Sharesight's
+lightweight value endpoint and returns its source response. It accepts the usual
+optional `config_entry_id` or `device_id`. Unlike `get_portfolio_summary`, this
+performs a fresh request. The endpoint is entitlement-dependent; a refusal is
+returned as an error without disrupting normal polling.
 
 ### `sharesight.get_portfolio_summary`
 

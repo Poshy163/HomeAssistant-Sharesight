@@ -80,7 +80,7 @@ removes V3-only controls.
 ## Deliberate exclusions
 
 Routes labelled `internal` or `mobile` are not assumed to be a stable public
-contract.  Per-holding price/value history would also multiply requests by the
-holding count.  Financial mutations, SSO URLs, account identity, raw reports,
+contract. Per-holding price/value history is available through bounded
+on-demand actions in 2.4.0; it is not polled for every holding.  Financial mutations, SSO URLs, account identity, raw reports,
 and personal transaction data remain outside normal entity state and
 diagnostics.

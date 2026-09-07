@@ -51,6 +51,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 from homeassistant.util import dt as dt_util
+from SharesightAPI import RETRYABLE_STATUS_CODES
 
 from . import analytics
 from .api import (
@@ -121,7 +122,7 @@ def oauth_response_requires_reauth(error: BaseException) -> bool:
     and rate-limit statuses.
     """
     status = getattr(error, "status", None)
-    return isinstance(status, int) and 400 <= status < 500 and status not in (408, 425, 429)
+    return isinstance(status, int) and 400 <= status < 500 and status not in RETRYABLE_STATUS_CODES
 
 
 #: Longer performance windows, as (data key, months back) or (key, years back).
@@ -649,8 +650,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
     @staticmethod
     def _is_version_mismatch(error: SharesightApiError) -> bool:
         """Whether Sharesight explicitly rejected the requested API version."""
-        reason = (error.reason or "").lower()
-        return error.status == 406 and "version" in reason and "not supported" in reason
+        return error.is_version_unsupported
 
     @staticmethod
     def _fallback_endpoint(endpoint: Endpoint) -> Endpoint:
@@ -2333,6 +2333,30 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 None,
             )
         )
+
+    async def async_get_holding_value_history(self, holding_id: str | int, start_date: str) -> Any:
+        """Fetch one holding's value observations through the shared gate."""
+        return await self._one_shot(
+            Endpoint(
+                "v3", f"holdings/{holding_id}/holding_value_data.json", {"start_date": start_date}
+            )
+        )
+
+    async def async_get_instrument_price_history(
+        self, instrument_id: str | int, start_date: str, end_date: str
+    ) -> Any:
+        """Fetch one bounded page of instrument prices; never follow arbitrary links."""
+        return await self._one_shot(
+            Endpoint(
+                "v2",
+                f"instruments/{instrument_id}/prices.json",
+                {"start_date": start_date, "end_date": end_date},
+            )
+        )
+
+    async def async_get_portfolio_value(self) -> Any:
+        """Fetch the lightweight current balance only when explicitly requested."""
+        return await self._one_shot(Endpoint("v3", f"portfolios/{self.portfolio_id}/value"))
 
     async def async_generate_performance_report(
         self,

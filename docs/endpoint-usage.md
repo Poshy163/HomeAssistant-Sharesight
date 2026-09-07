@@ -18,7 +18,7 @@ Assistant intentionally does not call the route; it was not overlooked.
 Write operations are never called by Home Assistant or by live validation.
 apiDoc labels the two V2 show operations as `SHOW`; the tables render their
 actual HTTP method, `GET`. Typed-client coverage reflects `Sharesight-API`
-1.6.0 (2026-09-02).
+1.6.0 (2026-09-02). HA usage includes the 2.4.0 on-demand history actions.
 
 ## V2 — 49 unique method + path endpoints
 
@@ -40,7 +40,7 @@ actual HTTP method, `GET`. Typed-client coverage reflects `Sharesight-API`
 | GET | `/holdings/:holding_id/payouts.json` | 2.0.0 | Typed client; HA uses one portfolio aggregate instead of N holding calls |
 | GET | `/holdings/:holding_id/rejected_trades.json` | 2.0.0<br>2.1.0 | Generic read only; rejected workflow data is not useful HA state |
 | GET | `/holdings/:holding_id/trades.json` | 2.0.0<br>2.1.0 | Typed client; HA uses one portfolio aggregate instead of N holding calls |
-| GET | `/instruments/:instrument_id/prices.json` | 2.0.0-mobile<br>2.1.0-mobile | Typed client (`list_instrument_prices`); excluded from HA polling — mobile-tagged and one request per holding |
+| GET | `/instruments/:instrument_id/prices.json` | 2.0.0-mobile<br>2.1.0-mobile | HA on-demand `get_instrument_price_history` + typed client; one bounded page, no per-holding polling |
 | GET | `/memberships.json` | 2.0.0 | Excluded — account-sharing administration |
 | POST | `/memberships.json` | 2.0.0 | Excluded — account-sharing mutation; generic client only |
 | DELETE | `/memberships/:id.json` | 2.0.0 | Excluded — account-sharing mutation; generic client only |
@@ -137,7 +137,7 @@ actual HTTP method, `GET`. Typed-client coverage reflects `Sharesight-API`
 | GET | `/holdings/{id}/average_purchase_price.json` | 3.0.0-mobile | HA on-demand fallback when the public holding route is version-unavailable or omits the requested cost fields + typed client |
 | POST | `/holdings/{id}/confirm_trades.json` | 3.0.0-internal | Excluded — internal financial-record mutation |
 | GET | `/holdings/{id}/cost_base.json` | 3.0.0-mobile | HA on-demand fallback when the public holding route is version-unavailable or omits the requested cost fields + typed client |
-| GET | `/holdings/{id}/holding_value_data.json` | 3.0.0-mobile | Typed client (`get_holding_value_data`); excluded from HA — public holding GET with `values_over_time` is preferred and per-holding polling scales poorly |
+| GET | `/holdings/{id}/holding_value_data.json` | 3.0.0-mobile | HA on-demand `get_holding_value_history` + typed client; no per-holding polling |
 | DELETE | `/holdings/{id}/labels/{label}` | 3.0.0-internal | Excluded — internal label mutation |
 | POST | `/holdings/{id}/reject_trade.json` | 3.0.0-internal | Excluded — internal financial-record mutation |
 | GET | `/holdings/{id}/rejected_trades.json` | 3.0.0-internal | Excluded — internal rejected-trade workflow |
@@ -169,7 +169,7 @@ actual HTTP method, `GET`. Typed-client coverage reflects `Sharesight-API`
 | GET | `/portfolios/{portfolio_id}/trades.json` | 3.0.0-internal | Excluded — public V2 portfolio trade list is used |
 | GET | `/portfolios/{portfolio_id}/user_setting` | 3.0.0 | HA optional poll + typed client |
 | PATCH | `/portfolios/{portfolio_id}/user_setting` | 3.0.0 | Excluded — user-setting mutation; generic client only |
-| GET | `/portfolios/{portfolio_id}/value` | 3.0.0-mobile | Typed client (`get_portfolio_value`); excluded from HA — single balance duplicates combined performance value |
+| GET | `/portfolios/{portfolio_id}/value` | 3.0.0-mobile | HA on-demand `get_portfolio_value` + typed client; no duplicate balance polling |
 | DELETE | `/prices/{id}.json` | 3.0.0 | Excluded — financial-record mutation; generic client only |
 | PUT | `/prices/{id}.json` | 3.0.0 | Excluded — financial-record mutation; generic client only |
 | POST | `/trades.json` | 3.0.0-internal | Excluded — internal financial-record mutation; public V2 helper exists |

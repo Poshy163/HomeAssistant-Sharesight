@@ -37,39 +37,19 @@ import time
 from typing import Any
 
 import aiohttp
+from SharesightAPI.exceptions import (
+    SharesightAPIError,
+    SharesightAuthError,
+    SharesightError,
+    SharesightRateLimitError,
+)
 
 from .const import (
     SHARESIGHT_HEAVY_CONCURRENCY,
     SHARESIGHT_MAX_REQUESTS_PER_MINUTE,
     SHARESIGHT_REQUESTS_PER_MINUTE_TARGET,
 )
-
-try:  # pragma: no cover - exercised implicitly by every request
-    from SharesightAPI.exceptions import (
-        SharesightAPIError,
-        SharesightAuthError,
-        SharesightError,
-        SharesightRateLimitError,
-    )
-except ImportError:  # pragma: no cover - older library without typed errors
-
-    class SharesightError(Exception):  # type: ignore[no-redef]
-        """Fallback base when the installed library predates typed errors."""
-
-    class SharesightAuthError(SharesightError):  # type: ignore[no-redef]
-        """Fallback 401."""
-
-    class SharesightAPIError(SharesightError):  # type: ignore[no-redef]
-        """Fallback non-success status."""
-
-        status_code: int | None = None
-        response_data: Any = None
-
-    class SharesightRateLimitError(SharesightAPIError):  # type: ignore[no-redef]
-        """Fallback 429."""
-
-        retry_after: float | None = None
-
+from .read_client import SharesightReadClient
 
 # Sharesight's message for *any* 401, not only a genuine brute-force lockout:
 # an expired access token produces the identical body.  The distinction matters
@@ -133,7 +113,7 @@ def is_heavy_path(path: str) -> bool:
     return any(marker in path for marker in _HEAVY_MARKERS)
 
 
-class SharesightApiError(Exception):
+class SharesightApiError(SharesightAPIError):
     """A normalised Sharesight failure, always carrying what we know.
 
     Every attribute is optional because different failure modes reveal
@@ -164,7 +144,13 @@ class SharesightApiError(Exception):
         #: always transient, versus API-level rejections which may not be.
         self.transport = transport
         self.headers = dict(headers or {})
-        super().__init__(self.detail)
+        super().__init__(
+            status if status is not None else 0,
+            reason or "",
+            response_data={"error": code, "reason": reason, "transaction_id": transaction_id},
+            response_headers=self.headers,
+        )
+        self.args = (self.detail,)
 
     @property
     def detail(self) -> str:
@@ -181,22 +167,6 @@ class SharesightApiError(Exception):
         if self.transaction_id is not None:
             bits.append(f"txn={self.transaction_id}")
         return ", ".join(bits) or "unknown error"
-
-    # -- classification ------------------------------------------------
-    @property
-    def is_unauthorised(self) -> bool:
-        """401 - the token was rejected (expired, revoked, or locked out)."""
-        return self.status == 401
-
-    @property
-    def is_forbidden(self) -> bool:
-        """403 - the token is valid but not entitled to this endpoint."""
-        return self.status == 403
-
-    @property
-    def is_not_found(self) -> bool:
-        """404 - the portfolio was deleted or access to it was withdrawn."""
-        return self.status == 404
 
     @property
     def is_lockout(self) -> bool:
@@ -233,11 +203,7 @@ class SharesightApiError(Exception):
     @property
     def is_retryable(self) -> bool:
         """Whether trying the same request again could plausibly work."""
-        if self.transport:
-            return True
-        if self.status is None:
-            return False
-        return self.status in (408, 425, 429, 500, 502, 503, 504)
+        return self.transport or super().is_retryable
 
 
 def _envelope(payload: Any) -> tuple[Any, str | None, Any]:
@@ -369,17 +335,14 @@ async def async_request(
     """
     try:
         async with asyncio.timeout(timeout):
-            if hasattr(client, "get_api_response"):
-                rich_response = await client.get_api_response(endpoint.as_request(), access_token)
-                response = SharesightApiResult(
-                    data=rich_response.data,
-                    status=int(rich_response.status),
-                    headers=dict(rich_response.headers),
-                )
-            else:
-                response = SharesightApiResult(
-                    data=await client.get_api_request(endpoint.as_request(), access_token)
-                )
+            rich_response = await SharesightReadClient(client).read(
+                endpoint.as_request(), access_token
+            )
+            response = SharesightApiResult(
+                data=rich_response.data,
+                status=int(rich_response.status),
+                headers=dict(rich_response.headers),
+            )
     except TimeoutError as err:
         raise SharesightApiError(
             endpoint, reason=f"timed out after {timeout:g}s", transport=True
