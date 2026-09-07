@@ -16,6 +16,7 @@ entry identifiers and credentials are explicitly redacted as a second layer.
 
 from __future__ import annotations
 
+from importlib.metadata import version
 import json
 from time import monotonic
 from typing import Any
@@ -130,6 +131,7 @@ async def async_get_config_entry_diagnostics(
         "poll_count": coordinator._poll_count,
     }
     diagnostics["api"] = {
+        "client_version": await hass.async_add_executor_job(version, "SharesightAPI"),
         "base_url": API_URL_BASE.get(account_type),
         "versions_in_use": ["v2", "v3"],
         "lockout_active": coordinator.lockout_seconds_remaining > 0,

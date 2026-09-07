@@ -36,6 +36,7 @@ async def test_diagnostics_report_what_a_maintainer_needs(
 
     assert result["api"]["base_url"].startswith("https://api.sharesight.com")
     assert result["api"]["lockout_active"] is False
+    assert result["api"]["client_version"] == "1.6.0"
     assert result["api"]["documented_requests_per_minute"] == 360
     assert result["api"]["holding_limit"] is None
 
