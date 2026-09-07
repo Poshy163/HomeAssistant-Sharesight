@@ -7,7 +7,8 @@ financial year does not end on 30 June.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -37,6 +38,8 @@ from custom_components.sharesight.dates import (
         ("nonsense", (6, 30)),
         ("13-01", (6, 30)),
         ("06-32", (6, 30)),
+        ("04-31", (6, 30)),
+        ("02-30", (6, 30)),
         ("2026-06-30", (6, 30)),
     ],
 )
@@ -69,6 +72,8 @@ def test_parse_financial_year_end(value, expected) -> None:
         ("09-30", date(2026, 10, 1), ("2026-10-01", "2027-09-30")),
         # Missing setting falls back to 30 June.
         (None, date(2026, 8, 27), ("2026-07-01", "2027-06-30")),
+        # Impossible month/day pairs do not silently change the year end.
+        ("04-31", date(2026, 8, 27), ("2026-07-01", "2027-06-30")),
     ],
 )
 def test_financial_year_bounds(fy_end, today, expected) -> None:
@@ -123,6 +128,25 @@ def test_week_to_date_end_is_never_in_the_future() -> None:
         start, end = week_to_date_bounds(today)
         assert end == today.isoformat()
         assert start <= end
+
+
+@pytest.mark.parametrize(
+    "instant",
+    [
+        # Adelaide enters DST on this Sunday.  Date-only report windows must
+        # still use the local calendar date, not UTC's previous date.
+        datetime(2026, 10, 3, 16, 0, tzinfo=UTC),
+        # It leaves DST on this Sunday; the repeated local hour is irrelevant
+        # once the portfolio's local calendar day has been selected.
+        datetime(2027, 4, 3, 16, 0, tzinfo=UTC),
+    ],
+)
+def test_week_window_is_calendar_safe_across_adelaide_dst(instant: datetime) -> None:
+    """A portfolio-local date remains the sole input to report-date maths."""
+    local_day = instant.astimezone(ZoneInfo("Australia/Adelaide")).date()
+    start, end = week_to_date_bounds(local_day)
+    assert end == local_day.isoformat()
+    assert start <= end
 
 
 def test_years_and_months_ago() -> None:

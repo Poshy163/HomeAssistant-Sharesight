@@ -152,7 +152,7 @@ separate from the three polling tiers; see §2 for the cadence rationale.
 | V3 → V2 | `GET portfolios/{id}/performance` | 1 Jan → today | YTD device |
 | V3 → V2 | `GET portfolios/{id}/performance` | inception → today, `include_sales=true` | **All-time including sold positions**, using public performance routes rather than internal totals |
 | V3 mobile-tagged | `GET portfolios/{id}/portfolio_value_data.json` | `start_date` = 45 days ago | Capability-gated daily value series → trend, drawdown, volatility sensors |
-| V3 → V2 | `GET portfolios/{id}/performance` | 3 m / 6 m / 1 y / 3 y / 5 y windows | **Opt-in** (`enable_extended_performance`) |
+| V3 → V2 | `GET portfolios/{id}/performance` | 3 m / 6 m / 1 y / 3 y / 5 y windows | Controlled by `enable_extended_performance` (default on). A window that would start on or before inception is served from the all-time report above instead of being requested a second time |
 
 ### Optional tier — each backs off independently, last payload carried forward
 
@@ -211,6 +211,7 @@ separate from the three polling tiers; see §2 for the cadence rationale.
 | V3 `GET portfolios/{id}/reports`, `/labels` | Internal saved-report/label metadata; the integration consumes embedded holding labels and probes only optional routes whose data it uses |
 | V3 `GET portfolios/{id}/performance_index_chart` | Public tier and genuinely useful (growth-of-10 000 vs a benchmark) — see §9 |
 | V2 `GET instruments/{id}/prices.json`, `GET groups.json` | See §9 |
+| `grouping=custom_group` performance reports | One heavy report per custom group on every poll, and the supplied standard token could not verify the route. Market grouping is polled; custom groups and custom periods are available on demand through the `generate_performance_report` service |
 
 ---
 
@@ -616,6 +617,9 @@ sensors.
 | `payouts[].amount`, `.gross_amount` | in the **payout** currency | ditto — with `exchange_rate` alongside | Summing them raw across currencies produces a number in no currency at all |
 | `trades[].value` | — | **negative for a SELL** | Aggregates must take the magnitude, and net flow must subtract explicitly |
 | V2 performance response shape | v2.1 entries describe a sideloaded `portfolio_performance` + `portfolio_performance_holdings` schema | `/api/v2` returns a **flat** object (`value`, the gain family, `holdings`, `sub_totals`, `cash_accounts`) | The sideloaded schema is only served under the `/api/v2.1` prefix |
+| `portfolio_value_data.json` | example shows `values[]` rows keyed by `date` | returns `{"chart": {"data": [{"timestamp": "YYYY-MM-DD", "value": …}]}}`, thinned to roughly every third day over long ranges | The value-series reader peels the `chart.data` wrapper and treats `timestamp` as a portfolio-calendar date; the client models both spellings |
+| `holdings[].labels` | documented as label names | returns label **objects** (`id`, `name`, `color`, `holding_ids`, `portfolio_ids`) | Label allocation reads `name` from each object and tolerates bare strings |
+| `holdings[].group_id` / `group_name` | *not documented* | present on every report row, matching the `sub_totals` grouping | Market membership is read from `group_name` before falling back to `instrument.market_code` |
 
 ---
 
@@ -650,14 +654,14 @@ an ordinary token can reach them.
 | Ver | Endpoint | Tier | What it would unlock |
 |-----|----------|------|----------------------|
 | V3 | `GET portfolios/{id}/performance_index_chart` | **public** | `dates` + `lines[]` where each line is `PORTFOLIO`, `BENCHMARK` or a group — a growth-of-10 000 series for an ApexCharts card, with per-market index lines included when `grouping=market`. Response caveat: the apiDoc field list wraps it in `performance_index_chart` while the example does not, and names the discriminator `type` rather than `line_type`. Parse defensively |
-| V2 | `GET instruments/{id}/prices.json` | mobile | `high`, `low`, `volume`, `last_traded_on`, `last_traded_value` — the only source of 52-week high/low and distance-from-high. Its mobile tag and one-request-per-holding cost require capability detection and per-instrument backoff |
+| V2 | `GET instruments/{id}/prices.json` | mobile | `high`, `low`, `volume`, `last_traded_on`, `last_traded_value` — the only source of 52-week high/low and distance-from-high. Its mobile tag and one-request-per-holding cost require capability detection and per-instrument backoff. Typed in the client as `list_instrument_prices()` |
 | V2 | `GET groups.json` | public | `groups[].id` + `.custom` — the ids that make `grouping=custom_group` usable on both performance endpoints, i.e. per-custom-group performance sensors |
 | V3 | `GET holdings/{id}?values_over_time=<date>` | public | Per-holding value history, for a per-holding long-term-statistics backfill |
 | V3 | `GET portfolios/{id}/performance?benchmark_code=X.Y` | public | Returns `report.benchmark` inline, which could fold per-period excess return (1 d / 1 w / 1 m / YTD / FY vs the benchmark) into the existing period reports |
-| V3 | `GET watchlist.json?start_date=…` | mobile | Reframes `price.diff_*` from a one-day change to a period change |
+| V3 | `GET watchlist.json?start_date=…` | mobile | Reframes `price.diff_*` from a one-day change to a period change. Typed in the client as `get_watchlist(start_date=…)` |
 | V3 | `GET portfolios/{id}/overview` | internal | `holdings[].sold_at_end` — Sharesight's own answer to "is this position closed?", which the integration currently infers from a dust-quantity heuristic |
 | V3 | `GET portfolios/{id}/reports` | internal | `report_tiles[].show_full_report` — an authoritative entitlement probe, instead of learning by 403 |
 | V2 | `GET currencies.json`, V3 `GET countries`, `/cryptocurrencies` | mixed | Metadata only; nothing the payloads do not already carry |
-| V3 | `GET portfolios/{id}/value` | mobile | A single point-in-time balance. **Not** a series — `portfolio_value_data.json` is the series |
+| V3 | `GET portfolios/{id}/value` | mobile | A single point-in-time balance. **Not** a series — `portfolio_value_data.json` is the series. Typed in the client as `get_portfolio_value()` |
 | V3 | custom-investment/price/adjustment/coupon-rate writes | public | Financial-record mutations; available generically but deliberately excluded from Home Assistant |
 | V3 | connections, file imports, bulk custom prices and label writes | internal | Internal workflow/mutation surfaces; deliberately excluded |

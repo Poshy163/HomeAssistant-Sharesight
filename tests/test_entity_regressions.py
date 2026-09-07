@@ -535,6 +535,238 @@ def test_holding_currency_does_not_require_user_instruments() -> None:
     assert entity.native_value == "AUD"
 
 
+def _weight_data(report_value):
+    return {
+        "report": {
+            "value": report_value,
+            "sub_totals": [
+                {"group_name": "ASX", "value": 400.0},
+                {"group_name": "NASDAQ", "value": 350.0},
+            ],
+        },
+        "holdings": {
+            "holdings": [
+                {
+                    "symbol": "AAA",
+                    "value": 250.0,
+                    "instrument": {"code": "AAA", "name": "Alpha Assets", "market_code": "ASX"},
+                    "instrument_currency": {"code": "AUD"},
+                }
+            ]
+        },
+    }
+
+
+def test_holding_weight_name_and_market_come_from_the_report_row() -> None:
+    """The 2.3 per-holding identity/weight sensors read the live holding row."""
+    entry = _entry()
+    coordinator = _coordinator(data=_weight_data(1000.0))
+    weight = _sensor(
+        _source_description(ALL_HOLDING_DESCRIPTIONS, "holdings_list", "weight_percent"),
+        entry,
+        coordinator,
+        local_name="AAA",
+        display_name="AAA portfolio weight",
+    )
+    name = _sensor(
+        _source_description(ALL_HOLDING_DESCRIPTIONS, "holdings_list", "instrument_name"),
+        entry,
+        coordinator,
+        local_name="AAA",
+        display_name="AAA name",
+    )
+    market = _sensor(
+        _source_description(ALL_HOLDING_DESCRIPTIONS, "holdings_list", "market_code"),
+        entry,
+        coordinator,
+        local_name="AAA",
+        display_name="AAA market",
+    )
+
+    assert weight.unique_id == "123_holding_AAA_weight_percent_holdings_list_v2"
+    assert weight.native_value == 25.0
+    assert weight.native_unit_of_measurement == "%"
+    assert weight.available is True
+    assert name.native_value == "Alpha Assets"
+    assert name.state_class is None
+    assert name.entity_category is not None
+    assert market.native_value == "ASX"
+    assert market.state_class is None
+
+
+def test_market_weight_is_the_subtotal_share_of_the_report_value() -> None:
+    description = _source_description(MARKET_SENSOR_DESCRIPTIONS, "sub_totals", "weight_percent")
+    entry = _entry()
+    asx = _sensor(
+        description,
+        entry,
+        _coordinator(data=_weight_data(1000.0)),
+        local_name="ASX",
+        display_name="ASX portfolio weight",
+    )
+    nasdaq = _sensor(
+        description,
+        entry,
+        _coordinator(data=_weight_data(1000.0)),
+        local_name="NASDAQ",
+        display_name="NASDAQ portfolio weight",
+    )
+
+    assert asx.unique_id == "123_ASX_weight_percent_sub_totals_v2"
+    assert asx.native_value == 40.0
+    assert nasdaq.native_value == 35.0
+
+
+@pytest.mark.parametrize("report_value", [0, None, "n/a", float("nan")])
+def test_weight_is_unknown_without_a_positive_report_value(report_value) -> None:
+    """A zero, missing or malformed denominator must not publish a bogus 0 %."""
+    entry = _entry()
+    coordinator = _coordinator(data=_weight_data(report_value))
+    holding = _sensor(
+        _source_description(ALL_HOLDING_DESCRIPTIONS, "holdings_list", "weight_percent"),
+        entry,
+        coordinator,
+        local_name="AAA",
+        display_name="AAA portfolio weight",
+    )
+    market = _sensor(
+        _source_description(MARKET_SENSOR_DESCRIPTIONS, "sub_totals", "weight_percent"),
+        entry,
+        coordinator,
+        local_name="ASX",
+        display_name="ASX portfolio weight",
+    )
+
+    assert holding.native_value is None
+    assert market.native_value is None
+
+
+def test_holding_classification_reads_the_holding_row_without_user_instruments() -> None:
+    """Sector, industry and type live on the report row; the feed is optional."""
+    entry = _entry()
+    coordinator = _coordinator(
+        data={
+            "holdings": {
+                "holdings": [
+                    {
+                        "symbol": "AAA",
+                        "instrument": {
+                            "code": "AAA",
+                            "sector_classification_name": "Finance",
+                            "industry_classification_name": "Investment Managers",
+                            "friendly_instrument_description": "Ordinary Shares",
+                        },
+                    }
+                ]
+            },
+            "instrument_lookup": {},
+        }
+    )
+    values = {}
+    for sub_key in ("sector", "industry", "instrument_type"):
+        entity = _sensor(
+            _source_description(ALL_HOLDING_DESCRIPTIONS, "holding_fundamental", sub_key),
+            entry,
+            coordinator,
+            local_name="AAA",
+            display_name=f"AAA {sub_key}",
+        )
+        assert entity.available is True
+        values[sub_key] = entity.native_value
+    assert values == {
+        "sector": "Finance",
+        "industry": "Investment Managers",
+        "instrument_type": "Ordinary Shares",
+    }
+
+
+def test_all_time_totals_expose_gain_components_and_closed_positions() -> None:
+    """The include-sales window carries exited holdings with zero quantity."""
+    all_time = {
+        "value": 1000.0,
+        "total_gain": 100.0,
+        "total_gain_percent": 10.0,
+        "capital_gain": 60.0,
+        "payout_gain": 45.0,
+        "currency_gain": -5.0,
+        "percentages_annualised": True,
+        "holdings": [
+            {"symbol": "AAA", "quantity": 5, "value": 500.0, "total_gain": 50.0},
+            {"symbol": "OLD", "quantity": 0, "value": 0, "total_gain": 12.5},
+            {"symbol": "GONE", "quantity": 0, "value": 0, "total_gain": -2.5},
+        ],
+    }
+    entry = _entry()
+    coordinator = _coordinator(data={"all_time": all_time})
+
+    def value(key):
+        return _sensor(
+            _description(TOTALS_SENSOR_DESCRIPTIONS, key),
+            entry,
+            coordinator,
+            display_name=f"All-Time {key}",
+        ).native_value
+
+    assert value("all_time_capital_gain") == 60.0
+    assert value("all_time_payout_gain") == 45.0
+    assert value("all_time_currency_gain") == -5.0
+    assert value("closed_positions_count") == 2
+    assert value("closed_positions_total_gain") == 10.0
+
+    count = _sensor(
+        _description(TOTALS_SENSOR_DESCRIPTIONS, "closed_positions_count"),
+        _entry(),  # a fresh entry: the unique id above is already claimed
+        coordinator,
+        display_name="Closed positions (attributes)",
+    )
+    attributes = count.extra_state_attributes
+    assert [row["symbol"] for row in attributes["closed_positions"]] == ["OLD", "GONE"]
+    assert attributes["closed_positions"][0]["total_gain"] == 12.5
+
+
+def test_closed_positions_are_unknown_without_a_holdings_list() -> None:
+    entry = _entry()
+    coordinator = _coordinator(data={"all_time": {"value": 1.0, "total_gain": 0.0}})
+    count = _sensor(
+        _description(TOTALS_SENSOR_DESCRIPTIONS, "closed_positions_count"),
+        entry,
+        coordinator,
+        display_name="Closed positions",
+    )
+    assert count.native_value is None
+
+
+def test_portfolio_settings_sensors_read_portfolio_detail() -> None:
+    entry = _entry()
+    coordinator = _coordinator(
+        data={
+            "portfolio_detail": {
+                "default_sale_allocation_method": "fifo",
+                "cg_discount": "Individuals / Trust",
+            }
+        }
+    )
+    method = _sensor(
+        _source_description(
+            SENSOR_DESCRIPTIONS, "default_sale_allocation_method", "portfolio_detail"
+        ),
+        entry,
+        coordinator,
+        display_name="Sale allocation method",
+    )
+    discount = _sensor(
+        _source_description(SENSOR_DESCRIPTIONS, "cg_discount", "portfolio_detail"),
+        entry,
+        coordinator,
+        display_name="CGT discount setting",
+    )
+
+    assert method.native_value == "fifo"
+    assert discount.native_value == "Individuals / Trust"
+    assert method.entity_category is not None
+    assert method.unique_id == "123_portfolio_detail_default_sale_allocation_method_v2"
+
+
 def test_non_ascii_entity_name_uses_home_assistant_slugification() -> None:
     sensor = _sensor(
         _description(SENSOR_DESCRIPTIONS, "value"),

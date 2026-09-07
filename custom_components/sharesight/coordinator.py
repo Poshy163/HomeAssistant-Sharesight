@@ -382,6 +382,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         normalised = dict(detail)
         raw_inception = normalised.get("inception_date")
         if not isinstance(raw_inception, str) or not raw_inception:
+            normalised.pop("inception_date", None)
             return normalised
 
         parsed = dt_util.parse_date(raw_inception)
@@ -389,6 +390,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             try:
                 parsed = datetime.strptime(raw_inception, "%d %b %Y").date()
             except ValueError:
+                normalised.pop("inception_date", None)
                 return normalised
         normalised["inception_date"] = parsed.isoformat()
         return normalised
@@ -912,7 +914,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         per-industry devices if the user changed a setting in the Sharesight
         web app.
         """
-        params: dict[str, Any] = {"grouping": "market"}
+        params: dict[str, Any] = {"grouping": "market", "include_limited": "true"}
         params.update(extra)
         return params
 
@@ -952,6 +954,28 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 heavy=True,
             ),
         ]
+
+    def _inception_clamped_windows(self, today: date) -> dict[str, str]:
+        """Extended windows whose start falls on or before the inception date.
+
+        Such a window covers the portfolio's whole life, which is exactly what
+        the ``all_time`` request already fetches (from inception, sales
+        included).  Requesting it again would spend another heavy report on
+        identical numbers, so these windows are served from the all-time
+        payload instead.  Returns ``{window_key: inception_date}``.
+        """
+        inception = self._portfolio_detail.get("inception_date")
+        if not inception:
+            return {}
+        inception = str(inception)
+        clamped: dict[str, str] = {}
+        for key, months in _EXTENDED_MONTH_WINDOWS:
+            if str(months_ago(today, months)) <= inception:
+                clamped[key] = inception
+        for key, years in _EXTENDED_YEAR_WINDOWS:
+            if str(years_ago(today, years)) <= inception:
+                clamped[key] = inception
+        return clamped
 
     def _slow_endpoints(self, today: date) -> list[Endpoint]:
         """Windows and series that move slowly enough to refresh hourly."""
@@ -1004,7 +1028,7 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 self._performance_params(
                     include_sales="true",
                     include_limited="true",
-                    start_date=inception or year_start,
+                    **({"start_date": inception} if inception else {}),
                     end_date=today.isoformat(),
                 ),
                 "all_time",
@@ -1025,7 +1049,12 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         if self.entry.options.get(
             CONF_ENABLE_EXTENDED_PERFORMANCE, DEFAULT_ENABLE_EXTENDED_PERFORMANCE
         ):
+            # Windows that would start on or before inception duplicate the
+            # all-time request above; _post_process aliases them instead.
+            clamped = self._inception_clamped_windows(today)
             for key, months in _EXTENDED_MONTH_WINDOWS:
+                if key in clamped:
+                    continue
                 endpoints.append(
                     Endpoint(
                         "v3",
@@ -1041,15 +1070,14 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                     )
                 )
             for key, years in _EXTENDED_YEAR_WINDOWS:
-                start = years_ago(today, years)
-                if inception and start < str(inception):
-                    start = str(inception)
+                if key in clamped:
+                    continue
                 endpoints.append(
                     Endpoint(
                         "v3",
                         f"portfolios/{pid}/performance",
                         self._performance_params(
-                            start_date=start,
+                            start_date=years_ago(today, years),
                             end_date=today.isoformat(),
                             include_sales="true",
                         ),
@@ -1166,11 +1194,17 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             if err.is_not_found:
                 raise ConfigEntryError(
                     f"Sharesight portfolio {self.portfolio_id} is no longer "
-                    "accessible. Add the replacement portfolio as a new entry."
+                    "accessible. Add the replacement portfolio as a new entry.",
+                    translation_domain=DOMAIN,
+                    translation_key="portfolio_inaccessible",
+                    translation_placeholders={"portfolio_id": str(self.portfolio_id)},
                 ) from err
             if err.is_unauthorised and not err.is_lockout:
                 raise ConfigEntryAuthFailed(
-                    f"Sharesight rejected the access token: {err.detail}"
+                    f"Sharesight rejected the access token: {err.detail}",
+                    translation_domain=DOMAIN,
+                    translation_key="auth_error",
+                    translation_placeholders={"detail": str(err.detail)},
                 ) from err
             raise UpdateFailed(f"Sharesight startup fetch failed: {err.detail}") from err
 
@@ -1273,7 +1307,10 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
                 if result.is_not_found and is_critical:
                     raise ConfigEntryError(
                         f"Sharesight portfolio {self.portfolio_id} is no longer "
-                        "accessible. Add the replacement portfolio as a new entry."
+                        "accessible. Add the replacement portfolio as a new entry.",
+                        translation_domain=DOMAIN,
+                        translation_key="portfolio_inaccessible",
+                        translation_placeholders={"portfolio_id": str(self.portfolio_id)},
                     )
                 if result.is_unauthorised and not result.is_lockout:
                     auth_failure = result
@@ -1298,7 +1335,10 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         if auth_failure is not None:
             raise ConfigEntryAuthFailed(
                 "Sharesight returned an authentication error "
-                f"({auth_failure.detail}) - re-authentication required"
+                f"({auth_failure.detail}) - re-authentication required",
+                translation_domain=DOMAIN,
+                translation_key="auth_error",
+                translation_placeholders={"detail": str(auth_failure.detail)},
             )
 
         if critical_failed:
@@ -1651,6 +1691,20 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         if self._portfolio_detail:
             combined["portfolio_detail"] = self._portfolio_detail
 
+        # An extended window clamped to inception is the portfolio's whole
+        # life, which the all-time report already holds; serve it from there
+        # rather than having fetched the same report twice.
+        all_time = combined.get("all_time")
+        if (
+            isinstance(all_time, dict)
+            and all_time
+            and self.entry.options.get(
+                CONF_ENABLE_EXTENDED_PERFORMANCE, DEFAULT_ENABLE_EXTENDED_PERFORMANCE
+            )
+        ):
+            for key in self._inception_clamped_windows(today):
+                combined[key] = all_time
+
         report = combined.get("report")
         if not isinstance(report, dict):
             report = {}
@@ -1697,18 +1751,22 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
             "payouts": payouts,
             "payouts_available": isinstance(payouts_data, dict),
         }
-        if payouts:
-            # Amounts are converted with each payout's own exchange rate, so a
-            # portfolio holding both AUD and USD payers totals in one currency.
-            income_report["total_income"] = round(
-                sum(
-                    analytics.to_portfolio_currency(payout, payout.get("amount")) or 0.0
-                    for payout in payouts
-                ),
-                2,
-            )
-        else:
-            income_report["payout_gain"] = report.get("payout_gain")
+        currency = self._portfolio_currency_for(combined)
+        # Preserve a failed/malformed feed as unknown, an empty successful feed
+        # as zero, and foreign amounts without a rate as unknown. The combined
+        # report excludes sold holdings and is not a substitute for this total.
+        amounts = [
+            analytics.monetary_amount_details(payout, payout.get("amount"), currency)["amount"]
+            for payout in payouts
+        ]
+        complete_payouts = isinstance(payouts_data, dict) and isinstance(
+            payouts_data.get("payouts"), list
+        )
+        income_report["total_income"] = (
+            round(sum(amounts), 2)
+            if complete_payouts and all(amount is not None for amount in amounts)
+            else None
+        )
 
         upcoming_data = combined.get("upcoming_payouts")
         upcoming = upcoming_data.get("payouts") or [] if isinstance(upcoming_data, dict) else []
@@ -1743,7 +1801,6 @@ class SharesightCoordinator(TimestampDataUpdateCoordinator[dict[str, Any]]):
         # Resolve against the payload being built, not ``self.data`` from the
         # previous poll. Report-currency changes then affect every derivation
         # and entity unit in the same update.
-        currency = self._portfolio_currency_for(combined)
         combined["holding_income"] = analytics.build_holding_income(payouts, holdings_list, today)
         combined["holding_trades"] = analytics.build_holding_trades(
             (combined.get("trades") or {}).get("trades") or [],

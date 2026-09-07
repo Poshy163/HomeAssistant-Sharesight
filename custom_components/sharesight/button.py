@@ -3,8 +3,8 @@
 Two buttons per portfolio:
 - Refresh — forces an immediate (debounced) coordinator poll.
 - Rebuild Value History — re-runs the long-term-statistics backfill that
-  normally only runs once at startup, so users can recover the value history
-  on demand (e.g. after the value-data endpoint becomes reachable).
+  normally only runs once at startup, including supported recent risk and
+  value-trend history, so users can recover it on demand.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ class SharesightRefreshButton(SharesightBaseEntity, ButtonEntity):
 
 
 class SharesightRebuildValueHistoryButton(SharesightBaseEntity, ButtonEntity):
-    """Re-run the portfolio-value long-term-statistics backfill."""
+    """Re-run the value-based long-term-statistics backfill."""
 
     _attr_translation_key = "rebuild_value_history"
 

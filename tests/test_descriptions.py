@@ -136,6 +136,23 @@ def test_no_orphan_translations(strings) -> None:
     assert defined - used == set()
 
 
+def test_exception_translation_keys_exist(strings) -> None:
+    """Every translated exception the code raises has a message in strings.json."""
+    import re
+
+    pattern = re.compile(r'translation_key="([a-z_]+)"')
+    used: set[str] = set()
+    for module in ("coordinator.py", "__init__.py", "services.py", "device_trigger.py"):
+        source = (COMPONENT / module).read_text(encoding="utf-8")
+        for match in re.finditer(
+            r"raise \w+\([^)]*?translation_domain=DOMAIN[^)]*?\)", source, re.DOTALL
+        ):
+            used.update(pattern.findall(match.group(0)))
+    missing = sorted(key for key in used if key not in strings.get("exceptions", {}))
+    assert used, "expected at least one translated exception"
+    assert not missing, f"exception keys without a message: {missing}"
+
+
 def test_translations_and_english_agree() -> None:
     strings = json.loads((COMPONENT / "strings.json").read_text(encoding="utf-8"))
     english = json.loads((COMPONENT / "translations" / "en.json").read_text(encoding="utf-8"))

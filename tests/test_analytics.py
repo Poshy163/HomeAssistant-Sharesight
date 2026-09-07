@@ -559,3 +559,20 @@ def test_cgt_parcel_gain_falls_back_to_the_arithmetic() -> None:
 def test_cgt_analytics_handles_absent_reports() -> None:
     result = analytics.build_cgt_analytics(None, None)
     assert all(value is None for value in result.values())
+
+
+def test_holding_classification_prefers_the_embedded_block_then_the_feed() -> None:
+    embedded = {"instrument": {"sector_classification_name": "Finance"}}
+    assert analytics.holding_classification(embedded, {"sector": "Feed"}, "sector") == "Finance"
+    assert (
+        analytics.holding_classification({"instrument": {}}, {"industry": "Feed"}, "industry")
+        == "Feed"
+    )
+    assert (
+        analytics.holding_classification(
+            {"instrument": {"security_type": "Stock"}}, None, "instrument_type"
+        )
+        == "Stock"
+    )
+    assert analytics.holding_classification({}, {}, "sector") is None
+    assert analytics.holding_classification("not a row", {}, "sector") is None

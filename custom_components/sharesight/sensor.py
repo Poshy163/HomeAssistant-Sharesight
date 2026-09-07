@@ -154,12 +154,26 @@ def _holding_logo(holding) -> str | None:
     return None
 
 
-def _get_holding_value(h):
+def _get_holding_value(h, default=0.0):
     """Get the market value of a holding, trying multiple field names."""
     for field in ("value", "market_value", "total_value", "current_value", "last_value"):
         if (value := _finite_float(h.get(field))) is not None:
             return value
-    return 0.0
+    return default
+
+
+def _weight_percent(part, total):
+    """``part`` as a percentage of ``total``, or None when either is unusable.
+
+    Used for the per-market and per-holding portfolio-weight sensors.  The
+    denominator is the report's ``value`` (holdings plus cash accounts), which
+    is the figure Sharesight itself shows as the portfolio value.
+    """
+    part = _finite_float(part)
+    total = _finite_float(total)
+    if part is None or total is None or total <= 0:
+        return None
+    return round(part / total * 100, 2)
 
 
 def _get_holding_gain(h):
@@ -281,6 +295,14 @@ def _find_holding_by_symbol(holdings_list, symbol):
 
 def _get_income_summary(income_data, report_data=None):
     """Get income report summary."""
+    if isinstance(income_data, dict) and "total_income" in income_data:
+        # An explicit unknown from normalization must not fall through to a
+        # mixed-currency sum or an open-holdings-only report return.
+        payouts = income_data.get("payouts")
+        return {
+            "total_income": income_data["total_income"],
+            "dividend_count": len(payouts) if isinstance(payouts, list) else None,
+        }
     # First try from dedicated income_report data (full API response)
     if income_data and "error" not in income_data:
         try:
@@ -1069,6 +1091,13 @@ _HOLDING_OPTIONAL_SOURCE_KEYS = {
     "holding_trade": "trades",
 }
 
+# Per-holding "fundamental" fields that live on the required holding row's own
+# instrument block rather than on the optional user_instruments feed.  Their
+# sensors stay available while that feed is parked.
+_EMBEDDED_FUNDAMENTAL_SUB_KEYS = frozenset(
+    {"currency_code", "sector", "industry", "instrument_type"}
+)
+
 
 class SharesightSensor(SharesightBaseEntity, SensorEntity):
     """One Sharesight figure, read straight from the coordinator payload."""
@@ -1090,6 +1119,7 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
             "series",
             "by_month",
             "parcels",
+            "closed_positions",
         }
     )
 
@@ -1483,7 +1513,10 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
         elif self._key in _HOLDING_OPTIONAL_SOURCE_KEYS:
             # Currency is embedded in the required holding row and remains
             # useful even when the optional user-instruments feed is absent.
-            if self._key == "holding_fundamental" and self._sub_key == "currency_code":
+            if (
+                self._key == "holding_fundamental"
+                and self._sub_key in _EMBEDDED_FUNDAMENTAL_SUB_KEYS
+            ):
                 return None
             source_key = _HOLDING_OPTIONAL_SOURCE_KEYS[self._key]
 
@@ -1710,6 +1743,22 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         report_data.get("end_date"),
                         bool(report_data.get("percentages_annualised", False)),
                     )
+                if self._sub_key == "weight_percent":
+                    return _weight_percent(
+                        _get_holding_value(holding, default=None),
+                        self._coordinator.data.get("report", {}).get("value"),
+                    )
+                if self._sub_key == "instrument_name":
+                    instrument = holding.get("instrument") or {}
+                    return instrument.get("name") or holding.get("name") or None
+                if self._sub_key == "market_code":
+                    instrument = holding.get("instrument") or {}
+                    return (
+                        instrument.get("market_code")
+                        or holding.get("market")
+                        or holding.get("group_name")
+                        or None
+                    )
                 return holding.get(self._sub_key)
             elif self._key == "user_id":
                 # Used to get the userID
@@ -1757,6 +1806,11 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                         except ValueError, TypeError:
                             return None
                     return None
+                if self._sub_key == "weight_percent":
+                    return _weight_percent(
+                        sub_entry.get("value"),
+                        self._coordinator.data.get("report", {}).get("value"),
+                    )
                 if self._sub_key == "annualised_return_percent":
                     return _calculate_annualised_percent(
                         sub_entry.get("total_gain_percent"),
@@ -2653,6 +2707,9 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     # Comes off the holding row itself, so it resolves even
                     # when the optional user_instruments feed is parked.
                     return analytics.holding_currency(holding)
+                if self._sub_key in ("sector", "industry", "instrument_type"):
+                    # Likewise embedded on the row; the feed is only a fallback.
+                    return analytics.holding_classification(holding, instrument, self._sub_key)
                 field = (
                     "current_price_updated_at"
                     if self._sub_key == "price_updated_at"
@@ -2839,11 +2896,32 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                 # internal-scoped and deliberately never called.
                 all_time = self._coordinator.data.get("all_time")
                 if isinstance(all_time, dict) and all_time:
+                    if self._key in ("closed_positions_count", "closed_positions_total_gain"):
+                        # The include_sales window lists exited holdings with a
+                        # zero quantity and their lifetime (realised) return.
+                        rows = all_time.get("holdings")
+                        if not isinstance(rows, list):
+                            return None
+                        closed = [
+                            row
+                            for row in rows
+                            if isinstance(row, dict) and not analytics.is_open_position(row)
+                        ]
+                        if self._key == "closed_positions_count":
+                            return len(closed)
+                        gains = [_finite_float(row.get("total_gain")) for row in closed]
+                        # A partially valued collection is not a complete return.
+                        if any(gain is None for gain in gains):
+                            return None
+                        return round(sum(gains), 2)
                     mapped = {
                         "value": all_time.get("value"),
                         "total_return": all_time.get("total_gain"),
                         "total_return_percent": all_time.get("total_gain_percent"),
                         "percentage_annualised": all_time.get("percentages_annualised"),
+                        "all_time_capital_gain": all_time.get("capital_gain"),
+                        "all_time_payout_gain": all_time.get("payout_gain"),
+                        "all_time_currency_gain": all_time.get("currency_gain"),
                     }
                     if self._key in mapped and mapped[self._key] is not None:
                         if self._key == "percentage_annualised":
@@ -2978,6 +3056,32 @@ class SharesightSensor(SharesightBaseEntity, SensorEntity):
                     "day_change_amount": one_day.get("total_gain"),
                     "day_change_percent": one_day.get("total_gain_percent"),
                     "as_of": report_data.get("end_date") or report_data.get("as_at"),
+                }
+
+            # Closed Positions — which holdings were exited and how each did.
+            if self._sub_key == "totals" and self._key == "closed_positions_count":
+                all_time = data.get("all_time") if isinstance(data.get("all_time"), dict) else {}
+                rows = all_time.get("holdings")
+                closed = [
+                    row
+                    for row in (rows if isinstance(rows, list) else [])
+                    if isinstance(row, dict) and not analytics.is_open_position(row)
+                ]
+                closed.sort(
+                    key=lambda row: _finite_float(row.get("total_gain")) or 0.0, reverse=True
+                )
+                return {
+                    "closed_positions": [
+                        {
+                            "symbol": _get_holding_symbol(row),
+                            "total_gain": _finite_float(row.get("total_gain")),
+                            "total_gain_percent": _finite_float(row.get("total_gain_percent")),
+                            "capital_gain": _finite_float(row.get("capital_gain")),
+                            "payout_gain": _finite_float(row.get("payout_gain")),
+                        }
+                        for row in closed[:25]
+                    ],
+                    "as_of": all_time.get("end_date"),
                 }
 
             # Number of Holdings — the ranked holdings list.

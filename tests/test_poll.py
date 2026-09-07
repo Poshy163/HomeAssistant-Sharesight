@@ -676,14 +676,31 @@ def test_a_401_triggers_reauthentication() -> None:
         failures={"performance": _api_error(401, "The OAuth signature can't be verified")}
     )
     run(coordinator._async_setup())
-    with pytest.raises(ConfigEntryAuthFailed):
+    with pytest.raises(ConfigEntryAuthFailed) as excinfo:
         poll(coordinator)
+    # The integrations page renders the translated message; the plain text
+    # stays for logs and for hosts without loaded translations.
+    assert excinfo.value.translation_domain == "sharesight"
+    assert excinfo.value.translation_key == "auth_error"
+    assert "detail" in (excinfo.value.translation_placeholders or {})
 
 
 def test_a_404_on_the_portfolio_raises_a_permanent_entry_error() -> None:
     coordinator = build(failures={f"portfolios/{PID}": _api_error(404, "gone")})
-    with pytest.raises(ConfigEntryError, match="Add the replacement portfolio"):
+    with pytest.raises(ConfigEntryError, match="Add the replacement portfolio") as excinfo:
         run(coordinator._async_setup())
+    assert excinfo.value.translation_domain == "sharesight"
+    assert excinfo.value.translation_key == "portfolio_inaccessible"
+    assert excinfo.value.translation_placeholders == {"portfolio_id": str(PID)}
+
+
+def test_a_404_during_a_poll_raises_the_translated_entry_error() -> None:
+    coordinator = build()
+    run(coordinator._async_setup())
+    coordinator.sharesight.failures = {f"portfolios/{PID}": _api_error(404, "gone")}
+    with pytest.raises(ConfigEntryError) as excinfo:
+        poll(coordinator)
+    assert excinfo.value.translation_key == "portfolio_inaccessible"
 
 
 def test_a_403_on_a_mobile_endpoint_does_not_trigger_reauthentication() -> None:

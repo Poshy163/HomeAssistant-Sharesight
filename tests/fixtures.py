@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from typing import Any
 
-PORTFOLIO_ID = 1020131
+PORTFOLIO_ID = 424242
 CURRENCY = "AUD"
 TODAY = "2026-08-27"
 
@@ -746,7 +746,7 @@ USER_INSTRUMENTS = {
 
 MY_USER = {
     "user": {
-        "id": 846645,
+        "id": 171717,
         "name": "Test User",
         "first_name": "Test",
         "last_name": "User",
@@ -809,7 +809,7 @@ PORTFOLIO_DETAIL = {
     "currency_code": CURRENCY,
     "inception_date": "2023-07-18",
     "access_level": "OWNER",
-    "user_id": 846645,
+    "user_id": 171717,
     "owner_name": "Test User",
     "rwtr_rate": 33.0,
     "trader": False,

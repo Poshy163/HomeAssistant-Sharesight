@@ -83,6 +83,15 @@
             "active_grouping": {
                 "name": "Active Grouping"
             },
+            "all_time_capital_gain_incl_sold": {
+                "name": "All-Time Capital Gain (incl. sold)"
+            },
+            "all_time_currency_gain_incl_sold": {
+                "name": "All-Time Currency Gain (incl. sold)"
+            },
+            "all_time_dividend_gain_incl_sold": {
+                "name": "All-Time Dividend Gain (incl. sold)"
+            },
             "all_time_return_incl_sold": {
                 "name": "All-Time Return (incl. sold)"
             },
@@ -176,6 +185,9 @@
             "cgt_concession_rate": {
                 "name": "CGT Concession Rate"
             },
+            "cgt_discount_setting": {
+                "name": "CGT Discount Setting"
+            },
             "cgt_discounted_distributions_fy": {
                 "name": "CGT Discounted Distributions FY"
             },
@@ -211,6 +223,12 @@
             },
             "cgt_taxable_gain_fy": {
                 "name": "CGT Taxable Gain FY"
+            },
+            "closed_positions_count": {
+                "name": "Closed Positions"
+            },
+            "closed_positions_total_gain": {
+                "name": "Closed Positions Realised Return"
             },
             "concentration_hhi": {
                 "name": "Concentration (HHI)"
@@ -302,6 +320,12 @@
             "endpoints_on_cooldown": {
                 "name": "Endpoints on Cooldown"
             },
+            "equity_allocation_percent": {
+                "name": "Equity Allocation Percent"
+            },
+            "equity_value": {
+                "name": "Equity Value"
+            },
             "extended_capital_gain": {
                 "name": "{period} Capital Gain"
             },
@@ -319,12 +343,6 @@
             },
             "extended_total_gain_percent": {
                 "name": "{period} Change Percent"
-            },
-            "equity_allocation_percent": {
-                "name": "Equity Allocation Percent"
-            },
-            "equity_value": {
-                "name": "Equity Value"
             },
             "financial_year_annualised_return_percent": {
                 "name": "Financial Year Annualised Return Percent"
@@ -422,6 +440,12 @@
             "holding_last_trade_date": {
                 "name": "last trade date"
             },
+            "holding_market": {
+                "name": "market"
+            },
+            "holding_name": {
+                "name": "name"
+            },
             "holding_net_shares": {
                 "name": "net shares"
             },
@@ -463,6 +487,9 @@
             },
             "holding_vwap_buy_price": {
                 "name": "vwap buy price"
+            },
+            "holding_weight_percent": {
+                "name": "portfolio weight"
             },
             "holding_yield_on_cost": {
                 "name": "yield on cost"
@@ -602,41 +629,44 @@
             "market_value": {
                 "name": "value"
             },
+            "market_weight_percent": {
+                "name": "portfolio weight"
+            },
             "median_holding_value": {
                 "name": "Median Holding Value"
             },
             "monthly_annualised_return_percent": {
-                "name": "Monthly Annualised Return Percent"
+                "name": "30-Day Annualised Return Percent"
             },
             "monthly_capital_gain": {
-                "name": "Monthly Capital Gain"
+                "name": "30-Day Capital Gain"
             },
             "monthly_capital_gain_percent": {
-                "name": "Monthly Capital Gain Percent"
+                "name": "30-Day Capital Gain Percent"
             },
             "monthly_change_amount": {
-                "name": "Monthly Change Amount"
+                "name": "30-Day Change Amount"
             },
             "monthly_change_percent": {
-                "name": "Monthly Change Percent"
+                "name": "30-Day Change Percent"
             },
             "monthly_currency_gain": {
-                "name": "Monthly Currency Gain"
+                "name": "30-Day Currency Gain"
             },
             "monthly_currency_gain_percent": {
-                "name": "Monthly Currency Gain Percent"
+                "name": "30-Day Currency Gain Percent"
             },
             "monthly_dividend_gain": {
-                "name": "Monthly Dividend Gain"
+                "name": "30-Day Dividend Gain"
             },
             "monthly_dividend_gain_percent": {
-                "name": "Monthly Dividend Gain Percent"
+                "name": "30-Day Dividend Gain Percent"
             },
             "monthly_end_value": {
-                "name": "Monthly End Value"
+                "name": "30-Day End Value"
             },
             "monthly_start_value": {
-                "name": "Monthly Start Value"
+                "name": "30-Day Start Value"
             },
             "most_traded_symbol": {
                 "name": "Most Traded Symbol"
@@ -751,6 +781,9 @@
             },
             "return_is_annualised": {
                 "name": "Return Is Annualised"
+            },
+            "sale_allocation_method": {
+                "name": "Sale Allocation Method"
             },
             "sector_count": {
                 "name": "Sector Count"

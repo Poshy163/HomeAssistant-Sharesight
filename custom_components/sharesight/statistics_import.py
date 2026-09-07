@@ -1,8 +1,9 @@
-"""Long-term statistics backfill for the Sharesight portfolio value sensor.
+"""Long-term statistics backfill for Sharesight value-based sensors.
 
 On startup this fetches the full inception-to-today daily portfolio value
-series from Sharesight and imports it into the ``Portfolio value`` sensor's
-own long-term statistics, so HA history/statistics cards show years of data
+series from Sharesight and imports it into the ``Portfolio value`` sensor. It
+also replays the last 30 days of risk/trend measurements from the separate,
+detailed trailing value series, so HA history/statistics cards show useful data
 instead of only the days since the integration was installed.
 
 Design notes / safety:
@@ -21,6 +22,7 @@ Design notes / safety:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 import logging
@@ -40,6 +42,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
+from . import analytics
 from .const import (
     APP_VERSION,
     CONF_ACCOUNT_TYPE,
@@ -297,7 +300,100 @@ def _value_sensor_entity_id(hass: HomeAssistant, entry: Any, portfolio_id: Any) 
     return entity_id
 
 
-async def async_backfill_value_statistics(
+def _value_derived_sensor_entity_id(
+    hass: HomeAssistant,
+    entry: Any,
+    portfolio_id: Any,
+    sub_key: str,
+    key: str,
+) -> str | None:
+    """Resolve a value-series-derived sensor from its stable unique ID."""
+    resource_id = portfolio_resource_id(
+        portfolio_id,
+        entry.data.get(CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE),
+    )
+    unique_id = f"{resource_id}_{sub_key}_{key}_{APP_VERSION}"
+    entity_id = er.async_get(hass).async_get_entity_id(SENSOR_DOMAIN, DOMAIN, unique_id)
+    if entity_id is None:
+        _LOGGER.debug(
+            "Value-derived sensor (unique_id=%s) is not registered yet; skipping its backfill",
+            unique_id,
+        )
+    return entity_id
+
+
+_VALUE_DERIVED_STATISTICS = (
+    ("value_trend", "change_7d_percent"),
+    ("value_trend", "change_30d_percent"),
+)
+
+_VALUE_TREND_BACKFILL_LOOKBACKS = {
+    "change_7d_percent": 7,
+    "change_30d_percent": 30,
+}
+
+
+def _measurement_unit_class(unit: str) -> str | None:
+    """Match the recorder's metadata class for our non-device-class units."""
+    # These sensors intentionally have no HA device class, but Recorder still
+    # assigns semantic metadata for their displayed units.  Supplying ``None``
+    # would try to relabel already-recorded history and is therefore rejected.
+    if unit == "%":
+        return "unitless"
+    if unit == "d":
+        return "duration"
+    return None
+
+
+def _historical_value_derived_points(
+    points: list[tuple[datetime, float]],
+    portfolio_timezone: Any,
+    today: date,
+) -> dict[tuple[str, str], list[tuple[datetime, float]]]:
+    """Calculate only fully-supported live trend metrics for source days.
+
+    The detailed response starts 45 days before today. That is not enough to
+    recreate a prior day's full 45-day drawdown, high-water mark, days-since-
+    high, or volatility window, so those risk metrics deliberately have no
+    historical import. A trend row is emitted only when the response contains
+    a real point on or before its required 7/30-day baseline.
+    """
+    daily_points: dict[date, tuple[datetime, float]] = {}
+    for when, value in points:
+        daily_points[when.astimezone(portfolio_timezone).date()] = (when, value)
+
+    result: dict[tuple[str, str], list[tuple[datetime, float]]] = {
+        spec: [] for spec in _VALUE_DERIVED_STATISTICS
+    }
+    start_day = today - timedelta(days=30)
+    for day, (when, _) in sorted(daily_points.items()):
+        if day < start_day or day >= today:
+            continue
+        window_payload = {
+            "data": [
+                {"date": source_day.isoformat(), "value": source_value}
+                for source_day, (_, source_value) in sorted(daily_points.items())
+                if source_day <= day
+            ]
+        }
+        value_trend = analytics.build_value_trend(window_payload)
+        for sub_key, key in _VALUE_DERIVED_STATISTICS:
+            lookback = _VALUE_TREND_BACKFILL_LOOKBACKS[key]
+            if not any(source_day <= day - timedelta(days=lookback) for source_day in daily_points):
+                continue
+            raw_value = value_trend.get(key)
+            if isinstance(raw_value, bool):
+                continue
+            try:
+                value = float(raw_value)
+            except TypeError, ValueError:
+                continue
+            if math.isfinite(value):
+                result[(sub_key, key)].append((when, value))
+    return result
+
+
+async def _async_backfill_portfolio_value_statistics(
     hass: HomeAssistant,
     entry: Any,
     coordinator: Any,
@@ -415,8 +511,13 @@ async def async_backfill_value_statistics(
 
     # Compare in the portfolio timezone used to anchor date-only source data.
     # HA's timezone can differ from the portfolio's reporting timezone.
-    today = coordinator.current_date
-    portfolio_timezone = coordinator.portfolio_start_of_day(today).tzinfo
+    try:
+        today = coordinator.current_date
+        portfolio_timezone = coordinator.portfolio_start_of_day(today).tzinfo
+    except AttributeError, TypeError, ValueError:
+        _LOGGER.debug("Portfolio-value history context unavailable; skipping backfill")
+        return
+
     statistics_by_hour: dict[datetime, StatisticData] = {}
     for when, value in sorted(points, key=lambda item: item[0]):
         if when.astimezone(portfolio_timezone).date() >= today:
@@ -498,3 +599,189 @@ async def async_backfill_value_statistics(
         len(statistics),
         statistic_id,
     )
+
+
+async def async_backfill_value_derived_statistics(
+    hass: HomeAssistant,
+    entry: Any,
+    coordinator: Any,
+) -> None:
+    """Backfill the other 30-day risk and value-trend measurement sensors.
+
+    The source is the coordinator's detailed trailing value-series response,
+    never the possibly thinned inception history used for direct portfolio
+    values. This deliberately excludes snapshot-only holdings, allocation,
+    fundamentals, tax and watchlist metrics: replaying their present values
+    into earlier dates would create false history.
+    """
+    if "recorder" not in hass.config.components:
+        return
+
+    try:
+        from homeassistant.components.recorder.models import StatisticData
+        from homeassistant.components.recorder.statistics import (
+            async_import_statistics,
+            async_list_statistic_ids,
+            statistics_during_period,
+        )
+    except ImportError:
+        return
+    try:
+        from homeassistant.components.recorder.models import StatisticMeanType
+    except ImportError:
+        StatisticMeanType = None
+
+    try:
+        today = coordinator.current_date
+        portfolio_timezone = coordinator.portfolio_start_of_day(today).tzinfo
+    except AttributeError, TypeError, ValueError:
+        _LOGGER.debug("Value-derived history context unavailable; skipping backfill")
+        return
+    coordinator_data = getattr(coordinator, "data", {})
+    recent_series = (
+        coordinator_data.get("value_series") if isinstance(coordinator_data, dict) else None
+    )
+    points = _extract_points(recent_series, coordinator.portfolio_start_of_day)
+    if not points:
+        return
+    metric_points = _historical_value_derived_points(points, portfolio_timezone, today)
+    portfolio_id = entry.data.get(CONF_PORTFOLIO_ID)
+    intended_mean_type = StatisticMeanType.ARITHMETIC if StatisticMeanType is not None else None
+
+    for sub_key, key in _VALUE_DERIVED_STATISTICS:
+        statistic_id = _value_derived_sensor_entity_id(hass, entry, portfolio_id, sub_key, key)
+        if statistic_id is None:
+            continue
+        live_state = hass.states.get(statistic_id)
+        if live_state is None:
+            _LOGGER.debug("Skipping %s because its live state is unavailable", statistic_id)
+            continue
+        live_unit = live_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+        live_state_class = live_state.attributes.get(SensorEntityCapabilityAttribute.STATE_CLASS)
+        if not isinstance(live_unit, str) or live_state_class != SensorStateClass.MEASUREMENT:
+            _LOGGER.warning(
+                "Not backfilling %s because its live measurement contract is incomplete",
+                statistic_id,
+            )
+            continue
+        expected_unit_class = _measurement_unit_class(live_unit)
+
+        statistics_by_hour: dict[datetime, StatisticData] = {}
+        for when, value in metric_points[(sub_key, key)]:
+            hour = when.replace(minute=0, second=0, microsecond=0)
+            statistics_by_hour[hour] = StatisticData(start=hour, mean=value, min=value, max=value)
+        if not statistics_by_hour:
+            continue
+
+        try:
+            existing_metadata = await async_list_statistic_ids(hass, {statistic_id})
+        except (HomeAssistantError, RuntimeError, TypeError, ValueError) as err:
+            _LOGGER.warning(
+                "Cannot inspect existing recorder metadata for %s; skipping backfill: %s",
+                statistic_id,
+                err,
+            )
+            continue
+        existing = next(
+            (item for item in existing_metadata if item.get("statistic_id") == statistic_id),
+            None,
+        )
+        if existing is not None:
+            existing_mean_type = existing.get("mean_type")
+            if existing_mean_type is None and existing.get("has_mean"):
+                existing_mean_type = intended_mean_type
+            metadata_matches = (
+                existing.get("source") == "recorder"
+                and existing.get("statistics_unit_of_measurement") == live_unit
+                and existing.get("unit_class") == expected_unit_class
+                and existing.get("has_sum") is False
+                and (intended_mean_type is None or existing_mean_type == intended_mean_type)
+            )
+            if not metadata_matches:
+                _LOGGER.warning(
+                    "Not backfilling %s because existing recorder metadata does not "
+                    "match its live measurement contract",
+                    statistic_id,
+                )
+                continue
+
+        first_hour = min(statistics_by_hour)
+        last_hour = max(statistics_by_hour)
+        try:
+            existing_rows = await hass.async_add_executor_job(
+                statistics_during_period,
+                hass,
+                first_hour,
+                last_hour + timedelta(hours=1),
+                {statistic_id},
+                "hour",
+                None,
+                {"mean", "min", "max"},
+            )
+        except (HomeAssistantError, RuntimeError, TypeError, ValueError) as err:
+            _LOGGER.warning(
+                "Cannot inspect existing rows for %s; skipping backfill: %s",
+                statistic_id,
+                err,
+            )
+            continue
+        existing_hours = {
+            datetime.fromtimestamp(float(row["start"]), tz=UTC)
+            for row in existing_rows.get(statistic_id, [])
+            if row.get("start") is not None
+        }
+        statistics = [
+            statistic
+            for hour, statistic in statistics_by_hour.items()
+            if hour not in existing_hours
+        ]
+        if not statistics:
+            continue
+
+        metadata: dict[str, Any] = {
+            "has_sum": False,
+            "name": None,
+            "source": "recorder",
+            "statistic_id": statistic_id,
+            "unit_of_measurement": live_unit,
+            "unit_class": expected_unit_class,
+        }
+        if StatisticMeanType is not None:
+            metadata["mean_type"] = StatisticMeanType.ARITHMETIC
+        else:
+            metadata["has_mean"] = True
+        try:
+            async_import_statistics(hass, metadata, statistics)
+        except (HomeAssistantError, TypeError, ValueError) as err:
+            _LOGGER.warning(
+                "Recorder rejected the Sharesight value-derived backfill for %s: %s",
+                statistic_id,
+                err,
+            )
+            continue
+        _LOGGER.info(
+            "Backfilled %s 30-day value-derived statistics points into %s",
+            len(statistics),
+            statistic_id,
+        )
+
+
+async def async_backfill_value_statistics(
+    hass: HomeAssistant,
+    entry: Any,
+    coordinator: Any,
+) -> None:
+    """Backfill direct value rows, then independently replay derived metrics.
+
+    The historic endpoint is optional and can be unavailable to ordinary API
+    credentials. Derived measurements use the detailed value series already
+    held by the coordinator, so they retain their useful recent history even
+    if fetching the older direct portfolio-value series fails. Cancellation
+    skips the derived pass entirely, so unload cannot queue recorder writes.
+    """
+    try:
+        await _async_backfill_portfolio_value_statistics(hass, entry, coordinator)
+    except asyncio.CancelledError:
+        raise
+    else:
+        await async_backfill_value_derived_statistics(hass, entry, coordinator)

@@ -69,7 +69,7 @@ def mock_config_entry_fixture(token: dict[str, Any]) -> MockConfigEntry:
     """A v3 entry that looks exactly like one the flow would create."""
     return MockConfigEntry(
         domain=DOMAIN,
-        title="Sharesight: Test Portfolio (1020131)",
+        title="Sharesight: Test Portfolio (424242)",
         version=3,
         unique_id=PORTFOLIO_ID,
         data={

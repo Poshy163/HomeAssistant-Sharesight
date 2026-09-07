@@ -189,19 +189,41 @@ def test_slow_tier_has_an_all_time_window_on_the_public_api() -> None:
 def test_extended_windows_are_enabled_by_default() -> None:
     coordinator = make_coordinator()
     keys = {e.key for e in coordinator._slow_endpoints(TODAY)}
-    assert {"three-month", "six-month", "one-year", "three-year", "five-year"} <= keys
+    assert {"three-month", "six-month", "one-year", "three-year"} <= keys
 
     opted_out = make_coordinator(options={"enable_extended_performance": False})
     keys = {e.key for e in opted_out._slow_endpoints(TODAY)}
     assert "one-year" not in keys
 
 
-def test_extended_windows_are_clamped_to_inception() -> None:
+def test_extended_windows_clamped_to_inception_reuse_the_all_time_report() -> None:
+    """A window that starts on or before inception is the portfolio's whole life."""
     coordinator = make_coordinator(options={"enable_extended_performance": True})
-    five_year = next(e for e in coordinator._slow_endpoints(TODAY) if e.key == "five-year")
-    # The fixture portfolio was opened in 2023, so a five-year window starts
-    # at inception rather than asking for data that cannot exist.
-    assert five_year.params["start_date"] == F.PORTFOLIO_DETAIL["inception_date"]
+    inception = F.PORTFOLIO_DETAIL["inception_date"]
+    keys = {e.key for e in coordinator._slow_endpoints(TODAY)}
+    # The fixture portfolio was opened in 2023: five years back is before
+    # inception, so that window is identical to the all-time request and is
+    # not sent a second time.  Three years back is after inception, so that
+    # window is still its own request.
+    assert "five-year" not in keys
+    assert {"one-year", "three-year", "all_time"} <= keys
+    assert coordinator._inception_clamped_windows(TODAY) == {"five-year": inception}
+
+    all_time = F.period_report(start_date=inception, end_date=F.TODAY, capital_gain=99.0)
+    combined = {"report": F.performance_report(), "all_time": all_time}
+    coordinator._post_process(combined, TODAY)
+    assert combined["five-year"] is all_time
+    assert "three-year" not in combined
+
+
+def test_clamped_windows_are_not_aliased_when_extended_windows_are_off() -> None:
+    coordinator = make_coordinator(options={"enable_extended_performance": False})
+    all_time = F.period_report(
+        start_date=F.PORTFOLIO_DETAIL["inception_date"], end_date=F.TODAY, capital_gain=1.0
+    )
+    combined = {"report": F.performance_report(), "all_time": all_time}
+    coordinator._post_process(combined, TODAY)
+    assert "five-year" not in combined
 
 
 def test_market_diversity_reuses_performance_subtotals() -> None:

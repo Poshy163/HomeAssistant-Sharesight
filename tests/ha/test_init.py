@@ -99,10 +99,10 @@ async def test_migration_from_version_two(hass: HomeAssistant, token) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         version=2,
-        unique_id="1020131",
+        unique_id="424242",
         data={
             "auth_implementation": DOMAIN,
-            CONF_PORTFOLIO_ID: "1020131",
+            CONF_PORTFOLIO_ID: "424242",
             CONF_USE_EDGE: True,
             "token": token,
         },
@@ -165,9 +165,9 @@ async def test_migration_from_version_one_asks_for_reauth(
     entry = MockConfigEntry(
         domain=DOMAIN,
         version=1,
-        unique_id="1020131",
+        unique_id="424242",
         data={
-            CONF_PORTFOLIO_ID: "1020131",
+            CONF_PORTFOLIO_ID: "424242",
             "client_id": "legacy",
             "client_secret": "legacy-secret",
             "authorization_code": "legacy-code",
@@ -180,7 +180,7 @@ async def test_migration_from_version_one_asks_for_reauth(
     assert entry.version == 3
     # The stale credentials are gone rather than lingering in .storage.
     assert "client_secret" not in entry.data
-    assert entry.data[CONF_PORTFOLIO_ID] == "1020131"
+    assert entry.data[CONF_PORTFOLIO_ID] == "424242"
     assert entry.state is ConfigEntryState.SETUP_ERROR
 
     flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)

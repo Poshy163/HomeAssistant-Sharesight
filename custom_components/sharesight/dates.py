@@ -38,6 +38,13 @@ def parse_financial_year_end(value: str | None) -> tuple[int, int]:
         return 6, 30
     if not 1 <= month <= 12 or not 1 <= day <= 31:
         return 6, 30
+    # Validate the month/day pair with a leap year so 29 February remains a
+    # supported financial-year end.  Invalid settings such as ``04-31`` must
+    # use Sharesight's default rather than silently becoming a different day.
+    try:
+        date(2000, month, day)
+    except ValueError:
+        return 6, 30
     return month, day
 
 

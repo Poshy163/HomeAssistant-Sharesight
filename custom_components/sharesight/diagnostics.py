@@ -117,7 +117,7 @@ async def async_get_config_entry_diagnostics(
         "data_fetched_at": _iso(coordinator.data_timestamp),
         "data_age_seconds": _seconds(coordinator.data_age),
         "degraded": coordinator.is_degraded,
-        "degraded_reason": _redacted_reason(coordinator.degraded_reason, coordinator.portfolio_id),
+        "degraded_reason": _redacted_text(coordinator.degraded_reason, coordinator.portfolio_id),
         "last_update_success_time": _iso(coordinator.last_update_success_time),
         "update_interval_seconds": _seconds(coordinator.update_interval),
         "portfolio_id": "[redacted]",
@@ -147,11 +147,16 @@ async def async_get_config_entry_diagnostics(
     }
     diagnostics["endpoints"] = {
         "parked_count": len(_active_cooldowns(coordinator._optional_endpoint_cooldowns)),
+        "parked": _redact_mapping_keys(
+            _active_cooldowns(coordinator._optional_endpoint_cooldowns), coordinator.portfolio_id
+        ),
         "cash_accounts_parked_count": len(
             _active_cooldowns(coordinator._cash_tx_account_cooldowns)
         ),
         "unsupported_count": len(coordinator._unsupported_endpoints),
-        "carried_forward": _carry_forward_ages(coordinator),
+        "carried_forward": _redact_mapping_keys(
+            _carry_forward_ages(coordinator), coordinator.portfolio_id
+        ),
         "logged_failure_count": len(coordinator._logged_failures),
     }
     diagnostics["data_summary"] = {key: _summarise(value) for key, value in sorted(data.items())}
@@ -196,11 +201,20 @@ def _seconds(value: Any) -> float | None:
     return value.total_seconds() if value is not None else None
 
 
-def _redacted_reason(reason: Any, portfolio_id: Any) -> str | None:
-    """Keep an actionable failure reason without exposing the portfolio id."""
-    if reason is None:
+def _redacted_text(value: Any, portfolio_id: Any) -> str | None:
+    """Keep actionable text without exposing the portfolio identifier."""
+    if value is None:
         return None
-    return str(reason).replace(str(portfolio_id), "[redacted]")
+    text = str(value)
+    identifier = str(portfolio_id) if portfolio_id is not None else ""
+    return text.replace(identifier, "[redacted]") if identifier else text
+
+
+def _redact_mapping_keys(values: dict[str, int], portfolio_id: Any) -> dict[str, int]:
+    """Redact identifiers embedded in diagnostic endpoint/cache keys."""
+    return {
+        _redacted_text(key, portfolio_id) or "[redacted]": value for key, value in values.items()
+    }
 
 
 def _active_cooldowns(cooldowns: Any) -> dict[str, int]:

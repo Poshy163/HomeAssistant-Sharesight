@@ -239,6 +239,11 @@ def is_open_position(holding: dict[str, Any]) -> bool:
     quantity = _first_number(holding, _QUANTITY_FIELDS)
     if quantity is None or abs(quantity) >= _CLOSED_QUANTITY_EPSILON:
         return True
+    # Fractional crypto/share positions may legitimately be smaller than the
+    # dust threshold. Only apply tolerance to explicitly invalid positions;
+    # an exact zero quantity is still a closed position regardless of flag.
+    if quantity != 0 and holding.get("valid_position") is not False:
+        return True
     value = _first_number(holding, _VALUE_FIELDS)
     return value is not None and abs(value) >= _CLOSED_VALUE_EPSILON
 
@@ -630,6 +635,21 @@ def _axis_value(holding: dict[str, Any], instrument: dict[str, Any], axis: str) 
     if value := instrument.get(axis):
         return str(value)
     return "Unknown"
+
+
+def holding_classification(
+    holding: dict[str, Any], instrument: dict[str, Any] | None, axis: str
+) -> str | None:
+    """Sector, industry or instrument type for one holding, or None if unknown.
+
+    The performance report embeds the classification on every holding row's
+    ``instrument`` block, so this resolves even when the optional
+    ``user_instruments`` feed is parked; that feed is only the fallback.
+    """
+    if not isinstance(holding, dict):
+        return None
+    value = _axis_value(holding, instrument or {}, axis)
+    return None if value == "Unknown" else value
 
 
 def _breakdown(buckets: dict[str, float], total: float) -> dict[str, Any]:

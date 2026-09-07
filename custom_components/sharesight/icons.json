@@ -4,6 +4,15 @@
       "active_grouping": {
         "default": "mdi:view-grid-outline"
       },
+      "all_time_capital_gain_incl_sold": {
+        "default": "mdi:cash-plus"
+      },
+      "all_time_currency_gain_incl_sold": {
+        "default": "mdi:currency-usd"
+      },
+      "all_time_dividend_gain_incl_sold": {
+        "default": "mdi:hand-coin"
+      },
       "all_time_return_incl_sold": {
         "default": "mdi:cash-plus"
       },
@@ -97,6 +106,9 @@
       "cgt_concession_rate": {
         "default": "mdi:sale"
       },
+      "cgt_discount_setting": {
+        "default": "mdi:percent-box-outline"
+      },
       "cgt_discounted_distributions_fy": {
         "default": "mdi:sack-percent"
       },
@@ -132,6 +144,12 @@
       },
       "cgt_taxable_gain_fy": {
         "default": "mdi:bank"
+      },
+      "closed_positions_count": {
+        "default": "mdi:archive-outline"
+      },
+      "closed_positions_total_gain": {
+        "default": "mdi:archive-check-outline"
       },
       "concentration_hhi": {
         "default": "mdi:chart-donut-variant"
@@ -223,6 +241,12 @@
       "endpoints_on_cooldown": {
         "default": "mdi:pause-circle-outline"
       },
+      "equity_allocation_percent": {
+        "default": "mdi:chart-pie"
+      },
+      "equity_value": {
+        "default": "mdi:chart-areaspline"
+      },
       "extended_capital_gain": {
         "default": "mdi:chart-line"
       },
@@ -240,12 +264,6 @@
       },
       "extended_total_gain_percent": {
         "default": "mdi:percent"
-      },
-      "equity_allocation_percent": {
-        "default": "mdi:chart-pie"
-      },
-      "equity_value": {
-        "default": "mdi:chart-areaspline"
       },
       "financial_year_annualised_return_percent": {
         "default": "mdi:percent"
@@ -343,6 +361,12 @@
       "holding_last_trade_date": {
         "default": "mdi:calendar-clock"
       },
+      "holding_market": {
+        "default": "mdi:bank-outline"
+      },
+      "holding_name": {
+        "default": "mdi:tag-text-outline"
+      },
       "holding_net_shares": {
         "default": "mdi:swap-vertical"
       },
@@ -384,6 +408,9 @@
       },
       "holding_vwap_buy_price": {
         "default": "mdi:cart-arrow-down"
+      },
+      "holding_weight_percent": {
+        "default": "mdi:chart-pie"
       },
       "holding_yield_on_cost": {
         "default": "mdi:percent"
@@ -522,6 +549,9 @@
       },
       "market_value": {
         "default": "mdi:finance"
+      },
+      "market_weight_percent": {
+        "default": "mdi:chart-pie"
       },
       "median_holding_value": {
         "default": "mdi:chart-bell-curve-cumulative"
@@ -672,6 +702,9 @@
       },
       "return_is_annualised": {
         "default": "mdi:calendar-sync"
+      },
+      "sale_allocation_method": {
+        "default": "mdi:sort-variant"
       },
       "sector_count": {
         "default": "mdi:shape-plus"

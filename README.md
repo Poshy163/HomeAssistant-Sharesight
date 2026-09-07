@@ -19,7 +19,7 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 - Sector & industry allocation breakdown — a diversification lens beyond markets
 - Account device — plan tier, member-since, and a subscription-lapse alert (binary sensor)
 - Watchlist overview plus per-instrument live price and day-change, where your Sharesight API access exposes it
-- Long-term statistics backfill — imports your full portfolio value history so HA charts show years, not just days since install (opt-out in options)
+- Long-term statistics backfill — imports available portfolio value history and recent 7/30-day value changes where the API supplies the required baseline (opt-out in options)
 - Response services — pull a portfolio summary, holdings or income into scripts/templates, generate an on-demand performance report, fetch per-instrument fundamentals, or mint a one-minute single-sign-on login link
 - Activity events & device triggers — automate on new trades, dividends, holdings opened/closed, cash transactions and the daily-close rollover
 - Portfolio analytics — concentration (HHI), effective number of holdings, weighted yield/PE, foreign-currency exposure, cash drag and stale-price count
@@ -35,14 +35,36 @@ Monitor your [Sharesight](https://www.sharesight.com/) investment portfolio dire
 
 ---
 
+## Upgrading to 2.3
+
+- **New weight and identity sensors.** Every market device gains a *Portfolio
+  weight* sensor, and every holding device gains *Portfolio weight*, *Name* and
+  *Market* sensors. They appear on the next poll; no existing entity, unique
+  ID or recorded history changes.
+- **More all-time and portfolio data.** The All-Time device gains capital,
+  dividend and currency gain (incl. sold), a closed-positions count and the
+  realised return of those exits. The portfolio device gains the sale
+  allocation method and CGT discount setting. Per-holding sector, industry and
+  instrument type now read from the holding row itself, so they stay available
+  when the optional instrument feed is unreachable.
+- **Translated setup errors.** A deleted or inaccessible portfolio, a rejected
+  token and a missing application credential now show Home Assistant's
+  translated message on the integrations page instead of raw text.
+- **Companion client.** `SharesightAPI` 1.6.0 adds typed models for every
+  payload this integration consumes plus typed helpers for the watchlist,
+  sharechecker, cost-base, portfolio-value, instrument-price and login-link
+  routes. The integration only uses the client's generic request helpers, so
+  it keeps requiring the published 1.5.0 until 1.6.0 reaches PyPI; both
+  versions behave identically here.
+
 ## Upgrading to 2.2
 
-- **New portfolio entries no longer create per-holding entities by default.**
-  The family adds about 31 entities per live holding (roughly 775 entities for
-  a 25-holding portfolio), so it is now an explicit option under **Configure**.
-- **Existing entries are unchanged.** Config-entry minor-version migration
-  records the historical enabled setting before the default changes, keeping
-  every existing entity, entity ID, automation and recorder history intact.
+- **Per-holding entities became an explicit option.** The family adds about 35
+  entities per live holding (roughly 875 entities for a 25-holding portfolio),
+  so it can be switched off under **Configure**. It is on by default, and
+  config-entry minor-version migration records the historical enabled setting
+  for upgraded entries, keeping every existing entity, entity ID, automation
+  and recorder history intact.
 - Portfolio, market, cash, income, tax, benchmark, allocation and analytics
   entities remain enabled independently of this option.
 
@@ -95,9 +117,9 @@ reconfiguration is needed — but several sensors will start reporting different
   route. The four sensors use a public performance report with
   `include_sales=true`, preferring V3 and falling back to the equivalent V2
   route only for a route/version mismatch.
-- **Options:** *Create per-holding entities* (off for new entries — existing
-  entries retain their prior enabled behaviour) and *Add 3/6 month and 1/3/5 year windows*
-  (off by default).
+- **Options:** *Create per-holding entities* and *Add 3/6 month and 1/3/5 year
+  windows*. Both are on by default so a fresh entry surfaces everything the API
+  offers; upgraded entries keep the setting they already had.
 - **Portfolio identity is protected:** switching an existing entry to another
   portfolio would mint different device/entity identities and risk duplicate
   history, so Reconfigure explains that the other portfolio must be added as a
@@ -268,6 +290,7 @@ All sensors are organized into separate HA devices by category. Data refreshes e
 | Cost Basis | Total invested in this market |
 | Annualised Return Percent | Annualised return for this market |
 | Holding Count | Number of holdings on this exchange |
+| Portfolio Weight | This market's share of the total portfolio value (holdings plus cash) |
 
 These devices and the market-allocation figures come from the combined
 performance report's market-grouped `sub_totals`; the integration does not call
@@ -397,6 +420,9 @@ the separate market-metadata endpoint.
 | All-Time Value (incl. sold) | Lifetime portfolio value from a V3 performance report requested from inception with sold positions included |
 | All-Time Return (incl. sold) | Lifetime return including realised gains from exited holdings |
 | All-Time Return Percent (incl. sold) | Lifetime return as a percentage |
+| All-Time Capital / Dividend / Currency Gain (incl. sold) | The three components of that lifetime return, realised and unrealised |
+| Closed Positions | How many holdings you have fully exited since inception |
+| Closed Positions Realised Return | The lifetime total return (capital, dividends and currency) of those exited holdings |
 | Return Is Annualised | Whether Sharesight annualised the above percentage (diagnostic) |
 
 > The headline performance report omits fully-sold positions. This device uses
@@ -422,11 +448,29 @@ Derived from already-fetched data, these flags give you something concrete to au
 
 > The **Subscription Problem** flag (on the Account device, above) is the other binary sensor — alert on it so you notice if data silently goes stale.
 
+### Per-Holding (one device per open position)
+
+Created while *Create per-holding entities* is on (the default). The device is
+named after the instrument's code, and the sensors below are joined by the
+extras in the next table.
+
+| Sensor | Description |
+|--------|-------------|
+| Value | Market value in the portfolio currency |
+| Capital / Total / Currency / Dividend Gain (+ Percent) | Gain breakdowns for this holding |
+| Cost Base | Value less capital gain, in the portfolio currency |
+| Quantity | Units held |
+| Price | Last price in the instrument's own currency |
+| Annualised Return Percent | Annualised total return for this holding |
+| Portfolio Weight | This holding's share of the total portfolio value (holdings plus cash) |
+| Name | The instrument's full name (diagnostic) |
+| Market | The exchange code the instrument trades on (diagnostic) |
+
 ### Per-Holding extras (added to each holding device)
 | Sensor | Description |
 |--------|-------------|
 | PE Ratio / EPS / NTA | Fundamentals from Sharesight's instrument feed (null for many ETFs/funds) |
-| Sector / Industry / Instrument Type | Classification metadata |
+| Sector / Industry / Instrument Type | Classification metadata, read from the holding row itself so it stays available when the instrument feed is unreachable |
 | Price Updated | When Sharesight last refreshed this instrument's price |
 | Dividends TTM / Yield on Cost / Franking Credits TTM | Trailing-12-month income per holding |
 | Last Dividend Amount / Date / Dividend Count | Per-holding dividend history |
@@ -490,6 +534,7 @@ per-market devices; they do not depend on the internal market-metadata route.
 | Portfolio Inception Date / Country / Owner / Access Level | Portfolio metadata |
 | Portfolio Age (days) | Days since portfolio inception |
 | Performance Calculation Method | How returns are calculated |
+| Sale Allocation Method / CGT Discount Setting | The parcel-allocation rule (for example FIFO) and CGT discount rule Sharesight applies to this portfolio's tax reports |
 
 ---
 
@@ -501,9 +546,9 @@ installations; nothing here needs to be understood to use the integration.
 | Option | Default | What it does |
 |--------|---------|--------------|
 | **Poll interval (seconds)** | 300 | How often the portfolio is refreshed. Clamped to 60–3600; the shared request gate coordinates loaded portfolios against Sharesight's documented rate and concurrency limits |
-| **Backfill portfolio value history** | On | On startup, imports your whole inception-to-today daily value series into the Portfolio Value sensor's long-term statistics, so charts show years rather than days-since-install. Needs the value-data endpoint to be reachable for your API access |
+| **Backfill portfolio value history** | On | Imports the source points returned by the inception-to-today value endpoint, which may thin older history. Also imports recent 7/30-day percentage changes from the detailed recent series when a real baseline exists. Preserves existing samples and currency metadata. Does not reconstruct historical drawdown, high-water marks, volatility, holdings, allocation, tax, fundamentals or watchlist values |
 | **Automatically delete devices for sold holdings** | Off | See [Deleting stale devices](#deleting-stale-devices) |
-| **Create per-holding entities** | On | Adds about 31 entities per live holding. Turning it off stops creating that family without deleting existing entities or their history |
+| **Create per-holding entities** | On | Adds about 35 entities per live holding. Turning it off stops creating that family without deleting existing entities or their history |
 | **Add 3/6 month and 1/3/5 year windows** | On | Adds locally named performance sensors for five additional windows on the slow tier |
 
 ### Extended performance windows
@@ -515,6 +560,11 @@ percent, capital gain and percent, and dividend gain and percent.
 |--------|--------|
 | 3 Month / 6 Month | Calendar months back from today, day-clamped |
 | 1 / 3 / 5 Year | Calendar years back, clamped to the portfolio's inception date so you never ask for data that cannot exist |
+
+A window that would start on or before the inception date covers the whole
+life of the portfolio, which is exactly what the All-Time report already
+fetches. Such windows are served from that report instead of spending a second
+heavy request on identical numbers.
 
 ---
 
@@ -803,7 +853,7 @@ Two buttons per portfolio:
 | Button | Device | Action |
 |--------|--------|--------|
 | Refresh | Portfolio | Forces an immediate (debounced) coordinator poll |
-| Rebuild Value History | Account | Re-runs the inception-to-today long-term-statistics backfill on demand (e.g. after the value-data endpoint becomes reachable) — idempotent, safe to press repeatedly |
+| Rebuild Value History | Account | Re-runs available Portfolio Value history and supported recent 7/30-day percentage-change imports; preserves existing samples |
 
 Entity IDs: `button.sharesight_refresh_<portfolio_id>` and `button.sharesight_rebuild_value_history_<portfolio_id>`.
 
@@ -935,6 +985,11 @@ structural summaries, never raw rows.
 - **Consolidated portfolio views are not supported.** Sharesight allocates
   consolidated portfolios their own ids in a separate namespace, and the
   integration does not list or address them.
+- **Custom groups are not polled.** Sharesight's `grouping=custom_group`
+  report costs one heavy request per custom group on every poll, and the
+  supplied standard token could not be used to verify the route. Market
+  grouping is used instead; a custom-period or custom-grouping report is
+  available on demand through the `generate_performance_report` service.
 
 ---
 
@@ -989,6 +1044,11 @@ successful update across them.
 ---
 
 ## Development
+
+The [September audit and deployment guide](docs/audit-2026-09.md) records the
+verified fixes, compatibility checks and rollout/rollback procedure. The
+existing `one-month` period retains its rolling 30-day calculation and unique
+IDs; its display names now say **30-Day** to distinguish it from a calendar month.
 
 ```bash
 python -m pip install -r requirements_test.txt

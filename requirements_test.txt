@@ -4,7 +4,7 @@
 # it was built against (see the matching table in that project's README), so
 # bumping it is how the CI target HA version moves. Minimum-version
 # compatibility is a separate test concern from this current-version CI job.
-pytest-homeassistant-custom-component==0.13.357
+pytest-homeassistant-custom-component==0.13.364
 pytest-cov==7.1.0
 
 # The integration's own runtime requirement (mirrors manifest.json), so the

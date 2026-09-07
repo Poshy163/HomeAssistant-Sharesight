@@ -265,7 +265,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: SharesightConfigEntry) -
                 translation_placeholders={"account_type": account_type},
             )
             raise ConfigEntryNotReady(
-                f"Sharesight {account_type} account credential is unavailable"
+                f"Sharesight {account_type} account credential is unavailable",
+                translation_domain=DOMAIN,
+                translation_key="credential_unavailable",
+                translation_placeholders={"account_type": account_type},
             ) from err
 
     ir.async_delete_issue(hass, DOMAIN, _credential_issue_id(entry))

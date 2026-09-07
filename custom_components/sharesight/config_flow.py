@@ -6,7 +6,12 @@ import logging
 from typing import Any
 
 import aiohttp
-from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    ConfigEntry,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -52,7 +57,6 @@ class SharesightConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, d
         super().__init__()
         self._oauth_data: dict[str, Any] = {}
         self._portfolios: dict[str, str] = {}  # {id_str: "name (id)"}
-        self._reauth_entry: ConfigEntry | None = None
         self._account_type: str = DEFAULT_ACCOUNT_TYPE
 
     @property
@@ -197,19 +201,27 @@ class SharesightConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, d
         # in the OAuth flow stops a user with two Sharesight logins from
         # authorising the wrong one, and silently accepting that token left
         # the entry "reauth_successful" while every poll 403d afterwards.
-        if self._reauth_entry is not None:
-            portfolio_id = str(self._reauth_entry.data.get(CONF_PORTFOLIO_ID, ""))
+        if self.source == SOURCE_REAUTH:
+            reauth_entry = self._get_reauth_entry()
+            portfolio_id = str(reauth_entry.data.get(CONF_PORTFOLIO_ID, ""))
             visible = await self._fetch_portfolios()
             if visible is None:
                 return self.async_abort(reason="cannot_connect")
             if portfolio_id not in visible:
                 return self.async_abort(reason="wrong_account")
-            new_data = {**self._reauth_entry.data, **self._oauth_data}
-            return self.async_update_reload_and_abort(
-                self._reauth_entry,
-                data=new_data,
+            # The reload helper is deprecated when an update listener exists.
+            # Our listener handles options only, so update credentials here
+            # and explicitly retry setup below for either entry state.
+            result = self.async_update_and_abort(
+                reauth_entry,
+                data_updates=self._oauth_data,
                 reason="reauth_successful",
             )
+            # A setup-failed entry has no update listener, while a loaded
+            # entry's listener deliberately ignores token-only changes. Reload
+            # explicitly after updating so both states retry setup exactly once.
+            await self.hass.config_entries.async_reload(reauth_entry.entry_id)
+            return result
 
         portfolios = await self._fetch_portfolios()
         if portfolios is None:
@@ -273,15 +285,11 @@ class SharesightConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, d
         )
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
-        """Kick off a reauth flow — remember the original entry so we can update it."""
-        self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        if self._reauth_entry is not None:
-            # Re-auth has to target the account type the entry was created
-            # against — its credential does not exist in the other deployment's
-            # registry, so re-minting there would fail with invalid_client.
-            self._account_type = self._reauth_entry.data.get(
-                CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE
-            )
+        """Kick off reauthentication against the entry's existing deployment."""
+        reauth_entry = self._get_reauth_entry()
+        # Re-auth has to target the account type the entry was created against
+        # because credentials are deployment-specific.
+        self._account_type = reauth_entry.data.get(CONF_ACCOUNT_TYPE, DEFAULT_ACCOUNT_TYPE)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reconfigure(

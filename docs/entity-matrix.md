@@ -13,11 +13,12 @@ and deliberate exclusions are documented in the
 | Today performance | V3 performance, V2 fallback | Sensor | Daily performance device and daily-close trigger/event context | Yes | Every poll |
 | Week-to-date performance | V3 performance, V2 fallback | Sensor | Weekly performance device | Yes | Every poll |
 | Financial year / month / YTD | V3 performance, V2 fallback | Sensor | Three period devices with value and gain families | Yes | Every 12th poll (about hourly) and financial-year rollover |
-| 3/6 month and 1/3/5 year | V3 performance, V2 fallback | Sensor | Extended performance device | Option off | Every 12th poll when enabled |
-| Inception including sold positions | V3 performance, V2 fallback | Sensor | All-time value/return sensors | Yes when source is available | Every 12th poll |
+| 3/6 month and 1/3/5 year | V3 performance, V2 fallback | Sensor | Extended performance device | Option on | Every 12th poll when enabled; a window clamped to inception reuses the all-time report instead of a duplicate request |
+| Custom period or grouping report | V3 performance, V2 fallback | Service response | `generate_performance_report` returns any start/end window or grouping on demand; no entity is created | n/a (service) | On demand |
+| Inception including sold positions | V3 performance, V2 fallback | Sensor | All-time value, return, capital/dividend/currency gain, closed-position count and realised return | Yes when source is available | Every 12th poll |
 | Market subtotals | Combined performance payload | Sensor / device | Dynamic per-market value, cost, gains, return, weight and holding count | Yes | Every poll; dynamic discovery after refresh |
-| Live holdings | Combined performance payload | Sensor / device | Dynamic per-holding value, quantity, price, cost, gain and return family | Option off for new entries; upgraded entries preserve their old setting | Every poll when enabled |
-| Holding fundamentals | V2 `GET user_instruments.json` plus required holding rows | Sensor | Currency, P/E, EPS, NTA, sector, industry, type and price time | Follows holding option; niche fields may be registry-disabled | Optional slow tier; last good data carried forward up to 12 hours |
+| Live holdings | Combined performance payload | Sensor / device | Dynamic per-holding value, quantity, price, cost, gain, return and portfolio-weight family plus diagnostic name and market code | Option on; upgraded entries preserve their stored setting | Every poll when enabled |
+| Holding fundamentals | V2 `GET user_instruments.json` plus required holding rows | Sensor | P/E, EPS, NTA and price time from the feed; currency, sector, industry and type from the holding row with the feed as fallback | Follows holding option; niche fields may be registry-disabled | Optional slow tier; last good data carried forward up to 12 hours |
 | Holding income | V2 portfolio payouts | Sensor | TTM income, yield on cost, franking and last dividend | Follows holding option | Optional slow tier |
 | Holding trade analytics | V2 portfolio trades | Sensor | VWAP, brokerage, last trade, trade count and net shares | Follows holding option | Optional tier (trades refreshed frequently) |
 | Cash accounts | V3 combined report and V2 `cash_accounts.json` | Sensor / device | Dynamic cash account balances and portfolio cash totals | Yes | Combined balance every poll; v2 metadata optional slow tier |
@@ -38,3 +39,16 @@ No writable Sharesight portfolio, holding, trade, payout, cash, label or
 watchlist control is exposed as a Home Assistant entity. Those actions can
 change financial records and are not appropriate for a polling integration.
 `select`, `number` and `switch` platforms are therefore deliberately absent.
+
+## Deliberately not represented
+
+| Data | Why it has no entity |
+|---|---|
+| Custom-group performance (`grouping=custom_group`) | One heavy report per custom group on every poll, and the route could not be verified with the supplied standard token. Market grouping is polled; a custom grouping is available on demand from `generate_performance_report`. |
+| Instrument price history (`instruments/{id}/prices.json`) | Mobile-tagged and one request per holding per poll. Typed in the client (`list_instrument_prices`) for scripts. |
+| Per-holding value series (`holdings/{id}/holding_value_data.json`) | Same per-holding request cost. Typed in the client (`get_holding_value_data`). |
+| Point-in-time portfolio value (`portfolios/{id}/value`) | Duplicates the combined report's `value`. Typed in the client (`get_portfolio_value`). |
+| Performance index chart | A chart series, not a state; candidate for a future on-demand service. Typed in the client. |
+| Markets, exchange rates, instrument news | The advertised internal/mobile routes returned a permanent version rejection for the supplied token. |
+| Single sign-on link | Exposed only through the `get_login_link` service response because the URL is a one-minute credential. |
+| Account e-mail and name (`my_user.json`) | Personal data; only plan and subscription flags become entities. |

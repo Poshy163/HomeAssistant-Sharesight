@@ -17,7 +17,8 @@ URL prefixes or formal OAuth scopes. “Typed client” means
 Assistant intentionally does not call the route; it was not overlooked.
 Write operations are never called by Home Assistant or by live validation.
 apiDoc labels the two V2 show operations as `SHOW`; the tables render their
-actual HTTP method, `GET`.
+actual HTTP method, `GET`. Typed-client coverage reflects `Sharesight-API`
+1.6.0 (2026-09-02).
 
 ## V2 — 49 unique method + path endpoints
 
@@ -39,7 +40,7 @@ actual HTTP method, `GET`.
 | GET | `/holdings/:holding_id/payouts.json` | 2.0.0 | Typed client; HA uses one portfolio aggregate instead of N holding calls |
 | GET | `/holdings/:holding_id/rejected_trades.json` | 2.0.0<br>2.1.0 | Generic read only; rejected workflow data is not useful HA state |
 | GET | `/holdings/:holding_id/trades.json` | 2.0.0<br>2.1.0 | Typed client; HA uses one portfolio aggregate instead of N holding calls |
-| GET | `/instruments/:instrument_id/prices.json` | 2.0.0-mobile<br>2.1.0-mobile | Excluded for now — mobile-tagged and one request per holding |
+| GET | `/instruments/:instrument_id/prices.json` | 2.0.0-mobile<br>2.1.0-mobile | Typed client (`list_instrument_prices`); excluded from HA polling — mobile-tagged and one request per holding |
 | GET | `/memberships.json` | 2.0.0 | Excluded — account-sharing administration |
 | POST | `/memberships.json` | 2.0.0 | Excluded — account-sharing mutation; generic client only |
 | DELETE | `/memberships/:id.json` | 2.0.0 | Excluded — account-sharing mutation; generic client only |
@@ -66,7 +67,7 @@ actual HTTP method, `GET`.
 | DELETE | `/portfolios/{id}.json` | 2.0.0 | Excluded — destructive portfolio mutation; generic client only |
 | GET | `/portfolios/{id}.json` | 2.0.0<br>2.1.0 | HA setup fallback + typed client; bare V2 shape/date normalised |
 | PUT | `/portfolios/{id}.json` | 2.0.0 | Excluded — portfolio mutation; generic client only |
-| GET | `/single_sign_on.json` | 2.0.0 | HA on-demand login-link service; returned secret URL is never logged |
+| GET | `/single_sign_on.json` | 2.0.0 | HA on-demand login-link service + typed client; returned secret URL is never logged |
 | POST | `/trades.json` | 2.0.0<br>2.1.0 | Isolated typed mutation helper; mocks/developer sandbox only, never HA |
 | DELETE | `/trades/:id.json` | 2.0.0<br>2.1.0 | Excluded — financial-record mutation; generic client only |
 | GET | `/trades/:id.json` | 2.0.0<br>2.1.0 | Generic read only; portfolio trade list already supplies HA data |
@@ -133,15 +134,15 @@ actual HTTP method, `GET`.
 | DELETE | `/holdings/{id}` | 3.0.0 | Excluded — destructive holding mutation |
 | GET | `/holdings/{id}` | 3.0.0 | HA on-demand cost basis + typed client; sharechecker supplies instrument fundamentals |
 | PUT | `/holdings/{id}` | 3.0.0 | Excluded — financial-record mutation; generic client only |
-| GET | `/holdings/{id}/average_purchase_price.json` | 3.0.0-mobile | HA on-demand fallback when the public holding route is version-unavailable or omits the requested cost fields |
+| GET | `/holdings/{id}/average_purchase_price.json` | 3.0.0-mobile | HA on-demand fallback when the public holding route is version-unavailable or omits the requested cost fields + typed client |
 | POST | `/holdings/{id}/confirm_trades.json` | 3.0.0-internal | Excluded — internal financial-record mutation |
-| GET | `/holdings/{id}/cost_base.json` | 3.0.0-mobile | HA on-demand fallback when the public holding route is version-unavailable or omits the requested cost fields |
-| GET | `/holdings/{id}/holding_value_data.json` | 3.0.0-mobile | Excluded — public holding GET with `values_over_time` is preferred; per-holding polling scales poorly |
+| GET | `/holdings/{id}/cost_base.json` | 3.0.0-mobile | HA on-demand fallback when the public holding route is version-unavailable or omits the requested cost fields + typed client |
+| GET | `/holdings/{id}/holding_value_data.json` | 3.0.0-mobile | Typed client (`get_holding_value_data`); excluded from HA — public holding GET with `values_over_time` is preferred and per-holding polling scales poorly |
 | DELETE | `/holdings/{id}/labels/{label}` | 3.0.0-internal | Excluded — internal label mutation |
 | POST | `/holdings/{id}/reject_trade.json` | 3.0.0-internal | Excluded — internal financial-record mutation |
 | GET | `/holdings/{id}/rejected_trades.json` | 3.0.0-internal | Excluded — internal rejected-trade workflow |
 | GET | `/instruments` | 3.0.0-mobile | Generic mobile search; no polling value |
-| GET | `/instruments/{id}/sharechecker` | 3.0.0-mobile | HA on-demand, capability-gated mobile detail |
+| GET | `/instruments/{id}/sharechecker` | 3.0.0-mobile | HA on-demand, capability-gated mobile detail + typed client |
 | GET | `/markets` | 3.0.0-internal | Excluded — performance market subtotals supply HA allocation |
 | GET | `/mobile_app.json` | 3.0.0-mobile | Excluded — Sharesight mobile-app update metadata |
 | POST | `/oauth/revoke` | 3.0.0 | Excluded — destructive credential revocation |
@@ -168,7 +169,7 @@ actual HTTP method, `GET`.
 | GET | `/portfolios/{portfolio_id}/trades.json` | 3.0.0-internal | Excluded — public V2 portfolio trade list is used |
 | GET | `/portfolios/{portfolio_id}/user_setting` | 3.0.0 | HA optional poll + typed client |
 | PATCH | `/portfolios/{portfolio_id}/user_setting` | 3.0.0 | Excluded — user-setting mutation; generic client only |
-| GET | `/portfolios/{portfolio_id}/value` | 3.0.0-mobile | Excluded — single balance duplicates combined performance value |
+| GET | `/portfolios/{portfolio_id}/value` | 3.0.0-mobile | Typed client (`get_portfolio_value`); excluded from HA — single balance duplicates combined performance value |
 | DELETE | `/prices/{id}.json` | 3.0.0 | Excluded — financial-record mutation; generic client only |
 | PUT | `/prices/{id}.json` | 3.0.0 | Excluded — financial-record mutation; generic client only |
 | POST | `/trades.json` | 3.0.0-internal | Excluded — internal financial-record mutation; public V2 helper exists |
@@ -178,7 +179,7 @@ actual HTTP method, `GET`.
 | GET | `/watched_portfolios.json` | 3.0.0-mobile | Excluded — mobile portfolio-watch workflow |
 | POST | `/watched_portfolios.json` | 3.0.0-mobile | Excluded — mobile watch mutation |
 | DELETE | `/watched_portfolios/{id}.json` | 3.0.0-mobile | Excluded — mobile watch mutation |
-| GET | `/watchlist.json` | 3.0.0-mobile | HA optional poll; capability-gated |
+| GET | `/watchlist.json` | 3.0.0-mobile | HA optional poll + typed client; capability-gated |
 | POST | `/watchlist/add_instrument.json` | 3.0.0-mobile | Excluded — mobile watchlist mutation |
 | GET | `/watchlist/instruments/{id}.json` | 3.0.0-mobile | Generic mobile detail; list route already supplies HA data |
 | DELETE | `/watchlist/remove_instrument.json` | 3.0.0-mobile | Excluded — mobile watchlist mutation |

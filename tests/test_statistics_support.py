@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -451,6 +451,15 @@ def test_statistics_backfill_excludes_local_today_and_deduplicates_hours(
         },
     )
 
+    async def skip_value_derived_backfill(*_args, **_kwargs) -> None:
+        """Keep this regression focused on Portfolio Value row selection."""
+
+    monkeypatch.setattr(
+        statistics_import,
+        "async_backfill_value_derived_statistics",
+        skip_value_derived_backfill,
+    )
+
     hass = SimpleNamespace(
         config=SimpleNamespace(components={"recorder"}),
         states=SimpleNamespace(
@@ -514,6 +523,161 @@ def test_date_only_points_use_portfolio_timezone(timezone_name, expected) -> Non
 
     assert points == [(expected, 10.0)]
     assert points[0][0].astimezone(portfolio_tz).date().isoformat() == "2026-08-27"
+
+
+def test_value_derived_backfill_replays_each_source_day_without_inventing_data() -> None:
+    """Risk and trend history uses only the API's dated portfolio values."""
+    start = date(2026, 8, 1)
+    values = [100.0, 105.0, 95.0] + [96.0 + day for day in range(3, 31)]
+    points = [
+        (datetime.combine(start + timedelta(days=index), time.min, tzinfo=UTC), value)
+        for index, value in enumerate(values)
+    ]
+
+    result = statistics_import._historical_value_derived_points(
+        points,
+        ZoneInfo("UTC"),
+        date(2026, 9, 1),
+    )
+
+    # The response starts 1 August. A 7-day trend can begin on 8 August; a
+    # 30-day trend needs the 1 August baseline and is first valid on 31 August.
+    change_7d = result[("value_trend", "change_7d_percent")]
+    assert change_7d[0][0].date() == date(2026, 8, 8)
+    assert change_7d[-1][0].date() == date(2026, 8, 31)
+    change_30d = result[("value_trend", "change_30d_percent")]
+    assert [when.date() for when, _ in change_30d] == [date(2026, 8, 31)]
+    assert all(spec[0] == "value_trend" for spec in result)
+
+
+def test_value_derived_backfill_uses_recorder_unit_classes() -> None:
+    """Percent and day measurements retain Recorder's existing metadata."""
+    assert statistics_import._measurement_unit_class("%") == "unitless"
+    assert statistics_import._measurement_unit_class("d") == "duration"
+    assert statistics_import._measurement_unit_class("AUD") is None
+
+
+def test_sparse_history_never_imports_a_reconstructed_high_water_mark(monkeypatch) -> None:
+    """Only detailed recent metrics are imported, preserving native samples."""
+    statistic_id = "sensor.value_change_7d_123"
+    today = date(2026, 9, 1)
+    points = [
+        {"date": (today - timedelta(days=offset)).isoformat(), "value": 100 + offset}
+        for offset in range(45, -1, -1)
+    ]
+    existing_hours = {datetime(2026, 8, 3, tzinfo=UTC)}
+    imported: list[dict] = []
+
+    monkeypatch.setattr(
+        statistics_import,
+        "_value_sensor_entity_id",
+        lambda *_args: "sensor.portfolio_value_123",
+    )
+    monkeypatch.setattr(
+        statistics_import,
+        "_value_derived_sensor_entity_id",
+        lambda _hass, _entry, _portfolio_id, sub_key, key: (
+            statistic_id if (sub_key, key) == ("value_trend", "change_7d_percent") else None
+        ),
+    )
+    monkeypatch.setattr(
+        recorder_statistics,
+        "async_list_statistic_ids",
+        lambda _hass, ids: asyncio.sleep(
+            0,
+            result=[
+                {
+                    "statistic_id": next(iter(ids)),
+                    "has_mean": True,
+                    "mean_type": recorder_statistics.StatisticMeanType.ARITHMETIC,
+                    "has_sum": False,
+                    "source": "recorder",
+                    "statistics_unit_of_measurement": PERCENTAGE,
+                    "unit_class": "unitless",
+                }
+            ],
+        ),
+    )
+
+    def import_statistics(_hass, metadata, statistics) -> None:
+        assert metadata["statistic_id"] == statistic_id
+        assert metadata["unit_of_measurement"] == PERCENTAGE
+        assert metadata["unit_class"] == "unitless"
+        rows = list(statistics)
+        imported.extend(rows)
+        existing_hours.update(row["start"] for row in rows)
+
+    monkeypatch.setattr(recorder_statistics, "async_import_statistics", import_statistics)
+    monkeypatch.setattr(
+        recorder_statistics,
+        "statistics_during_period",
+        lambda *_args: {statistic_id: [{"start": hour.timestamp()} for hour in existing_hours]},
+    )
+
+    async def async_add_executor_job(target, *args):
+        return target(*args)
+
+    async def unavailable_historic_series():
+        raise RuntimeError("optional historic endpoint unavailable")
+
+    hass = SimpleNamespace(
+        config=SimpleNamespace(components={"recorder"}),
+        states=SimpleNamespace(
+            get=lambda entity_id: (
+                SimpleNamespace(
+                    attributes={
+                        ATTR_UNIT_OF_MEASUREMENT: PERCENTAGE,
+                        "state_class": SensorStateClass.MEASUREMENT,
+                    }
+                )
+                if entity_id == statistic_id
+                else None
+            )
+        ),
+        async_add_executor_job=async_add_executor_job,
+    )
+    coordinator = SimpleNamespace(
+        portfolio_currency="AUD",
+        current_date=today,
+        data={"value_series": {"data": points}},
+        portfolio_start_of_day=lambda day: datetime.combine(day, time.min, tzinfo=UTC),
+        async_get_value_history=unavailable_historic_series,
+    )
+    entry = SimpleNamespace(data={"portfolio_id": "123"})
+
+    asyncio.run(statistics_import.async_backfill_value_statistics(hass, entry, coordinator))
+    first_import_count = len(imported)
+    asyncio.run(statistics_import.async_backfill_value_statistics(hass, entry, coordinator))
+
+    assert first_import_count > 0
+    assert len(imported) == first_import_count
+    assert datetime(2026, 8, 3, tzinfo=UTC) not in {row["start"] for row in imported}
+    assert not hasattr(statistics_import, "async_backfill_high_water_mark_statistics")
+    assert not hasattr(statistics_import, "_rolling_high_water_mark_points")
+
+
+def test_cancelled_backfill_does_not_start_derived_recorder_writes(monkeypatch) -> None:
+    """Integration unload cancellation must not run the derived import pass."""
+    derived_started = False
+
+    async def cancelled_historic(*_args) -> None:
+        raise asyncio.CancelledError
+
+    async def derived(*_args) -> None:
+        nonlocal derived_started
+        derived_started = True
+
+    monkeypatch.setattr(
+        statistics_import,
+        "_async_backfill_portfolio_value_statistics",
+        cancelled_historic,
+    )
+    monkeypatch.setattr(statistics_import, "async_backfill_value_derived_statistics", derived)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(statistics_import.async_backfill_value_statistics(object(), object(), object()))
+
+    assert derived_started is False
 
 
 def test_backfill_refuses_to_relabel_existing_currency_metadata(monkeypatch) -> None:

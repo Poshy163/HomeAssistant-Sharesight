@@ -93,7 +93,7 @@ async def test_diagnostics_never_leak_the_account_holders_name(
     # The entry title embeds the portfolio name, which Sharesight defaults to
     # "<Full Name>'s Portfolio".
     assert result["entry"]["title"] == "Sharesight portfolio [redacted]"
-    assert "1020131" not in serialised
+    assert "424242" not in serialised
     assert "data" not in result
 
 
@@ -109,3 +109,24 @@ async def test_diagnostics_expose_shapes_without_dynamic_mapping_keys(
     assert '"AAA"' not in serialised
     assert "22000.0" not in serialised
     assert "AUD" in serialised  # portfolio currency is intentional metadata
+
+
+async def test_diagnostics_redact_identifiers_in_runtime_keys(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """Endpoint and cache bookkeeping embeds portfolio IDs in mapping keys."""
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = mock_config_entry.runtime_data.coordinator
+    coordinator._optional_endpoint_cooldowns = {
+        f"v3/portfolios/{coordinator.portfolio_id}/performance#report": {"next_retry": 10**20}
+    }
+    coordinator._carry_forward = {
+        f"portfolio-{coordinator.portfolio_id}": ({"private": "payload"}, 0.0)
+    }
+
+    serialised = json.dumps(await async_get_config_entry_diagnostics(hass, mock_config_entry))
+
+    assert str(coordinator.portfolio_id) not in serialised
+    assert "[redacted]" in serialised

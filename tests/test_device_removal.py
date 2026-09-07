@@ -13,19 +13,19 @@ from custom_components.sharesight.const import DOMAIN
 
 
 def test_retired_market_hours_device_is_explicitly_removable() -> None:
-    device = SimpleNamespace(identifiers={(DOMAIN, "1020131_market_hours")})
+    device = SimpleNamespace(identifiers={(DOMAIN, "424242_market_hours")})
 
-    assert _is_retired_legacy_device(device, "1020131_")
+    assert _is_retired_legacy_device(device, "424242_")
 
 
 def test_active_or_foreign_device_is_not_treated_as_retired() -> None:
-    active_device = SimpleNamespace(identifiers={(DOMAIN, "1020131_portfolio")})
+    active_device = SimpleNamespace(identifiers={(DOMAIN, "424242_portfolio")})
     foreign_device = SimpleNamespace(
-        identifiers={(DOMAIN, "1020131_market_hours"), ("other", "device")}
+        identifiers={(DOMAIN, "424242_market_hours"), ("other", "device")}
     )
 
-    assert not _is_retired_legacy_device(active_device, "1020131_")
-    assert not _is_retired_legacy_device(foreign_device, "1020131_")
+    assert not _is_retired_legacy_device(active_device, "424242_")
+    assert not _is_retired_legacy_device(foreign_device, "424242_")
 
 
 def test_previously_default_disabled_entities_are_reenabled(monkeypatch) -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from homeassistant import config_entries
 from homeassistant.components.application_credentials import (
@@ -260,6 +260,46 @@ async def test_reauth_updates_the_existing_entry(
     assert mock_config_entry.data["token"]["access_token"] == "mock-access-token"
     # The portfolio selection survives reauthentication.
     assert mock_config_entry.data[CONF_PORTFOLIO_ID] == PORTFOLIO_ID
+
+
+@pytest.mark.usefixtures("current_request_with_host", "setup_credentials")
+async def test_reauth_setup_failed_entry_reloads_exactly_once(
+    hass: HomeAssistant,
+    hass_client_no_auth: ClientSessionGenerator,
+    aioclient_mock: AiohttpClientMocker,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A setup-failed entry without a listener is still reloaded once."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    with patch.object(hass.config_entries, "async_reload") as reload_entry:
+        result = await _complete_oauth(hass, hass_client_no_auth, aioclient_mock, result)
+
+    assert result["type"] is FlowResultType.ABORT
+    reload_entry.assert_awaited_once_with(mock_config_entry.entry_id)
+
+
+@pytest.mark.usefixtures("current_request_with_host", "setup_credentials", "credential")
+async def test_reauth_loaded_entry_reloads_exactly_once(
+    hass: HomeAssistant,
+    hass_client_no_auth: ClientSessionGenerator,
+    aioclient_mock: AiohttpClientMocker,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A loaded entry's token listener does not cause a competing reload."""
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await mock_config_entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    with patch.object(hass.config_entries, "async_reload") as reload_entry:
+        result = await _complete_oauth(hass, hass_client_no_auth, aioclient_mock, result)
+
+    assert result["type"] is FlowResultType.ABORT
+    reload_entry.assert_awaited_once_with(mock_config_entry.entry_id)
 
 
 @pytest.mark.usefixtures("current_request_with_host", "setup_credentials")
